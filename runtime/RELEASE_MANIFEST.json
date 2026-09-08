@@ -1,0 +1,123 @@
+{
+  "name": "YENO OS runtime",
+  "version": "0.1.1",
+  "node": ">=20 (new install: supported LTS)",
+  "verified_environment": "Linux x64 / Node.js 24.19.0",
+  "tests": {
+    "passed": 19,
+    "failed": 0,
+    "skipped": 0,
+    "core_integration": 13,
+    "command_request_lifecycle": 6
+  },
+  "launcher_smoke": "npm start -- --no-open with config.local.json custom port; authenticated state and static module MIME passed",
+  "not_verified": [
+    "Windows native launch",
+    "real phone HTTPS connection",
+    "browser visual rendering and DOM integration",
+    "external paid AI provider",
+    "8GB Windows long-running operation"
+  ],
+  "files": [
+    {
+      "path": ".gitignore",
+      "bytes": 50,
+      "sha256": "e76a0a292e0fe4ecd25c6a7f13118b46453170bd4b9a3c5936fb1e50478845d4"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "bytes": 1372,
+      "sha256": "2c4fa6c9f890e5e6c734c3eb4d396461ac27b66c7c2de4d7f28ffbdca838fe94"
+    },
+    {
+      "path": "PHONE_SETUP.md",
+      "bytes": 4172,
+      "sha256": "4719f7726b36df4b929a8d858959c1d4ef23d15884e7f37a364c49d32b2d82ac"
+    },
+    {
+      "path": "README.md",
+      "bytes": 1641,
+      "sha256": "df870f14277c355796283fe71e62f0ac2ea441d8fb88917f0a8d53841800415e"
+    },
+    {
+      "path": "START_HERE_KO.md",
+      "bytes": 6828,
+      "sha256": "10ffabd7564100b8c9a8c3b9aa803d78c7ae377ed1b22a0202ca0f2259287693"
+    },
+    {
+      "path": "START_PHONE_WINDOWS.cmd",
+      "bytes": 214,
+      "sha256": "4dfe28be104239199e64042528263f4d99e7b7a2c46a4baee289880ea14bfb15"
+    },
+    {
+      "path": "START_YENO_WINDOWS.cmd",
+      "bytes": 303,
+      "sha256": "117e92b7d5084e439a63b8f78e5464726a4524ee7e7f8e8057cc90369b8e85a6"
+    },
+    {
+      "path": "VERIFICATION.md",
+      "bytes": 4541,
+      "sha256": "ace7e5dbea6fb1ad2df5fef834947350872d78c7029892cf9efce00e3d231faf"
+    },
+    {
+      "path": "VERIFY_WINDOWS.cmd",
+      "bytes": 68,
+      "sha256": "0c85499bba0f911b89d6382da814862ea4d32e437f80cc9d860ede6a97d67a49"
+    },
+    {
+      "path": "config.example.json",
+      "bytes": 109,
+      "sha256": "4172268b8aad76c688b752d952be0275393a0f8943946b5e313baf2daff4d729"
+    },
+    {
+      "path": "launch.mjs",
+      "bytes": 4481,
+      "sha256": "60cee597fc9c00e79aa9db49346ef993c2ca7c8d6a390d155fbd9b33208e73c5"
+    },
+    {
+      "path": "lib/store.mjs",
+      "bytes": 3408,
+      "sha256": "722826b24fc133281b2ff0a2644418b4003bf323980720a77bb4eab8a437a705"
+    },
+    {
+      "path": "package.json",
+      "bytes": 355,
+      "sha256": "24bd84c7fa3ebae2be63223910f36fc082ab99c815bc1221878a32154b643ca6"
+    },
+    {
+      "path": "public/app.js",
+      "bytes": 17543,
+      "sha256": "e212314b6f09a7c2ff8a063a4663e30f6ca725501925ef223b2ed42befff84a8"
+    },
+    {
+      "path": "public/command-request.mjs",
+      "bytes": 3145,
+      "sha256": "da0910c99af6591387e0fe38e6238aaa9738acdf6c842f21ac343b8d71363f86"
+    },
+    {
+      "path": "public/index.html",
+      "bytes": 8557,
+      "sha256": "ed5c7267a75d723a99d5014e192b28cc1d118bb2b436a3b6c3d119e9f3bbdc8c"
+    },
+    {
+      "path": "public/style.css",
+      "bytes": 14216,
+      "sha256": "55163cb6bbd4c0ac12cfc3238eab38066fbe8793836bcca7a82d609461bba7a4"
+    },
+    {
+      "path": "server.mjs",
+      "bytes": 26586,
+      "sha256": "0a3b832090b637c3774e98236d3a0782d9949d6354f9aa349a12185c184ae614"
+    },
+    {
+      "path": "test/command-request.test.mjs",
+      "bytes": 6269,
+      "sha256": "6bcd06e7c8f5cbef4698dc5c18c7d6889e77c545d472c9b23a61944d0c50069b"
+    },
+    {
+      "path": "test/runtime.test.mjs",
+      "bytes": 25720,
+      "sha256": "7f4ac8b71d91ffe9ade3ee24622590bdd94968ee95c133754be50e7b10939b4b"
+    }
+  ]
+}

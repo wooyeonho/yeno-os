@@ -1,0 +1,204 @@
+{
+  "name": "YENO OS development starter",
+  "date": "2026-09-08",
+  "runtime_version": "0.1.1",
+  "status": "GitHub bootstrap source; native apps and operational deployment pending",
+  "verified": {
+    "runtime_manifest_files": 20,
+    "tests_passed": 19,
+    "tests_failed": 0,
+    "tests_skipped": 0,
+    "node": "24.19.0",
+    "platform": "Linux",
+    "duration_ms": 12626.340954,
+    "commands": [
+      "npm --offline run verify:baseline",
+      "npm --offline test"
+    ],
+    "native_build_verified": false,
+    "deployed": false
+  },
+  "files": [
+    {
+      "path": ".gitattributes",
+      "bytes": 138,
+      "sha256": "cfb6ad2c6c79f5801a4a1bf3d065cbcc0da2c34e85fcf8e7ba33ca5221587ae7"
+    },
+    {
+      "path": ".github/workflows/verify.yml",
+      "bytes": 387,
+      "sha256": "e04b1edebb94a9aef756365ad83ff82af3ce03885b4e7744b4fc8bd013af4bd9"
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 212,
+      "sha256": "e03428526ce263e25de90f887949a4ebf933fc86682fe93fcd6c2725a210ddb4"
+    },
+    {
+      "path": ".node-version",
+      "bytes": 3,
+      "sha256": "68ca3fba3b7e864770cb61aeb306d4bd4354b68ab4dd38450860c5d823e42a53"
+    },
+    {
+      "path": "AGENTS.md",
+      "bytes": 6467,
+      "sha256": "935d93098c73960f4de78b524ac78222f9ec5fd1f098f71c58c8571c7dae6262"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "bytes": 641,
+      "sha256": "67f91f73e320cb85fefdbcbc32cd7f0ad455d2e340d28168f607ede071151cee"
+    },
+    {
+      "path": "README.md",
+      "bytes": 1853,
+      "sha256": "a63486e1de7b9114edaff9ac5de353d66975ffefa84280fa371ec8b517ac755a"
+    },
+    {
+      "path": "YENO_START_HERE.md",
+      "bytes": 2463,
+      "sha256": "c5b70f9212d42ae0a5ddfd375254072a7eed1f91fbcf577f670dbd372058ed8a"
+    },
+    {
+      "path": "docs/BUILD_DECISIONS.md",
+      "bytes": 23106,
+      "sha256": "c732acb2f4eb1b25f95a154b1f5f732b9ed1a31c21b1493676215d31e51860bd"
+    },
+    {
+      "path": "docs/DISCOVERY.md",
+      "bytes": 2728,
+      "sha256": "443ab36e1e00aad7e01a46073140fa93a22b613dba2f7974d292c65bc4cb4308"
+    },
+    {
+      "path": "docs/FIRST_TASK.md",
+      "bytes": 2792,
+      "sha256": "a65da3ddb78352b1de06162ec656053ee6a3a96b9bce72a301690051e0bd7bf3"
+    },
+    {
+      "path": "docs/STATUS.md",
+      "bytes": 2264,
+      "sha256": "84c52c814f898e92807089cff3ad59e298d1e25c4a768c8415136d715b75ff80"
+    },
+    {
+      "path": "identity/YENO.md",
+      "bytes": 2687,
+      "sha256": "ad308e495d8e27520ccefab8ba2ad4bc3e2df5221d9e4e1ebcbc5a42ed4360c7"
+    },
+    {
+      "path": "package.json",
+      "bytes": 291,
+      "sha256": "ed13978e93da9f1d3d7f33856fb70dcbb5c0111540b72412b4ac4b41959bc26f"
+    },
+    {
+      "path": "runtime/.gitignore",
+      "bytes": 50,
+      "sha256": "e76a0a292e0fe4ecd25c6a7f13118b46453170bd4b9a3c5936fb1e50478845d4"
+    },
+    {
+      "path": "runtime/CHANGELOG.md",
+      "bytes": 1372,
+      "sha256": "2c4fa6c9f890e5e6c734c3eb4d396461ac27b66c7c2de4d7f28ffbdca838fe94"
+    },
+    {
+      "path": "runtime/PHONE_SETUP.md",
+      "bytes": 4172,
+      "sha256": "4719f7726b36df4b929a8d858959c1d4ef23d15884e7f37a364c49d32b2d82ac"
+    },
+    {
+      "path": "runtime/README.md",
+      "bytes": 1641,
+      "sha256": "df870f14277c355796283fe71e62f0ac2ea441d8fb88917f0a8d53841800415e"
+    },
+    {
+      "path": "runtime/RELEASE_MANIFEST.json",
+      "bytes": 3677,
+      "sha256": "fdd1b6df9f7eda5ef151bf943abba118ff4af4bdaa6229cd7d7a0b95211fedfa"
+    },
+    {
+      "path": "runtime/START_HERE_KO.md",
+      "bytes": 6828,
+      "sha256": "10ffabd7564100b8c9a8c3b9aa803d78c7ae377ed1b22a0202ca0f2259287693"
+    },
+    {
+      "path": "runtime/START_PHONE_WINDOWS.cmd",
+      "bytes": 214,
+      "sha256": "4dfe28be104239199e64042528263f4d99e7b7a2c46a4baee289880ea14bfb15"
+    },
+    {
+      "path": "runtime/START_YENO_WINDOWS.cmd",
+      "bytes": 303,
+      "sha256": "117e92b7d5084e439a63b8f78e5464726a4524ee7e7f8e8057cc90369b8e85a6"
+    },
+    {
+      "path": "runtime/VERIFICATION.md",
+      "bytes": 4541,
+      "sha256": "ace7e5dbea6fb1ad2df5fef834947350872d78c7029892cf9efce00e3d231faf"
+    },
+    {
+      "path": "runtime/VERIFY_WINDOWS.cmd",
+      "bytes": 68,
+      "sha256": "0c85499bba0f911b89d6382da814862ea4d32e437f80cc9d860ede6a97d67a49"
+    },
+    {
+      "path": "runtime/config.example.json",
+      "bytes": 109,
+      "sha256": "4172268b8aad76c688b752d952be0275393a0f8943946b5e313baf2daff4d729"
+    },
+    {
+      "path": "runtime/launch.mjs",
+      "bytes": 4481,
+      "sha256": "60cee597fc9c00e79aa9db49346ef993c2ca7c8d6a390d155fbd9b33208e73c5"
+    },
+    {
+      "path": "runtime/lib/store.mjs",
+      "bytes": 3408,
+      "sha256": "722826b24fc133281b2ff0a2644418b4003bf323980720a77bb4eab8a437a705"
+    },
+    {
+      "path": "runtime/package.json",
+      "bytes": 355,
+      "sha256": "24bd84c7fa3ebae2be63223910f36fc082ab99c815bc1221878a32154b643ca6"
+    },
+    {
+      "path": "runtime/public/app.js",
+      "bytes": 17543,
+      "sha256": "e212314b6f09a7c2ff8a063a4663e30f6ca725501925ef223b2ed42befff84a8"
+    },
+    {
+      "path": "runtime/public/command-request.mjs",
+      "bytes": 3145,
+      "sha256": "da0910c99af6591387e0fe38e6238aaa9738acdf6c842f21ac343b8d71363f86"
+    },
+    {
+      "path": "runtime/public/index.html",
+      "bytes": 8557,
+      "sha256": "ed5c7267a75d723a99d5014e192b28cc1d118bb2b436a3b6c3d119e9f3bbdc8c"
+    },
+    {
+      "path": "runtime/public/style.css",
+      "bytes": 14216,
+      "sha256": "55163cb6bbd4c0ac12cfc3238eab38066fbe8793836bcca7a82d609461bba7a4"
+    },
+    {
+      "path": "runtime/server.mjs",
+      "bytes": 26586,
+      "sha256": "0a3b832090b637c3774e98236d3a0782d9949d6354f9aa349a12185c184ae614"
+    },
+    {
+      "path": "runtime/test/command-request.test.mjs",
+      "bytes": 6269,
+      "sha256": "6bcd06e7c8f5cbef4698dc5c18c7d6889e77c545d472c9b23a61944d0c50069b"
+    },
+    {
+      "path": "runtime/test/runtime.test.mjs",
+      "bytes": 25720,
+      "sha256": "7f4ac8b71d91ffe9ade3ee24622590bdd94968ee95c133754be50e7b10939b4b"
+    },
+    {
+      "path": "scripts/verify-baseline.mjs",
+      "bytes": 1231,
+      "sha256": "2c94b25794e9fcc4c3c20baec202213f63a54f58d57ca868338e54980549af83"
+    }
+  ],
+  "revision_note": "Initial private repository import; original runtime preserved; onboarding updated for wooyeonho/yeno-os."
+}
