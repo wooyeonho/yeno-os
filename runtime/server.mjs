@@ -7,16 +7,17 @@ import {fileURLToPath} from 'node:url';
 import {atomicWrite,openStore,acquireRuntimeLock,digest,uid,now} from './lib/store.mjs';
 import {acquireContainerLease} from './lib/container-lease.mjs';
 import {ProjectError,projectNameKey,validateProjectFields,resolveProject,projectRegistryDocument,projectBriefDocument} from './lib/projects.mjs';
+import {SourceError,validateSourceFields,planSourceImport,resolveSource,sourceRegistryDocument,sourceBriefDocument} from './lib/sources.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
-const VERSION='0.2.1';
+const VERSION='0.2.2';
 const API_VERSION='1';
 const MAX_BODY=256*1024;
 class HttpError extends Error {constructor(status,message,extra={}){super(message);this.status=status;this.extra=extra;}}
 function requiredText(value,maximum=80000){if(typeof value!=='string'||!value.trim())throw new HttpError(400,'text must be a non-empty string');if(value.length>maximum)throw new HttpError(400,`text is limited to ${maximum} characters`);return value.trim();}
 function publicJob(job){const {input,normalized,draft,...out}=job;return out;}
 function publicSnapshot(snapshot){const {data,...out}=snapshot;return out;}
-const examples=['기억해: 다음 여행은 여유 있게 계획한다','찾아줘: 여행','문서 만들어: YENO의 첫 목표는 기억과 실행이다','프로젝트 목록','프로젝트 브리핑: 프로젝트 이름','프로젝트 작업: 프로젝트 이름 | 준비할 작업','진단해','개선점 찾아줘'];
+const examples=['기억해: 다음 여행은 여유 있게 계획한다','찾아줘: 여행','문서 만들어: YENO의 첫 목표는 기억과 실행이다','프로젝트 목록','프로젝트 브리핑: 프로젝트 이름','프로젝트 작업: 프로젝트 이름 | 준비할 작업','자료 목록','자료 브리핑: 자료 ID','개선 후보: 자료 ID','진단해','개선점 찾아줘'];
 
 export function createYenoServer(options={}) {
  const env=options.env??process.env;
@@ -43,8 +44,14 @@ export function createYenoServer(options={}) {
  if(store.recovered)event('State recovered from the verified previous backup.');
  if(!aiEndpoint)s.modules.ai=false;
  event('YENO runtime started.');store.save();
- function state(){return {name:'YENO OS',version:VERSION,apiVersion:API_VERSION,revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint,model:aiEndpoint?aiModel:null},jobs:s.jobs.map(publicJob),projects:s.projects,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,capabilities:{localDocuments:true,persistentMemory:true,projectManagement:true,developerWorker:false,diagnostics:true,evolution:'proposals-only',ai:!!aiEndpoint,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
- const save=()=>store.save();
+ function state(){return {name:'YENO OS',version:VERSION,apiVersion:API_VERSION,revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint,model:aiEndpoint?aiModel:null},jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,capabilities:{localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,developerWorker:false,diagnostics:true,evolution:'proposals-only',ai:!!aiEndpoint,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
+ // A failed filesystem write leaves its outcome uncertain. Retain its request
+ // identity in memory, but never acknowledge a cached receipt or expose that
+ // state through the API until the complete state has been persisted again.
+ // Rolling back here would be unsafe if a rename committed before the failure.
+ let persistencePending=false;
+ const save=()=>{persistencePending=true;store.save();persistencePending=false;};
+ const ensureDurable=()=>{if(persistencePending)save();};
  const touch=job=>{job.updatedAt=now();job.version++;};
  const moduleFor=type=>type==='document'?'documents':type==='ai'?'ai':'diagnostics';
  function requireModule(name){if(!s.modules[name])throw new HttpError(409,`${name} module is disabled`);}
@@ -66,6 +73,11 @@ export function createYenoServer(options={}) {
  function addProject(body){const fields=validateProjectFields(body,{creating:true});ensureUniqueProject(fields.name);const at=now(),project={id:uid(),...fields,version:1,createdAt:at,updatedAt:at};s.projects.push(project);event(`Project registered: ${project.name}`);return project;}
  function updateProject(id,body){const fields=validateProjectFields(body);const index=s.projects.findIndex(project=>project.id===id);if(index<0)throw new ProjectError(404,'Project not found.');const current=s.projects[index];if(body.revision!==current.version)throw new ProjectError(409,'Project changed; refresh before updating.',{project:current});if(fields.name)ensureUniqueProject(fields.name,id);const project={...current,...fields,version:current.version+1,updatedAt:now()};s.projects[index]=project;event(`Project updated: ${project.name} (${project.status})`);return project;}
  function projectDocumentJob(project,content,title,report){const job=newJob({type:'document',text:content,title,...(project?{projectId:project.id}:{})});job.projectReport=report;return publicJob(job);}
+ function sourceRecord(fields){const at=now();return {id:uid(),...fields,version:1,createdAt:at,updatedAt:at};}
+ function addSource(body){const fields=validateSourceFields(body,{creating:true,projects:s.projects});const existing=s.sources.find(source=>source.canonicalUrl===fields.canonicalUrl);if(existing)throw new SourceError(409,'This canonical source URL is already registered.',{source:existing});const source=sourceRecord(fields);s.sources.push(source);event(`Source registered: ${source.title}`);return source;}
+ function updateSource(id,body){const index=s.sources.findIndex(source=>source.id===id);if(index<0)throw new SourceError(404,'Source not found.');const current=s.sources[index];const fields=validateSourceFields(body,{projects:s.projects,current});if(body.revision!==current.version)throw new SourceError(409,'Source changed; refresh before updating.',{source:current});const source={...current,...fields,version:current.version+1,updatedAt:now()};s.sources[index]=source;event(`Source reviewed: ${source.title} (${source.decision})`);return source;}
+ function importSources(body){const planned=planSourceImport(body,s.sources,s.projects);const sources=planned.map(item=>item.source??sourceRecord(item.fields));const created=sources.filter((source,index)=>!planned[index].source);s.sources.push(...created);event(`Source import: ${created.length} registered, ${sources.length-created.length} reused.`);return {sources,createdCount:created.length,reusedCount:sources.length-created.length};}
+ function sourceDocumentJob(source,content,title){const job=newJob({type:'document',text:content,title:title.slice(0,160),...(source?.projectId?{projectId:source.projectId}:{})});job.sourceReport=true;if(source)job.sourceId=source.id;return publicJob(job);}
  function takeSnapshot(label){const snapshot={id:uid(),label:label?requiredText(label,160):'수동 저장',createdAt:now(),data:structuredClone({memories:s.memories,settings:{concurrency:s.concurrency,modules:s.modules}})};s.snapshots.unshift(snapshot);event(`Snapshot created: ${snapshot.label}`);return snapshot;}
  function active(){return s.jobs.filter(j=>j.status==='running').length;}
  function schedule(){if(closed||schedulerTimer)return;schedulerTimer=setTimeout(tick,150);schedulerTimer.unref();}
@@ -112,7 +124,7 @@ export function createYenoServer(options={}) {
      else if(job.step===1){
        if(job.type==='document'){
          const paras=job.normalized.split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean);
-         job.draft=`# ${job.title.replace(/[\r\n]/g,' ')}\n\n작성 시각: ${now()}\n\n## 입력 내용을 문서로 정리\n${paras.map((p,i)=>`### ${i+1}\n\n${p}`).join('\n\n')}\n\n## 출처와 처리 내역\n- 출처: ${job.projectReport?'YENO에 등록된 프로젝트 정보와 소유자의 요청':'연호님이 이 작업에 입력한 텍스트'}\n- 처리: 유니코드·줄바꿈 정규화, 빈 줄 기준 문단 분리, 제목·출처 부착\n- 외부 조사 또는 AI 호출: 없음\n- 입력 SHA-256: ${job.inputSha256}\n- 원문 의미를 해석하거나 사실 확인한 문서가 아닙니다.\n`;
+         job.draft=`# ${job.title.replace(/[\r\n]/g,' ')}\n\n작성 시각: ${now()}\n\n## 입력 내용을 문서로 정리\n${paras.map((p,i)=>`### ${i+1}\n\n${p}`).join('\n\n')}\n\n## 출처와 처리 내역\n- 출처: ${job.sourceReport?'YENO에 등록된 자료와 검토 기록':job.projectReport?'YENO에 등록된 프로젝트 정보와 소유자의 요청':'연호님이 이 작업에 입력한 텍스트'}\n- 처리: 유니코드·줄바꿈 정규화, 빈 줄 기준 문단 분리, 제목·출처 부착\n- 외부 조사 또는 AI 호출: 없음\n- 입력 SHA-256: ${job.inputSha256}\n- 원문 의미를 해석하거나 사실 확인한 문서가 아닙니다.\n`;
        }else if(job.type==='diagnostics')job.draft=diagnosticDocument(job);
        else if(job.type==='evolution')job.draft=evolutionDocument();
        else {const draft=await aiDraft(job);if(!valid())return;job.draft=`# ${job.title}\n\n${draft}\n\n---\nAI 생성 초안 · 모델: ${aiModel}\n외부 사실 검증이나 도구 실행은 하지 않았습니다.\n입력 SHA-256: ${job.inputSha256}\n`;}
@@ -141,6 +153,7 @@ export function createYenoServer(options={}) {
  async function body(req){let total=0,parts=[];for await(const part of req){total+=part.length;if(total>MAX_BODY)throw new HttpError(413,'Request body exceeds 256 KB');parts.push(part);}if(!total)return {};let result;try{result=JSON.parse(Buffer.concat(parts).toString('utf8'));}catch{throw new HttpError(400,'Invalid JSON body');}if(!result||typeof result!=='object'||Array.isArray(result))throw new HttpError(400,'JSON object required');return result;}
  function respond(res,status,payload){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(payload));}
  function mutation(req,url,b,operation){
+   ensureDurable();
    const requestId=b.requestId;if(requestId!==undefined&&(typeof requestId!=='string'||!requestId.trim()||requestId.length>160))throw new HttpError(400,'requestId must be a string of 1–160 characters');
    const canonical=value=>{if(Array.isArray(value))return value.map(canonical);if(value&&typeof value==='object')return Object.fromEntries(Object.keys(value).sort().map(k=>[k,canonical(value[k])]));return value;};
    const copy={...b};delete copy.requestId;const hash=digest(JSON.stringify({method:req.method,path:url.pathname,body:canonical(copy)}));
@@ -168,11 +181,13 @@ export function createYenoServer(options={}) {
      }
      const principal=authenticate(req,versioned);
      if(versioned)url.pathname=url.pathname.replace(/^\/api\/v1/,'/api');
+     ensureDurable();
      if(req.method==='POST'&&url.pathname==='/api/devices/revoke'){
        await body(req);const id=principal.device?.id;if(!id||!s.devices[id])throw new HttpError(404,'Device not found');s.devices[id].revokedAt=now();event(`Device revoked: ${s.devices[id].name}`);save();return respond(res,200,{revoked:true,deviceId:id});
      }
      if(req.method==='GET'&&url.pathname==='/api/state')return respond(res,200,state());
      if(req.method==='GET'&&url.pathname==='/api/projects')return respond(res,200,{projects:s.projects});
+     if(req.method==='GET'&&url.pathname==='/api/sources')return respond(res,200,{sources:s.sources});
      if(req.method==='GET'&&url.pathname==='/api/memory'){requireModule('memory');const q=(url.searchParams.get('q')??'').toLocaleLowerCase();return respond(res,200,{memories:s.memories.filter(m=>m.text.toLocaleLowerCase().includes(q))});}
      const artifactMatch=url.pathname.match(/^\/api\/artifacts\/([a-f0-9-]+)$/);
      if(req.method==='GET'&&artifactMatch){const item=s.artifacts[artifactMatch[1]];if(!item)throw new HttpError(404,'Artifact not found');const file=path.join(dataDir,'artifacts',item.filename);if(path.dirname(file)!==path.join(dataDir,'artifacts')||!fs.existsSync(file))throw new HttpError(404,'Artifact file is missing');const bytes=fs.readFileSync(file);if(digest(bytes)!==item.sha256)throw new HttpError(409,'Artifact checksum mismatch; download blocked');res.writeHead(200,{'Content-Type':'text/plain; charset=utf-8','Content-Disposition':`attachment; filename="${item.name}"`,'X-Content-SHA256':item.sha256});return res.end(bytes);}
@@ -183,9 +198,16 @@ export function createYenoServer(options={}) {
        if(url.pathname==='/api/projects')return {status:201,payload:{project:addProject(b)}};
        const projectUpdate=url.pathname.match(/^\/api\/projects\/([a-f0-9-]+)\/update$/);
        if(projectUpdate)return {status:200,payload:{project:updateProject(projectUpdate[1],b)}};
+       if(url.pathname==='/api/sources')return {status:201,payload:{source:addSource(b)}};
+       if(url.pathname==='/api/sources/import')return {status:201,payload:importSources(b)};
+       const sourceUpdate=url.pathname.match(/^\/api\/sources\/([a-f0-9-]+)\/update$/);
+       if(sourceUpdate)return {status:200,payload:{source:updateSource(sourceUpdate[1],b)}};
        if(url.pathname==='/api/jobs')return {status:201,payload:{job:publicJob(newJob(b))}};
        if(url.pathname==='/api/commands'){
          const text=requiredText(b.text);let match;
+         if(/^자료\s+목록$/i.test(text))return {status:201,payload:{kind:'job',job:sourceDocumentJob(null,sourceRegistryDocument(s.sources),'개선 자료 목록')}};
+         if((match=text.match(/^자료\s+브리핑\s*[:：]\s*(.+)$/is))){const source=resolveSource(s.sources,match[1]);return {status:201,payload:{kind:'job',job:sourceDocumentJob(source,sourceBriefDocument(source),`${source.title} 자료 브리핑`)}};}
+         if((match=text.match(/^개선\s+후보\s*[:：]\s*(.+)$/is))){const source=resolveSource(s.sources,match[1]);return {status:201,payload:{kind:'job',job:sourceDocumentJob(source,sourceBriefDocument(source,true),`${source.title} 개선 후보 준비서`)}};}
          if(/^프로젝트\s+목록$/i.test(text))return {status:201,payload:{kind:'job',job:projectDocumentJob(null,projectRegistryDocument(s.projects),'프로젝트 목록','registry')}};
          if((match=text.match(/^프로젝트\s+브리핑\s*[:：]\s*(.+)$/is))){const project=resolveProject(s.projects,match[1]);return {status:201,payload:{kind:'job',job:projectDocumentJob(project,projectBriefDocument(project),`${project.name} 프로젝트 브리핑`,'brief')}};}
          if((match=text.match(/^프로젝트\s+작업\s*[:：]\s*([^|]+)\|\s*(.+)$/is))){const project=resolveProject(s.projects,match[1]),work=requiredText(match[2],60000);return {status:201,payload:{kind:'job',job:projectDocumentJob(project,projectBriefDocument(project,work),`${project.name} 작업 준비서`,'preparation')}};}
@@ -217,7 +239,7 @@ export function createYenoServer(options={}) {
        throw new HttpError(404,'Not found');
      });
      respond(res,result.status,result.payload);
-   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof HttpError||error instanceof ProjectError;respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
+   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError;respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
  });
  server.requestTimeout=15000;server.headersTimeout=10000;
  function shutdown(){if(closed)return;closed=true;clearTimeout(schedulerTimer);for(const job of s.jobs)if(['running','queued'].includes(job.status)){job.status='paused';job.pauseReason='shutdown';touch(job);}for(const controller of controllers.values())controller.abort();event('Runtime stopped; unfinished jobs paused.');try{save();}finally{releaseLock();server.close();}}

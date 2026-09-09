@@ -1,6 +1,6 @@
-# YENO OS — 실제 상주 서버 첫 연결
+# YENO OS — 프로젝트와 다음 작업 관리
 
-코어가 Koyeb에서 실행 중이다. 노트북을 켜지 않아도 기억 저장·검색과 입력 내용 문서화를 사용할 수 있다.
+코어가 Koyeb에서 실행 중이다. 노트북을 켜지 않아도 기억 저장·검색, 프로젝트 등록·수정과 문서 결과를 사용할 수 있다.
 
 ## 폰 앱에서 연결
 
@@ -22,17 +22,27 @@
 
 ## 브라우저에서 연결
 
-[YENO 조종석](https://global-iris-gyeol-98386a17.koyeb.app/)을 열고 같은 개인 연결 키를 입력한다. 기존 웹 화면의 PC 안내는 로컬 실행 때의 문구이며, 위 주소의 본체는 Koyeb 서버다.
+[YENO 조종석](https://global-iris-gyeol-98386a17.koyeb.app/)을 열고 같은 개인 연결 키를 입력한다. **프로젝트** 메뉴에서 코드 위치·설명·다음 작업을 관리하고 브리핑을 만든다. 위 주소의 본체는 Koyeb 서버다.
+
+## 기존 앱에서 프로젝트 명령
+
+```text
+프로젝트 목록
+프로젝트 브리핑: yeno-os
+프로젝트 작업: yeno-os | 실제 개발 작업자 연결 준비
+```
+
+명령은 문서 작업을 만들며 완료 후 결과를 열 수 있다. 웹의 프로젝트 화면은 새로 추가했지만, Android APK에 네이티브 프로젝트 탭을 추가한 것은 아니다. 자세한 계약과 범위는 [프로젝트 사용법](docs/PROJECTS.md).
 
 ## 확인된 것과 남은 것
 
 - 실제 Docker 빌드·HTTPS 코어·인증·문서 생성·결과 다운로드·요청 중복 방지·서버 재시작 후 같은 인증/작업/결과 보존 확인. [실제 사용 검사](docs/LIVE_ACCEPTANCE.md)에 증거를 기록했다.
 - 현재 AI 공급자는 연결하지 않았다. 기억·문서 기능을 일반적인 자유 대화나 자율 작업으로 해석하지 않는다.
 - Windows EXE·노트북 파일/화면 제어·자동 개선 배포는 아직 제공하지 않는다. 노트북의 별도 0.2.3 설치도 변경하지 않았다.
-- 기존 Koyeb Gyeol 실행기는 소유자 승인에 따라 일시정지했다. Supabase와 Vercel의 기존 앱·DB·구독은 유지했다. [비용 기록](docs/HOSTING_REUSE_AUDIT.md)에 실제 금액과 제한을 구분했다.
+- 기존 Koyeb Gyeol 실행기는 소유자 승인에 따라 일시정지했다. Supabase 한끼 DB는 기존 Free 조직으로 이전해 정상 실행을 확인했고, Vercel Pro와 다른 DB는 유지했다. [비용 기록](docs/HOSTING_REUSE_AUDIT.md)에 실제 금액과 제한을 구분했다.
 
 ## 앱과 개발 기록
 
 [실제 Android 빌드](https://github.com/wooyeonho/yeno-os/actions/runs/34309339030/attempts/3)의 앱 소스는 `11a0e1f7f1cb09449a1a2f82b54f948fff416690`이다. 시험 APK 약 202 MB, ZIP 약 53.5 MB이며 개발용 디버그 빌드다. [GitHub APK 묶음](https://github.com/wooyeonho/yeno-os/actions/runs/34309339030/artifacts/10088424404)은 2026-09-16 보관 만료다.
 
-실행 코어 소스는 `yeno-koyeb-pilot`의 `481d6ea4e679300b5644a0be6d36113a7c1374cc`다. 자동 배포는 껐으며 문서 커밋만으로 서버가 바뀌지 않는다. 현재 작업은 PR #1의 `codex` 브랜치에 있다. 다음 개발은 `AGENTS.md`, `docs/STATUS.md`, `docs/LIVE_ACCEPTANCE.md`를 먼저 읽고 기존 API·기기 인증·데이터를 보존한다.
+실행 코어 소스는 `yeno-koyeb-pilot`의 `25b0ff2da66a03b366c5fc32c9b660a0e6a3ced4`다. 자동 배포는 껐으며 문서 커밋만으로 서버가 바뀌지 않는다. 현재 작업은 PR #1의 `codex` 브랜치에 있다. 다음 개발은 `AGENTS.md`, `docs/STATUS.md`, `docs/LIVE_ACCEPTANCE.md`를 먼저 읽고 기존 API·기기 인증·데이터를 보존한다.

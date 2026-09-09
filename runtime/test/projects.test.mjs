@@ -168,7 +168,7 @@ test('project routes retain auth, device revocation, create retries and optimist
   assert.equal(state.capabilities.projectManagement, true);
   assert.equal(state.capabilities.developerWorker, false);
   assert.equal(state.apiVersion, '1');
-  assert.equal(state.version, '0.2.1');
+  assert.equal(state.version, '0.2.2');
   assert.equal((await f.post('/api/v1/devices/revoke', {}, token)).status, 200);
   assert.equal((await f.api('/api/v1/projects', { token })).status, 401);
   assert.equal((await f.post(route, { revision: 2, status: 'active', requestId: randomUUID() }, token)).status, 401);
