@@ -1,80 +1,48 @@
 # 실제 개발 상태 — 2026-09-09
 
-## 첫 실제 APK 생성 성공
+## 상주 코어 첫 실제 사용 검사 완료
 
-[GitHub 빌드 #2, 시도 3](https://github.com/wooyeonho/yeno-os/actions/runs/34309339030/attempts/3)이 성공했다. 사용한 앱 소스 커밋은 `11a0e1f7f1cb09449a1a2f82b54f948fff416690`이다. SDK 설치·Rust 의존성 해결·Android 프로젝트 생성·실제 컴파일·APK 수집과 업로드까지 완료했다.
+[YENO 조종석](https://global-iris-gyeol-98386a17.koyeb.app/)이 Koyeb에서 실행 중이다. 노트북 없이 서버의 기억·문서 기능을 사용할 수 있다. 소유자 Android 앱 등록과 보관소 재접속은 아직 실기기 확인이 남아 있다.
 
-- 앱: YENO controller 0.1.0, Android ARM64 디버그 시험 빌드.
-- APK 크기: 202,311,295 bytes. 개발용 빌드여서 크다. ZIP 묶음은 53,464,710 bytes.
-- APK SHA-256: `38de18459ef84735ef2d0c36f890cc3f4bb188d57d7b77eec6f369eb7d47ddd6`.
-- [APK·해시·빌드 정보 ZIP](https://github.com/wooyeonho/yeno-os/actions/runs/34309339030/artifacts/10088424404). GitHub 보관 만료는 2026-09-16이다.
-- 내려받은 ZIP의 GitHub SHA-256, APK SHA-256, APK 내부 ZIP 무결성, AndroidManifest.xml·classes.dex·ARM64 native library 존재를 확인했다.
-- CI의 Cargo.lock을 회수했고 저장소의 Cargo.lock과 바이트가 일치했다.
-
-**사용자 캡처로 Android 설치 후 첫 연결 화면 표시를 확인했다.** 기기 등록·암호 보관·명령·재접속은 아직 실기기에서 확인하지 않았다. 상주 HTTPS 코어·실제 유료 모델 호출·Windows EXE도 미검증 또는 미구현이다. 첫 화면 표시를 개인 OS 1.0 완성으로 해석하지 않는다.
-
-## 실제 검사 결과
-
-| 대상 | 결과 |
+| 항목 | 실제 상태 |
 | --- | --- |
-| 성공한 Android CI의 코어·명령 검사 | 30개 통과, 실패 0 |
-| 성공한 Android CI의 화면 빌드 | TypeScript + Vite 통과 |
-| 성공한 Android CI의 네이티브 빌드 | ARM64 APK 1개 생성·업로드 |
-| 서버 복구 수정 이후 로컬 Node 24.19.0 | 39개 통과, 실패·건너뜀 0; 약 15.06초 |
-| 추가된 컨테이너 잠금 검사 | 위 39개 중 9개. 실제 Linux 프로세스 SIGKILL·재시작, 인증·기억·결과 보존, 중복 실행과 부정확한 잠금 거절 |
-| Docker·실제 컨테이너·UID 1000 | 이 환경에서 실행 불가. Docker 이미지 빌드와 실제 컨테이너 권한·재시작 시험은 남음 |
-| Astra 검토 | 실제 배포 crate와 Tauri release lock으로 호환 버전을 확인. 네이티브 실행과 별개로 검토 기록을 구분함 |
+| 서비스 | `global-iris/yeno-core`, `7fb597dd-726e-45ee-bfde-7f695f6dc8ba` |
+| 실행 소스 | `yeno-koyeb-pilot`, `481d6ea4e679300b5644a0be6d36113a7c1374cc` |
+| 호스트 | Frankfurt Standard Micro, 고정 1개, HTTP 8790, 자동 배포 꺼짐 |
+| 영구 볼륨 | `yeno-core-data` 1 GB, `/var/lib/yeno` 마운트 |
+| 비밀값 | `YENO_TOKEN`이 Koyeb Secret `yeno-core-pairing`을 참조. 원문은 소스·시작 로그에 없음 |
+| 첫 Docker 빌드 | `Dockerfile.koyeb` 실제 성공, 배포 `153770e4-d07d-4896-8c86-96acf1f87d9a` Healthy |
+| 재시작 | 이전 이미지 재사용, 새 배포 `86051e67-c4f7-4390-b3e8-870a8828322c` Healthy, 이전 실행 Stopped |
+| HTTPS 실검사 | health 200, 무인증 state 401, 기기 등록 201, 인증 state 200 |
+| 작업·결과 | 문서 실제 완료, 결과 569 bytes, 서버 해시와 다운로드 SHA-256 일치, 같은 요청 재전송 시 같은 작업 |
+| 재시작 보존 | 새 시작 이벤트 확인 후 같은 기기 인증·완료 작업·요청 기록·결과 해시 유지 |
+| 시험 기기 정리 | 시험 기기만 폐기 200, 이후 해당 토큰의 state 접근 401 |
 
-서버 복구 수정은 위 APK를 만든 커밋 이후의 코어 변경이다. Android 앱 소스·API 계약을 바꾸지 않았다. 39개 로컬 검사 결과를 APK의 CI 검사 수로 합쳐 표시하지 않는다. 모델 어댑터 검사는 로컬 시험 공급자를 사용했다.
+세부 시각·작업 ID·해시와 한계는 [LIVE_ACCEPTANCE.md](LIVE_ACCEPTANCE.md)에 있다. 실제 볼륨에서 UID 1000 실행 경로의 마운트·쓰기·독점 잠금 검증을 통과한 코어가 응답했다. 이는 Koyeb 한 환경에서의 배포·재시작 검사이며 모든 장애에 대한 복구 보장은 아니다. 볼륨은 public preview이며 독립 백업·별도 저장소 복원은 다음 작업이다.
 
-## 폰 첫 화면 이후 상주 서버 준비 검증
+## 실제 APK와 로컬 검사
 
-- 사용자 Android 캡처: 설치 후 `본체 연결` 화면 표시 확인. 아직 실제 URL과 연결 키가 없어 등록 전이다.
-- 관리형 시작 경로 수정 후 전체 `npm test`: **43/43 통과**, 실패·건너뜀 0, 약 14.112초.
-- 그중 기존 커널 잠금 9개 + 새 Render 시작 검사 4개를 포함한다. 공유 실행 코드로 실제 Linux 프로세스·flock·HTTP 인증/호스트 거절·명령 접수·SIGKILL/재시작과 요청 기록 보존을 검사했다.
-- Render 양성 통합 검사에서 **마운트 정보만 시험 fixture를 사용**했다. 실제 Render 디스크를 생성하거나 검증했다는 뜻이 아니다. 실제 로컬 임시 디렉터리와 tmpfs, 누락된 디스크는 시작을 거절했다.
-- `sh -n scripts/start-render.sh`, 공유 service/config의 Node 구문 검사 통과.
-- 공식 `https://render.com/schema/render.yaml.json`의 JSON Schema 2020-12로 `render.yaml` 검증 통과. Schema SHA-256: `f6cb3fbae8c598d41385069bf7084293b48b802f88e1bc98b1c4b9c24a15be47`. Render 계정 API/서버 측 배포 검증은 아직 실행하지 않았다.
-- 실제 Render `flock` 설치·procfs·파일시스템 종류·UID/권한·HTTPS·재시작은 계정 연결과 비용 확인 이후의 남은 검증이다.
+- [Android 빌드 #2 시도 3](https://github.com/wooyeonho/yeno-os/actions/runs/34309339030/attempts/3) 성공. 앱 소스 `11a0e1f7f1cb09449a1a2f82b54f948fff416690`.
+- Android ARM64 디버그 APK 202,311,295 bytes, ZIP 53,464,710 bytes. APK SHA-256 `38de18459ef84735ef2d0c36f890cc3f4bb188d57d7b77eec6f369eb7d47ddd6`.
+- GitHub APK 아티팩트 `10088424404` 보관 만료 2026-09-16. ZIP/내부 파일/native library 및 Cargo.lock 일치를 확인했다.
+- 사용자 캡처로 Android 설치 후 첫 연결 화면 표시를 확인했다. 등록·암호 보관·폰 명령·앱 종료/재접속은 미검증이다.
+- APK CI: 코어 검사 30개 통과, TypeScript/Vite 빌드 통과, 실제 네이티브 APK 생성. SDK 누락·Tauri 의존성 충돌·아이콘 누락을 고친 이력은 CHANGELOG에 있다.
+- 최신 코어 로컬 Node 24.19.0 전체 검사: **46/46 통과**, 실패·건너뜀·취소 0, 14.388초. 실제 Linux 프로세스·flock·인증·명령·SIGKILL 재시작 포함. 양성 마운트 메타데이터와 EACCES 검사는 fixture다.
+- 이전 39/43개 결과는 과거 검증 시점이며 새 결과와 합산하지 않는다. 이번 운영 배포·문서 변경에서는 코드 회귀 검사를 불필요하게 다시 실행하지 않았다.
+- 일반 Docker와 Render 후보는 보존했다. 실제 Render 배포나 Windows EXE는 실행하지 않았다. 로컬 모델 어댑터 검사는 시험 공급자이며 유료 모델 호출이 아니다.
 
-## 수정한 실제 실패
+## 비용 조치와 기존 자원
 
-1. 최초 실행은 `sdkmanager: command not found`로 실패했다. SDK 도구를 명시적으로 설치하고 PATH를 설정하도록 수정했다.
-2. 다음 실행은 HTTP 플러그인이 요구하는 Tauri 최소 버전과 충돌했다. 실제 배포된 요구 조건에 맞춰 Tauri 2.8.2로 변경했다.
-3. 다음 컴파일은 서로 다른 시기의 Tauri runtime/wry 내부 조합 때문에 실패했다. Tauri 2.8.2 release lock의 호환 구성으로 내부 패키지를 고정하고 전체 Cargo.lock을 생성해 재검증했다.
-4. 네이티브 코드 생성에 필요한 PNG 아이콘 누락도 찾아 SVG 원본과 Tauri CLI로 생성했다.
+- 소유자 승인에 따라 기존 Koyeb `gyeol-openclaw/gyeol-gateway`를 Pause했다. 이전 운영 배포 `9b2c4c0b`는 Stopped, 실행 0개. DB·서비스·기존 환경을 삭제하지 않았다. 기존 자동 학습·예약 활동은 이 실행기 중지 동안 멈춘다.
+- 새 YENO Micro 견적 월 $5.36. 중지된 Gyeol Nano의 계속 실행 시 계산비 약 $2.68/월을 피한다. 실제 청구는 사용 시간·크레딧·세금에 따르므로 이것을 총 청구서의 확정 절감액으로 표시하지 않는다.
+- Supabase Pro 조직 3개 프로젝트 모두 Micro: 해당 주기 누적 $30.97, 화면 예상 $49.46, 지난 8/24 결제 $33.92. Spend Cap 켜짐. Vercel Pro 예정액 $20, 크레딧 $3.14/$20, 초과 $0.
+- Supabase·Vercel 구독/앱/DB를 변경하지 않았다. Gyeol의 실제 DB ref `qobzxoamlmcuwxibqomd`는 Pro 인벤토리 3개와 다르다. 존재하는 데이터를 미사용으로 단정하지 않는다.
+- 상세 내역과 다음 축소 후보는 [HOSTING_REUSE_AUDIT.md](HOSTING_REUSE_AUDIT.md).
 
-현재 workflow는 Cargo.lock을 다시 생성한다. 이번 실행의 lock은 기록한 파일과 일치했지만 앞으로 전체 그래프가 절대 변하지 않는다고 보장하지 않는다. 정식 릴리스 전 workflow를 `--locked` 검증으로 전환하고 정식 서명·업데이트 경로를 검증해야 한다.
+## 현재 기능과 다음 단계
 
-## 현재 기능과 상주 코어 후보
+현재: 기기 등록·인증·폐기, 기억 저장/검색, 입력 내용 문서화, 진단, 작업 정지·재개·취소·전체 정지. 앱에는 HTTPS 주소, Stronghold 인증 보관과 지속 요청 ID가 있다. 대기 명령과 마지막 응답은 localStorage이며 Stronghold 암호화 대상이 아니다.
 
-- 코어 0.2.0 후보: 버전별 API, 기기 등록·인증·폐기, 기억 저장·검색, 실제 문서·진단 결과, 중단·재개·취소·전체 정지.
-- 앱: HTTPS 코어 주소, 암호로 잠긴 Stronghold, 지속 요청 ID, 거절/통신 불확실성 구분, 기억 검색·결과 표시, 재접속 처리.
-- 등록 토큰 원문을 응답 캐시에 남기지 않는 저장 방식과 기존 데이터 보존형 정리.
-- `Dockerfile`, `compose.yaml`, `.dockerignore`, `PERSISTENT_CORE.md`: 영속 볼륨, 토큰을 출력하지 않는 시작 경로, 단일 쓰기, 정상 종료와 검증된 커널 잠금 기반 crash 재시작 후보.
-- 컨테이너 모드는 상속된 실제 독점 flock을 확인해야 시작한다. 일반 실행은 해당 데이터 디렉터리를 거절한다. 과거 runtime.lock이 남으면 삭제하거나 무시하지 않고 시작을 거절한다.
+아직 없음/미검증: 실제 AI 모델 연결·비용 제한 실검증, 일반 자연어 도구 실행 루프, Windows/노트북 파일·화면 제어, 자율 개선 배포, Supabase 영속 저장/독립 백업 복원. 단일 프로세스 JSON 코어이며 분산 운영으로 확장하지 않았다.
 
-단일 프로세스 JSON 저장소는 유지한다. 분산 운영·SQLite 마이그레이션·일반 자연어 도구 루프·자동 개선 배포는 완료되지 않았다. 앱의 대기 명령·마지막 응답은 localStorage에 저장되며 Stronghold 암호화 대상은 아니다.
-
-## 기존 Koyeb 계정 연결과 전용 후보
-
-- 실제 소유자 Koyeb 로그인과 `wooyeonho/yeno-os` 저장소 선택 가능 상태를 확인했다. 추가 GitHub 권한 변경은 하지 않았다.
-- 기존 Gyeol Nano 서비스는 이전 Healthy 배포로 실행 중이며, YENO가 아니다. 기존 서비스를 수정·재배포하지 않았다.
-- `Dockerfile.koyeb`, Koyeb 전용 시작/config, 공유 마운트 검증과 검사 3개를 추가했다. 실제 볼륨 쓰기 권한 확인 이후 단일 독점 잠금으로 실행하며 임시 저장소로 우회하지 않는다.
-- 최종 전체 `npm test`: **46/46 통과**, 실패·건너뜀·취소 0, **14.388초**. shell/Node 구문 검사 통과. 위 43개 기록은 이전 검증 시점이며 46개는 이후 전체 결과다.
-- 실제 Linux 프로세스·HTTP·문서 결과·인증·중복 실행 거절·SIGKILL 재시작을 실행했다. 양성 마운트 메타데이터와 권한 오류는 fixture다. 실제 Docker 빌드·Koyeb UID 1000 쓰기·procfs·HTTPS·폰 등록은 미검증이다.
-- 생성 화면 기준 Frankfurt Standard Micro 서버는 월 **$5.36 추가**다. 전용 볼륨 1 GB 후보, preview 비용 근거와 한계는 `KOYEB_SETUP.md`에 기록했다.
-- **YENO 서비스·볼륨·비밀값은 생성하지 않았다.** 새 지출 승인과 실제 배포 검증을 남겼다. 계정 로그인 성공을 운영 코어 연결 완료로 표시하지 않는다.
-
-## 다음 연결
-
-소유자가 새 Koyeb 비용에 동의하면서 **기존 Supabase·Vercel 구독 재사용과 불필요한 비용 축소**를 우선 요청했다. 신규 Koyeb 생성은 보류했고, 기존 Gyeol을 중지하지 않았다. `HOSTING_REUSE_AUDIT.md`에 실제 계정·비용·실행 의존성을 기록했다.
-
-- Supabase: Pro 조직의 비어 있지 않은 프로젝트 3개 확인. `buzz-hq`의 격리된 YENO 저장소 재사용과 `hankki-anbu` 휴면 여부를 검토한다. Pro 프로젝트는 직접 Pause할 수 없으며 Free 조직 이전 조건부터 확인해야 한다.
-- Vercel: 실제 결제 화면의 예정액 $20, 크레딧 $3.14/$20, 초과 $0. 실제 프로젝트 카드 최소 12개와 추가 조회 버튼이 보여 연결 도구의 0개 결과와 불일치했다. 전체 목록·정확한 운영 연결은 아직 미확정이다.
-- Koyeb: 실행 중 Gyeol 소스는 자동 작업 13개와 lifeline 1개를 담당한다. 닫으면 해당 자동 활동이 중단되므로 사용 여부·데이터·복원 경로를 확인한 뒤 전환한다.
-- 이번 변경은 읽기 전용 감사와 문서화다. 기존 46/46 검사를 새 Supabase/Vercel 통합 성공으로 표시하지 않는다. 비용 절감·구독 변경·신규 통합·배포는 아직 실행하지 않았다.
-
-다음 구현은 기존 API/기기 인증과 요청 중복 방지를 보존하는 저장소 어댑터·작업 실행 분리 후보다. 운영 데이터 이전 전에 시험 데이터로 명령·결과·재접속·복원·전체 정지를 검증한다. 기존 Koyeb/Render/Docker 후보 브랜치는 보존한다.
-
-원래 수입한 0.1.1과 노트북의 별도 0.2.3 설치를 구분하며, 기존 노트북 데이터를 읽거나 덮어쓰거나 마이그레이션하지 않았다.
+다음은 Android 실기기 첫 명령·재접속 확인, 기존 유료 자원을 활용한 독립 백업과 복원, 실제 모델 연결 및 비용 한도 순으로 진행한다. 앱/서버에 없는 기능을 활성화됐다고 표시하지 않는다. 원본 0.1.1과 노트북의 별도 0.2.3 설치를 구분하며 기존 노트북 데이터를 읽거나 덮어쓰거나 마이그레이션하지 않았다.
