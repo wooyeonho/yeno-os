@@ -9,6 +9,8 @@ import {acquireContainerLease} from './lib/container-lease.mjs';
 import {ProjectError,projectNameKey,validateProjectFields,resolveProject,projectRegistryDocument,projectBriefDocument} from './lib/projects.mjs';
 import {SourceError,validateSourceFields,planSourceImport,resolveSource,sourceRegistryDocument,sourceBriefDocument} from './lib/sources.mjs';
 import {operatingBriefDocument} from './lib/operations.mjs';
+import {exportBackup} from './lib/backup.mjs';
+import {DeviceAdminError,publicDevices,revokeDevice} from './lib/device-admin.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const VERSION='0.2.2';
@@ -202,6 +204,37 @@ export function createYenoServer(options={}) {
      const principal=authenticate(req,versioned);
      if(versioned)url.pathname=url.pathname.replace(/^\/api\/v1/,'/api');
      ensureDurable();
+     if(req.method==='GET'&&url.pathname==='/api/devices'){
+       if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required for device administration');
+       return respond(res,200,{devices:publicDevices(s)});
+     }
+     const ownerRevoke=url.pathname.match(/^\/api\/devices\/([^/]+)\/revoke$/);
+     if(req.method==='POST'&&ownerRevoke){
+       if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required for device administration');
+       const b=await body(req);
+       if(typeof b.requestId!=='string'||!b.requestId.trim())throw new HttpError(400,'Persistent requestId required');
+       const result=mutation(req,url,b,()=>{
+         const receipt=revokeDevice(s,ownerRevoke[1]);
+         if(!receipt.alreadyRevoked)event(`Device revoked by owner: ${receipt.deviceId}`);
+         return {status:200,payload:receipt};
+       });
+       return respond(res,result.status,result.payload);
+     }
+     // Full backups contain private state and credential hashes. Only the
+     // owner's pairing credential may export them; device tokens cannot.
+     // This read operation is deliberately outside mutation/receipt storage:
+     // the one-use encryption key must never be saved in runtime state.
+     if(req.method==='POST'&&url.pathname==='/api/backups/export'){
+       if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required for backup export');
+       const b=await body(req);
+       if(Object.keys(b).some(key=>key!=='encryptionKey')||typeof b.encryptionKey!=='string'||!/^[a-f0-9]{64}$/i.test(b.encryptionKey))throw new HttpError(400,'A random 32-byte hexadecimal encryptionKey is required');
+       ensureDurable();
+       const key=Buffer.from(b.encryptionKey,'hex');
+       let archive;
+       try{archive=exportBackup({state:s,dataDir,key});}finally{key.fill(0);delete b.encryptionKey;}
+       res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Disposition':'attachment; filename="yeno-backup.yenobak"','Content-Length':archive.length,'X-Content-SHA256':digest(archive)});
+       return res.end(archive);
+     }
      if(req.method==='POST'&&url.pathname==='/api/devices/revoke'){
        await body(req);const id=principal.device?.id;if(!id||!s.devices[id])throw new HttpError(404,'Device not found');s.devices[id].revokedAt=now();event(`Device revoked: ${s.devices[id].name}`);save();return respond(res,200,{revoked:true,deviceId:id});
      }
@@ -264,7 +297,7 @@ export function createYenoServer(options={}) {
        throw new HttpError(404,'Not found');
      });
      respond(res,result.status,result.payload);
-   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError;respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
+   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError;respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
  });
  server.requestTimeout=15000;server.headersTimeout=10000;
  function shutdown(){if(closed)return;closed=true;clearTimeout(schedulerTimer);for(const job of s.jobs)if(['running','queued'].includes(job.status)){job.status='paused';job.pauseReason='shutdown';touch(job);}for(const controller of controllers.values())controller.abort();event('Runtime stopped; unfinished jobs paused.');try{save();}finally{releaseLock();server.close();}}

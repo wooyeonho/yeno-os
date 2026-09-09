@@ -35,6 +35,11 @@ function encodeState(state) {
  return JSON.stringify({format:1,sha256:digest(payload),payload});
 }
 export function openStore(directory) {
+ // A crashed restore must never be interpreted as an empty first-run store.
+ // lstat also rejects a dangling marker symlink; only completed restoration
+ // removes this marker after the state and artifacts are durable.
+ try {fs.lstatSync(path.join(directory,'restore-in-progress'));throw new Error('Backup restore is incomplete. Preserve this directory and restore into a new directory.');}
+ catch(error){if(error.code!=='ENOENT')throw error;}
  fs.mkdirSync(directory,{recursive:true,mode:0o700});
  const file=path.join(directory,'state.json');
  let state, recovered=false;
