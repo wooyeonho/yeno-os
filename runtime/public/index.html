@@ -11,9 +11,10 @@
 <body>
   <div class="shell">
     <aside class="sidebar">
-      <a class="brand" href="/" aria-label="YENO 조종석"><span class="brand-icon">Y</span><span>YENO<small>PERSONAL RUNTIME / 0.1</small></span></a>
+      <a class="brand" href="/" aria-label="YENO 조종석"><span class="brand-icon">Y</span><span>YENO<small>PERSONAL RUNTIME</small></span></a>
       <nav aria-label="주 메뉴">
         <button class="nav active" data-tab="control"><span>⌘</span> 조종석</button>
+        <button class="nav" data-tab="projects"><span>▤</span> 프로젝트 <span id="project-count" class="count">—</span></button>
         <button class="nav" data-tab="memory"><span>◈</span> 기억 <span id="memory-count" class="count">—</span></button>
         <button class="nav" data-tab="recovery"><span>↶</span> 복구</button>
         <button class="nav" data-tab="settings"><span>≡</span> 능력·설정</button>
@@ -25,7 +26,7 @@
       <div id="offline-banner" class="banner" hidden>본체의 최신 상태를 확인하지 못했습니다. 명령 완료 여부를 확인해 주세요. <button id="reconnect" class="text-button">다시 연결</button></div>
       <section id="tab-control" class="tab-panel">
         <section class="core-panel">
-          <div class="core-heading"><div class="core-signal" id="core-signal" aria-hidden="true"><span></span></div><div><span class="eyebrow">YENO CORE</span><h2 id="core-title">연결을 기다리고 있어요.</h2><p id="core-subtitle">PC의 연결 키로 조종석을 열어주세요.</p></div><span class="version-label">BUILD 001</span></div>
+          <div class="core-heading"><div class="core-signal" id="core-signal" aria-hidden="true"><span></span></div><div><span class="eyebrow">YENO CORE</span><h2 id="core-title">연결을 기다리고 있어요.</h2><p id="core-subtitle">실행 본체의 개인 연결 키로 조종석을 열어주세요.</p></div></div>
           <form id="command-form"><label for="command">무엇을 할까요?</label><textarea id="command" rows="3" placeholder="기억해: YENO는 내가 폰에서 조종하는 개인 도구다." maxlength="80000" required></textarea><div class="command-footer"><select id="command-type" aria-label="작업 종류"><option value="command">기본 명령</option><option value="document">입력 내용 문서화</option><option value="ai">AI 작성 · 연결 필요</option></select><span id="ai-label" class="muted">AI 연결 확인 전</span><button id="send-command" class="button primary" type="submit" disabled>실행 <span>↗</span></button></div></form>
           <div class="quick-actions"><button data-example="기억해: ">기억해</button><button data-example="찾아줘: ">기억 찾기</button><button data-example="문서 만들어: ">문서 만들기</button><button data-quick="diagnostics">본체 진단</button><button data-quick="evolution">개선점 찾기</button></div>
           <div id="command-result" class="command-result" aria-live="polite" hidden></div>
@@ -33,12 +34,33 @@
         <div class="summary-row"><div><span>진행 중</span><strong id="running-count">—</strong></div><div><span>멈춤·대기</span><strong id="pending-count">—</strong></div><div><span>완료</span><strong id="done-count">—</strong></div><div><span>실행 규모</span><strong id="slot-count">—</strong></div></div>
         <div class="workspace-grid"><section><div class="section-heading"><h2>작업</h2><span id="jobs-count" class="muted">본체 연결 전</span></div><div id="jobs-list" class="jobs-list"><div class="empty">연결하면 작업 상태가 여기에 표시됩니다.</div></div></section><aside class="activity"><div class="section-heading"><h2>실행 기록</h2></div><ol id="events-list"><li class="muted">아직 확인한 기록이 없습니다.</li></ol></aside></div>
       </section>
+      <section id="tab-projects" class="tab-panel" hidden>
+        <div class="section-heading project-heading"><div><h2>한곳에서 이어가는 프로젝트</h2><p class="muted">목표와 다음 작업을 보관하고, 다시 시작할 때 필요한 문서를 만듭니다.</p></div><button id="add-project" class="button primary" disabled>프로젝트 추가</button></div>
+        <div class="panel project-capability"><h3 id="project-worker-status">개발 작업자 연결 확인 전</h3><p id="project-worker-detail" class="muted">본체에 연결하면 현재 가능한 작업을 확인합니다.</p></div>
+        <div id="project-request-status" class="banner" aria-live="polite" hidden><span id="project-request-message"></span><button id="retry-project" class="text-button" hidden>같은 요청 재시도</button></div>
+        <div id="projects-list" class="projects-list"><div class="empty">연결하면 프로젝트가 여기에 표시됩니다.</div></div>
+      </section>
       <section id="tab-memory" class="tab-panel" hidden><div class="section-heading"><div><h2>이어지는 기억</h2><p class="muted">저장한 내용을 본체에서 다시 찾습니다.</p></div></div><form id="memory-form" class="panel"><label for="memory-text">새 기억</label><textarea id="memory-text" rows="3" placeholder="다음에도 기억할 결정이나 내용을 적어주세요." maxlength="20000" required></textarea><button class="button primary" type="submit">기억 저장</button></form><label for="memory-search" class="search-label">기억 검색</label><input id="memory-search" type="search" placeholder="찾을 단어"><div id="memories-list" class="memory-list"></div></section>
       <section id="tab-recovery" class="tab-panel" hidden><div class="section-heading"><div><h2>돌아갈 지점</h2><p class="muted">현재 버전은 기억·모듈 설정·실행 규모를 복원합니다. 작업 이력과 결과 파일은 유지합니다.</p></div></div><form id="snapshot-form" class="panel horizontal-form"><label class="grow" for="snapshot-label">저장 시점 이름<input id="snapshot-label" placeholder="예: 기능 변경 전" maxlength="120" required></label><button class="button primary" type="submit">현재 상태 저장</button></form><div id="snapshots-list" class="snapshot-list"></div><p class="muted recovery-note">복원 전 상태도 자동으로 보관합니다. 복원 후 작업은 멈춤 상태이며, 원할 때 개별 작업을 재개할 수 있습니다.</p></section>
-      <section id="tab-settings" class="tab-panel" hidden><div class="section-heading"><h2>능력과 실행 규모</h2></div><div class="panel"><div class="setting-row"><div><h3>동시에 일하는 수</h3><p>처음에는 1개로 시작하세요. 줄이면 새 작업 배정부터 줄어듭니다.</p></div><select id="concurrency" aria-label="동시에 일하는 수"><option value="1">1개</option><option value="2">2개</option><option value="3">3개</option></select></div><div id="module-settings"></div></div><div class="panel"><h3>본체 연결</h3><p id="runtime-info" class="muted">연결 전</p><button id="disconnect-mobile" class="button subtle">이 기기 연결 해제</button><p class="muted">폰에서 사용하려면 실행 중인 PC와 개인 연결이 필요합니다. 패키지의 PHONE_SETUP.md를 따라 연결할 수 있습니다.</p></div><div class="panel"><h3>현재 가능한 작업</h3><p>기억 저장·검색, 제공한 내용의 문서화, 본체 진단, 실행 이력 기반 개선 제안. 외부 AI를 설정하면 AI 작성 작업을 직접 실행할 수 있습니다.</p><p class="muted">자유로운 PC 앱 조작·음성·운영 코드 자동 개선은 아직 연결하지 않았습니다.</p></div></section>
+      <section id="tab-settings" class="tab-panel" hidden><div class="section-heading"><h2>능력과 실행 규모</h2></div><div class="panel"><div class="setting-row"><div><h3>동시에 일하는 수</h3><p>처음에는 1개로 시작하세요. 줄이면 새 작업 배정부터 줄어듭니다.</p></div><select id="concurrency" aria-label="동시에 일하는 수"><option value="1">1개</option><option value="2">2개</option><option value="3">3개</option></select></div><div id="module-settings"></div></div><div class="panel"><h3>본체 연결</h3><p id="runtime-info" class="muted">연결 전</p><button id="disconnect-mobile" class="button subtle">이 기기 연결 해제</button><p class="muted">이 조종석을 제공하는 실행 본체에 연결합니다. 상주 서버를 사용하면 노트북이 꺼져 있어도 서버에 맡긴 작업을 확인할 수 있습니다.</p></div><div class="panel"><h3>현재 가능한 작업</h3><p>프로젝트 관리·브리핑·작업 준비 문서, 기억 저장·검색, 제공한 내용의 문서화, 본체 진단, 실행 이력 기반 개선 제안. 외부 AI를 설정하면 AI 작성 작업을 직접 실행할 수 있습니다.</p><p class="muted">자유로운 PC 앱 조작·음성·운영 코드 자동 개선은 아직 연결하지 않았습니다.</p></div></section>
     </main>
   </div>
-  <div id="pair-screen" class="pair-screen"><form id="pair-form" class="pair-card"><div class="brand"><span class="brand-icon">Y</span><span>YENO<small>YOUR PERSONAL RUNTIME</small></span></div><h2>본체와 연결하세요.</h2><p>PC에서 YENO를 실행한 뒤 표시되는 연결 키를 입력하세요.</p><label for="pair-token">연결 키</label><input id="pair-token" type="password" autocomplete="off" required placeholder="PC에 표시된 연결 키"><p id="pair-error" class="form-error" role="alert"></p><button class="button primary" type="submit">조종석 열기</button><small>키는 현재 브라우저 탭에 보관됩니다.</small></form></div>
+  <div id="pair-screen" class="pair-screen"><form id="pair-form" class="pair-card"><div class="brand"><span class="brand-icon">Y</span><span>YENO<small>YOUR PERSONAL RUNTIME</small></span></div><h2>본체와 연결하세요.</h2><p>이 YENO 실행 본체의 개인 연결 키를 입력하세요. 상주 서버에 연결할 때는 노트북을 켤 필요가 없습니다.</p><label for="pair-token">연결 키</label><input id="pair-token" type="password" autocomplete="off" required placeholder="전달받은 개인 연결 키"><p id="pair-error" class="form-error" role="alert"></p><button class="button primary" type="submit">조종석 열기</button><small>키는 현재 브라우저 탭에 보관됩니다.</small></form></div>
+  <dialog id="project-dialog" aria-labelledby="project-form-title">
+    <form id="project-form">
+      <div class="dialog-top"><h2 id="project-form-title">프로젝트 추가</h2><button type="button" class="button subtle" data-close="project-dialog">닫기</button></div>
+      <div class="project-fields">
+        <label for="project-name">프로젝트 이름<input id="project-name" maxlength="80" required placeholder="예: 나만의 콘텐츠 도구"></label>
+        <label for="project-repository">GitHub 저장소 주소 · 선택<input id="project-repository" type="url" maxlength="220" placeholder="https://github.com/계정/저장소"></label>
+        <label for="project-summary">목표와 현재 상황<textarea id="project-summary" rows="3" maxlength="8000" placeholder="무엇을 만들고 있고, 어디까지 진행했나요?"></textarea></label>
+        <label for="project-next-action">다음 작업<textarea id="project-next-action" rows="2" maxlength="4000" placeholder="다음에 이어서 할 구체적인 작업을 적어주세요."></textarea></label>
+        <label for="project-status">YENO에서 관리할 상태<select id="project-status" aria-describedby="project-status-note"><option value="active">진행</option><option value="paused">보류</option><option value="archived">보관</option></select></label>
+        <p id="project-status-note" class="muted">보류·보관은 YENO의 프로젝트 관리 상태입니다. 기존 서버·구독이나 실행 중인 작업을 중지하지 않습니다.</p>
+      </div>
+      <p id="project-form-error" class="form-error" role="alert"></p>
+      <div class="dialog-actions"><button id="reload-project" type="button" class="button subtle" hidden>입력 대신 최신 내용 불러오기</button><button id="save-project" type="submit" class="button primary">프로젝트 저장</button></div>
+    </form>
+  </dialog>
   <dialog id="artifact-dialog"><div class="dialog-top"><h2 id="artifact-title">결과물</h2><button class="button subtle" data-close="artifact-dialog">닫기</button></div><pre id="artifact-content"></pre><button id="download-artifact" class="button primary">파일 다운로드</button></dialog>
   <dialog id="restore-dialog"><h2>이 시점으로 복원할까요?</h2><p id="restore-label"></p><p>기억·능력 설정·실행 규모가 바뀝니다. 작업 이력과 결과 파일은 유지하고 현재 상태도 보관합니다.</p><p>실행 중인 작업이 있으면 먼저 멈춰주세요.</p><div class="dialog-actions"><button class="button subtle" data-close="restore-dialog">그대로 두기</button><button id="confirm-restore" class="button primary">복원하기</button></div></dialog>
   <div id="toast" role="status" class="toast" hidden></div>

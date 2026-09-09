@@ -2,32 +2,40 @@
 
 확인일: 2026-09-09. 사용자는 기존 Koyeb·Supabase·Vercel을 재사용하고 불필요한 지출을 줄이도록 요청했다.
 
-**실행 결과: 기존 Gyeol Koyeb 서비스를 Pause했고, 새 YENO Micro 코어의 실제 Docker 빌드·Healthy 배포와 첫 HTTP 명령·결과를 확인했다.** 기존 Supabase·Vercel 재사용은 후속 저장소·API 분리 구현으로 이어간다. YENO 재시작 후 같은 인증·작업·결과 보존까지 통과했으며 APK에서의 연결·명령은 아직 검증 전이다. 이 기록을 Supabase 통합이나 최종 청구액 확정으로 해석하지 않는다.
+**실행 결과: 기존 Gyeol Koyeb 서비스를 Pause했고, 새 YENO Micro 코어의 실제 Docker 빌드·Healthy 배포와 첫 HTTP 명령·결과를 확인했다. `hankki-anbu`는 기존 Free 조직으로 이전했고, 같은 프로젝트 ID와 `ACTIVE_HEALTHY` 상태를 확인했다.** Supabase 프로젝트는 Pause·삭제하지 않았다. 기존 Supabase·Vercel의 YENO 통합은 후속 저장소·API 분리 구현으로 이어간다. YENO 재시작 후 같은 인증·작업·결과 보존까지 통과했으며 APK에서의 연결·명령은 아직 검증 전이다. 이 기록을 Supabase 통합이나 최종 청구액 확정으로 해석하지 않는다.
 
 ## 확인 범위와 현재 상태
 
 - 소유자 계정의 서비스·결제 화면, 연결 도구의 프로젝트 메타데이터, 내용이 아닌 DB 건수·최신 시각·예약 작업 메타데이터, Gyeol 소스를 읽었다.
-- 최초 감사 후 소유자 승인에 따라 Gyeol Koyeb을 Pause했고, YENO 1 GB 볼륨·연결 Secret·Micro 서비스를 생성·배포했다. DB 삭제·마이그레이션과 Supabase·Vercel 구독·설정 변경은 하지 않았다.
+- 최초 감사 후 소유자 승인에 따라 Gyeol Koyeb을 Pause했고, YENO 1 GB 볼륨·연결 Secret·Micro 서비스를 생성·배포했다. 이후 비용 정리 승인 범위에서 `hankki-anbu`를 기존 Pro 조직에서 기존 Free 조직으로 이전했다. DB 삭제·복제·스키마 변경과 Vercel 구독·설정 변경은 하지 않았다.
 - 비밀키·개인 기록 본문·원시 운영 로그를 이 문서에 저장하지 않는다. 아래 프로젝트 식별자는 연결 대상을 구분하는 메타데이터다.
 - 기존 Android APK와 `/api/v1` 계약을 보존한다. 직전 코어 검사 46/46 통과는 기존 구현의 증거이며, 이 감사에서 Supabase 저장소나 Vercel 배포를 시험했다는 뜻은 아니다.
 
 ## Supabase: 기존 프로젝트를 먼저 활용
 
-실제 Supabase 로그인 계정은 `wooyeonho`이며, `prompt-market` Pro 조직의 프로젝트 3개와 `wooyeonho's Org` Free 조직의 프로젝트 1개를 확인했다. Free 조직 프로젝트의 상세 상태는 아직 조사하지 않았다. `prompt-market` / `cwyxlqqfhcpsipqjfcef`에서 확인한 세 프로젝트는 모두 Micro, `ACTIVE_HEALTHY`이고 데이터가 있다.
+실제 Supabase 로그인 계정은 `wooyeonho`다. 최초 감사에서는 `prompt-market` Pro 조직의 Micro 프로젝트 3개와 `wooyeonho's Org` Free 조직의 프로젝트 1개를 확인했다. 이후 `hankki-anbu` 이전을 완료해 **Pro에는 For-Ai·buzz-hq 2개가 남고, hankki-anbu는 Free 조직에서 실행 중**이다. Free 조직에 원래 있던 다른 프로젝트의 상세 상태는 아직 조사하지 않았다.
 
-| 프로젝트 | 식별자·지역 | 읽기 전용 확인 | 우선 판단 |
+| 프로젝트 | 식별자·지역 | 최초 읽기 전용 확인 | 현재 상태·판단 |
 | --- | --- | --- | --- |
 | For-Ai | `gahjbktjwdeityjvfeet` / Tokyo | 9월 9일 rate-limit 기록, 1분 간격 알림 cron | 사용 흔적이 있어 유지. 알림의 실효성과 중복 실행 여부를 확인한 뒤 빈도 조정 검토 |
-| hankki-anbu | `eigtgdnaejhjokuevnyl` / Seoul | 최근 메시지 8월 15일, checkins 0건 | 휴면 후보. 배포·사용자·예약 작업 연결과 백업 확인 전에는 중지하지 않음 |
+| hankki-anbu | `eigtgdnaejhjokuevnyl` / Seoul | 최근 메시지 8월 15일, checkins 0건. 한끼 `hb_*`와 여기 `yeogie_*` 기능이 같은 DB에 존재 | **Free 조직으로 이전 완료**, 같은 프로젝트 ID·`ACTIVE_HEALTHY` 확인. Pause·삭제 없음 |
 | buzz-hq | `xgpznpdivxmeafpallhu` / Seoul | 실제 runs·artifacts 최근 기록 8월 17일. 최근 7일 감사 672건 모두 15분 간격 `operator_tick` | 기존 데이터를 보존하며 YENO 저장소 재사용 후보. 반복 tick 수는 실사용 성과와 구분 |
 
 세 프로젝트에서 확인한 Auth 사용자·Storage bucket·object는 각각 0건이다. 다른 테이블과 외부 인증·서비스 계정 사용 가능성이 있으므로 미사용 증거로 삼지 않는다. 작은 실제 DB 크기도 청구되는 compute나 할당 디스크 크기와 같지 않다.
 
-**실제 결제 화면: 8월 24일~9월 24일 주기의 현재 누적 $30.97, 예상 청구 $49.46.** 확인한 구성은 Pro $25 + 누적 compute $15.97 − compute credit $10 = $30.97이다. 8월 24일의 이전 청구 $33.92는 Paid였으며 현재 주기와 합산하지 않는다. Spend Cap은 켜져 있고, 확인한 화면에는 별도 add-on이 보이지 않았다. 예상 $49.46을 확정 청구나 항상 같은 월 요금으로 취급하지 않는다.
+**이전 전 결제 화면 기록: 8월 24일~9월 24일 주기의 누적 $30.97, 예상 청구 $49.46.** 당시 구성은 Pro $25 + 누적 compute $15.97 − compute credit $10 = $30.97이었다. 이는 Micro 3개였던 시점의 기록이며 **Free 이전 후 새 청구 예상액이 아니다**. 8월 24일의 이전 청구 $33.92는 Paid였으며 현재 주기와 합산하지 않는다. Spend Cap은 켜져 있었고, 확인한 화면에는 별도 add-on이 보이지 않았다. 최종 청구액과 이전 이후 갱신된 예상액은 아직 확인하지 않았다.
 
 프로젝트별 compute는 DB 사용량과 독립적으로 청구된다. 정리 효과는 실제 인스턴스·시간·청구 항목으로 계산해야 하며, 작은 DB나 켜진 Spend Cap만으로 compute 지출이 없어지는 것은 아니다. [공식 compute 과금](https://supabase.com/docs/guides/platform/manage-your-usage/compute)
 
-**유료 플랜 프로젝트는 바로 Pause할 수 없다.** 공식 문서상 먼저 Free 조직으로 이전해야 한다. `hankki-anbu` 등의 절감 후보는 Free 조직의 존재·허용량·이전 조건과 백업을 확인한 뒤 구체화한다. 전체 Pro 조직을 내려서 다른 프로젝트까지 영향을 주거나, 중지를 위해 데이터를 삭제하지 않는다. Free 이전 이후의 복원 기간도 영구 보존과 다르다. [공식 프로젝트 중지 조건](https://supabase.com/docs/guides/platform/free-project-pausing)
+### 완료: hankki-anbu를 기존 Free 조직으로 이전
+
+- 대상은 기존 프로젝트 `eigtgdnaejhjokuevnyl` 하나다. 원본 `prompt-market` / `cwyxlqqfhcpsipqjfcef`에서 `wooyeonho's Org` / `yknrfmdnokrpnxfxrviz`로 이전했다. 조직 전체의 Pro 플랜은 유지했다.
+- 실제 이전 화면에서 Free Nano 전환과 1~2분 중단 가능성을 확인한 뒤 실행했다. 완료 후 프로젝트 메타데이터의 새 `organization_id`와 `ACTIVE_HEALTHY`를 확인했다. 실제 중단 시간을 계측한 것은 아니다.
+- 이전 전후 SQL에서 public 테이블 9개·뷰 1개·함수 22개, Auth 사용자 0명·Storage 객체 0개가 같았다. 함수 정의 해시 `6073bdfce195a5eb5aeb658d9a5188eb`도 같았다. 이는 확인한 구조·개수·함수 정의의 비교이며 전체 행의 독립 백업·복원 시험이나 두 앱의 사용자 흐름 시험은 아니다.
+- 프로젝트를 Pause·삭제하거나 데이터를 다른 DB로 복사하지 않았다. 한끼·여기 기능이 공유하는 DB를 계속 실행하는 방식으로 비용을 줄였다. 기존 GitHub 저장소의 main은 초기 Next 화면이어서 실제 운영 코드·환경 연결을 완전히 대조한 상태는 아니다.
+- 앞으로 한 달 내내 유료 Micro를 실행했을 때의 **compute 약 $10를 피하는 추정**이다. 이전 전 발생한 사용료는 남고, 이전 직후 청구액이 $10 줄었다고 확인한 것은 아니다. [공식 프로젝트 이전·과금 조건](https://supabase.com/docs/guides/platform/project-transfer)
+
+Free 프로젝트는 낮은 활동이 지속되면 자동 정지될 수 있으며 Pro의 일별 백업 혜택을 계속 받는 것으로 간주하지 않는다. 이전 전 화면의 물리 백업 7개는 확인했지만 독립적으로 내려받은 dump와 복원 검증은 없다. 향후 장기 보관·삭제·통합 전에 별도 백업·복원을 검증해야 한다. **유료 프로젝트는 바로 Pause할 수 없고**, 이번 실행은 Free 조직 이전 후 활성 상태 유지다. [공식 프로젝트 중지 조건](https://supabase.com/docs/guides/platform/free-project-pausing), [백업 범위](https://supabase.com/docs/guides/platform/backups)
 
 `buzz-hq` 재사용은 기존 테이블을 YENO 테이블로 바꾸는 작업이 아니다. 노출되지 않는 별도 schema와 비공개 결과 bucket, 최소 권한의 서버 접근을 후보로 삼는다. API에 노출하는 테이블은 권한과 RLS를 함께 설계한다. 이 분리·저장소 어댑터는 아직 구현하지 않았다.
 
@@ -43,9 +51,9 @@
 | `gyeol-ai-origin` | Gyeol_ai 저장소 연결 | Gyeol과 저장소가 다르므로 이름만 보고 합치지 않음 |
 | `gyeol-linker-83f9de9b`, `prompt-jeongeum-market` | 카드 존재 확인 | 역할·의존성 추가 확인 대상 |
 
-실제 결제 화면에서 예정 청구 **$20**, 포함 크레딧 사용 **$3.14 / $20**, on-demand **$0**를 확인했다. 이는 확인 시점 값이며 최종 청구 확약이 아니다. 지출 알림은 $200, Auto Pause는 Off였다. 설정은 변경하지 않았다.
+실제 결제 화면에서 예정 청구 **$20**, 포함 크레딧 사용 **$3.14 / $20**, on-demand **$0**를 확인했다. 확인한 화면에 별도 add-on은 보이지 않았다. 이는 확인 시점 값이며 최종 청구 확약이 아니다. 지출 알림은 $200, Auto Pause는 Off였다. **Vercel Pro와 설정은 변경하지 않았다.**
 
-중복 프로젝트의 자동 빌드를 줄이면 사용량 낭비를 줄일 수 있다. 그러나 다른 프로젝트가 Pro를 계속 사용한다면 프로젝트 하나를 지워도 기본 Pro 비용 $20가 사라지지 않는다. 우선 기존 Pro에서 YENO 웹/API를 재사용하고, 상용 사용·cron·실사용량을 확인한 뒤 플랜 변경을 판단한다. [Vercel 과금 구조](https://vercel.com/docs/pricing)
+중복 프로젝트의 자동 빌드를 줄이면 사용량 낭비를 줄일 수 있다. 그러나 다른 프로젝트가 Pro를 계속 사용한다면 프로젝트 하나를 지워도 기본 Pro 비용 $20가 사라지지 않는다. 우선 기존 Pro에서 YENO 웹/API를 재사용하고, 실제 상용 사용 여부·플랜 자격·cron·실사용량을 확인한 뒤 플랜 변경을 판단한다. 카드·저장소·도메인 참조를 목록으로 만든 것은 앱을 YENO로 이관하거나 중복 배포를 정리한 실행 증거가 아니다. [Vercel 과금 구조](https://vercel.com/docs/pricing)
 
 ## Koyeb: 기존 Gyeol은 자동 활동 실행기
 
@@ -106,11 +114,11 @@ Koyeb 코어는 실제 배포·첫 HTTP 결과·재시작 보존을 확인했다
 
 ## 비용 정리 실행 순서
 
-1. 확인한 Supabase 현재 누적·예상 청구와 Micro 3개를 기준으로 절감 후보를 계산한다. Free 조직의 기존 프로젝트와 이전 조건, Vercel 전체 프로젝트·운영 도메인은 추가 확인한다.
+1. **완료:** 이전 전 Supabase 누적·예상 청구와 Micro 3개를 확인하고, `hankki-anbu`를 기존 Free 조직으로 이전했다. Pro에는 For-Ai·buzz-hq 2개를 유지한다. 이전 후 실제 청구와 Vercel 전체 프로젝트·운영 도메인은 추가 확인한다.
 2. **완료:** Gyeol Koyeb Pause와 0개 실행을 확인했다. 연결된 Supabase URL·Vercel 앱과 직전 정상 배포 `92176c90`을 보존했다. 연결된 DB·웹앱을 중지·삭제 대상으로 확대하지 않았다.
 3. 중복 Vercel 프로젝트의 도메인·웹훅·cron·빌드를 비교해 중복 실행부터 줄이는 후보를 만든다. 운영 프로젝트를 이름만으로 삭제하지 않는다.
 4. For-Ai 알림 cron, buzz-hq operator tick의 실제 처리 성과를 확인한다. 빈 예약 실행의 빈도 조정은 compute 기본료 절감과 구분한다.
-5. hankki-anbu 등 휴면 후보는 데이터·설정 보존과 복원 경로, Free 조직 이전 가능성을 확인한 뒤 이전·중지 여부를 결정한다. Pro 프로젝트에 바로 Pause를 실행할 수 있다고 안내하지 않는다. DB 백업에는 Storage의 실제 파일이 포함되지 않으므로 각각 확인한다. [Supabase 백업 범위](https://supabase.com/docs/guides/platform/backups)
+5. **완료:** hankki-anbu의 같은 프로젝트 ID·새 Free 조직·Healthy 상태와 이전 전후 구조 비교를 확인했다. **남음:** 앱의 실제 사용자 흐름, 별도 dump·복원 검증, Free 자동 정지 영향 확인. 중지·삭제는 하지 않았고, 목록 작성만으로 다른 앱까지 YENO에 이관했다고 보고하지 않는다. DB 백업에는 Storage의 실제 파일이 포함되지 않으므로 각각 확인한다. [Supabase 백업 범위](https://supabase.com/docs/guides/platform/backups)
 6. 승인된 YENO Micro의 첫 연결·복구 시험을 완료한 뒤 기존 Supabase·Vercel 재사용 후보를 구현·검증한다. 같은 역할의 Render 서버를 함께 추가하지 않고, 분리 이후 Koyeb의 필요한 규모를 다시 판단한다.
 
-Gyeol Pause와 YENO 배포의 대상·직전 상태·복원 정보·검사 결과는 `CHANGELOG.md`에도 기록한다. 이후 구독 변경·이관도 같은 방식으로 기록하며, 추정 절감액과 실제 청구를 합치거나 남은 APK·저장소 통합을 완료로 보고하지 않는다.
+Gyeol Pause·YENO 배포·hankki-anbu Free 이전의 대상·직전 상태·복원 정보·검사 결과는 `CHANGELOG.md`에도 기록한다. 이후 구독 변경·이관도 같은 방식으로 기록하며, 추정 절감액과 실제 청구를 합치거나 남은 APK·저장소 통합을 완료로 보고하지 않는다.

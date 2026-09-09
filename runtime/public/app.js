@@ -5,12 +5,13 @@ const esc = (value) => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;
 const date = (value) => value ? new Date(value).toLocaleString('ko-KR', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
 let token = sessionStorage.getItem('yeno-token') || '';
 let current = null, online = false, loading = false, lastRevision = null, selectedSnapshot = null, artifact = null;
-let toastTimer, activeTab = 'control', commandRequests, commandStorageError;
+let toastTimer, activeTab = 'control', commandRequests, commandStorageError, projectRequests, projectStorageError, editingProject = null;
 const names = {queued:'대기',running:'실행 중',paused:'멈춤',completed:'완료',failed:'실패',cancelled:'종료'};
+const projectNames = {active:'진행',paused:'보류',archived:'보관'};
 const moduleInfo = {memory:['기억','내용을 저장하고 다시 찾습니다.'],documents:['문서','제공한 내용을 실제 문서 파일로 만듭니다.'],diagnostics:['진단·개선 제안','본체 상태와 실행 이력에서 개선 후보를 찾습니다.'],ai:['AI 작성','본체에 설정한 외부 AI로 작성합니다. 사용료가 발생할 수 있습니다.']};
 function notify(message) { $('toast').textContent=message; $('toast').hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(()=>$('toast').hidden=true,4500); }
 function friendly(message) {
-  const pairs=[['Unauthorized','연결 키를 확인해 주세요.'],['Invalid pairing token','연결 키가 올바르지 않습니다.'],['Pairing token required','연결 키를 입력해 주세요.'],['Emergency stop is active','전체 멈춤 상태입니다. 먼저 정지를 해제해 주세요.'],['AI provider is not configured','본체에 AI 연결을 먼저 설정해 주세요.'],['Job changed; refresh before retrying','작업 상태가 바뀌었습니다. 최신 상태를 확인한 뒤 다시 눌러주세요.'],['Terminal jobs cannot be changed','이미 끝난 작업입니다.'],['Pause or stop all active jobs before restoring','작업을 먼저 모두 멈춘 뒤 복원해 주세요.'],['Module disabled','해당 능력이 꺼져 있습니다. 능력·설정에서 켜주세요.']];
+  const pairs=[['Unauthorized','연결 키를 확인해 주세요.'],['Invalid pairing token','연결 키가 올바르지 않습니다.'],['Pairing token required','연결 키를 입력해 주세요.'],['Emergency stop is active','전체 멈춤 상태입니다. 먼저 정지를 해제해 주세요.'],['AI provider is not configured','본체에 AI 연결을 먼저 설정해 주세요.'],['Job changed; refresh before retrying','작업 상태가 바뀌었습니다. 최신 상태를 확인한 뒤 다시 눌러주세요.'],['Terminal jobs cannot be changed','이미 끝난 작업입니다.'],['Pause or stop all active jobs before restoring','작업을 먼저 모두 멈춘 뒤 복원해 주세요.'],['Module disabled','해당 능력이 꺼져 있습니다. 능력·설정에서 켜주세요.'],['A project with this name already exists','같은 이름의 프로젝트가 있습니다. 다른 이름을 입력해 주세요.'],['Project changed; refresh before updating','프로젝트가 변경되었습니다. 최신 내용을 확인해 주세요.'],['Project not found','프로젝트를 찾을 수 없습니다. 목록과 이름을 확인해 주세요.'],['repositoryUrl must','GitHub 저장소의 HTTPS 주소를 입력해 주세요. 예: https://github.com/계정/저장소'],['Project names cannot contain','프로젝트 이름에는 줄바꿈이나 | 기호를 사용할 수 없습니다.'],['name must be','프로젝트 이름을 1~80자로 입력해 주세요.']];
   if(String(message).includes('module is disabled'))return '해당 능력이 꺼져 있습니다. 능력·설정에서 켜주세요.';
   for(const [a,b] of pairs)if(String(message).includes(a))return b;
   return String(message || '요청을 처리하지 못했습니다.');
@@ -20,12 +21,21 @@ async function api(path, data, options={}) {
   if(options.raw && response.ok)return response;
   let result;
   try {result=await response.json();} catch(error) {if(response.ok)throw new Error('본체의 접수 응답을 읽지 못했습니다.');result={};}
-  if(!response.ok){if(response.status===401){token='';sessionStorage.removeItem('yeno-token');$('pair-screen').hidden=false;}const error=new Error(friendly(result.error?.message || result.error || result.message || `응답 ${response.status}`));error.status=response.status;throw error;}
+  if(!response.ok){if(response.status===401){token='';sessionStorage.removeItem('yeno-token');$('pair-screen').hidden=false;$('project-dialog').close();}const error=new Error(friendly(result.error?.message || result.error || result.message || `응답 ${response.status}`));error.status=response.status;error.project=result.project;throw error;}
   return result;
 }
 const requestId=()=>crypto.randomUUID();
 try {commandRequests=createCommandRequest({storage:sessionStorage,transport:(path,body)=>api(path,body)});}
 catch(error) {commandStorageError=error;}
+try {
+  projectRequests=createCommandRequest({storage:sessionStorage,key:'yeno-pending-project-v1',
+    allowPath:path=>path==='/api/projects' || /^\/api\/projects\/[a-zA-Z0-9-]+\/update$/.test(path),
+    transport:async(path,body)=>{
+      const result=await api(path,body);
+      if(!result?.project?.id || !Number.isInteger(result.project.version))throw new Error('프로젝트의 접수 응답을 확인하지 못했습니다.');
+      return result;
+    }});
+} catch(error) {projectStorageError=error;}
 function renderCommandRequest() {
   const pending=commandRequests?.pending, busy=commandRequests?.sending;
   $('command').readOnly=Boolean(pending || commandStorageError);
@@ -33,6 +43,7 @@ function renderCommandRequest() {
   $('send-command').disabled=!online || Boolean(busy || commandStorageError);
   $('send-command').textContent=busy?'접수 확인 중…':pending?'같은 요청 재시도':'실행 ↗';
   for(const button of document.querySelectorAll('[data-example], [data-quick]'))button.disabled=Boolean(pending || busy || commandStorageError);
+  for(const button of document.querySelectorAll('[data-project-brief], [data-project-work]'))button.disabled=!online || Boolean(pending || busy || commandStorageError);
   if(pending) {
     $('command').value=pending.body.text || ({diagnostics:'진단해',evolution:'개선점 찾아줘'}[pending.body.type] || '이전 명령');
     $('command-type').value=pending.path==='/api/commands'?'command':(['document','ai'].includes(pending.body.type)?pending.body.type:'command');
@@ -53,7 +64,7 @@ async function submitCommand(path,body) {
     const outcome=await request;
     if(outcome.kind==='accepted') {
       const r=outcome.result;$('command').value='';$('command-result').hidden=false;
-      $('command-result').textContent=r.memory?'기억을 본체에 저장했습니다.':r.memories?`${r.memories.length}개의 기억을 찾았습니다.\n\n${r.memories.map(m=>m.text).join('\n\n')}`:'본체가 작업을 접수했습니다. 아래에서 실제 진행을 확인하세요.';
+      $('command-result').textContent=r.memory?'기억을 본체에 저장했습니다.':r.memories?`${r.memories.length}개의 기억을 찾았습니다.\n\n${r.memories.map(m=>m.text).join('\n\n')}`:r.projects?`${r.projects.length}개의 프로젝트를 확인했습니다.\n\n${r.projects.map(p=>`${p.name} · ${projectNames[p.status]||p.status}\n다음 작업: ${p.nextAction || '아직 정하지 않았습니다.'}`).join('\n\n')}`:'본체가 작업을 접수했습니다. 아래에서 실제 진행을 확인하세요.';
     } else if(outcome.kind==='rejected') {
       $('command-result').hidden=false;$('command-result').textContent=`본체가 명령을 거절했습니다. ${outcome.error.message}`;
       notify(outcome.error.message);
@@ -63,7 +74,7 @@ async function submitCommand(path,body) {
 }
 function connection(ok) {
   online=ok; $('connection-dot').classList.toggle('online',ok);$('connection-text').textContent=ok?'실행 본체 연결됨':'연결 확인 필요';
-  $('offline-banner').hidden=ok || !token; renderCommandRequest(); $('global-stop').disabled=!ok;
+  $('offline-banner').hidden=ok || !token; renderCommandRequest();renderProjectRequest(); $('global-stop').disabled=!ok;
   if(ok)$('last-seen').textContent=`마지막 확인 ${new Date().toLocaleTimeString('ko-KR')}`;
   if(!ok && token){$('core-title').textContent='연결을 확인하고 있어요.';$('core-subtitle').textContent='마지막 상태를 표시합니다. 새 명령은 확인 후 실행하세요.';$('core-signal').className='core-signal';}
 }
@@ -77,7 +88,7 @@ async function refresh(force=false) {
 function showTab(tab) {
   activeTab=tab;for(const el of document.querySelectorAll('.tab-panel'))el.hidden=el.id!==`tab-${tab}`;
   for(const el of document.querySelectorAll('.nav')){el.classList.toggle('active',el.dataset.tab===tab);el.setAttribute('aria-current',el.dataset.tab===tab?'page':'false');}
-  $('page-title').textContent={control:'조종석',memory:'기억',recovery:'복구',settings:'능력·설정'}[tab];
+  $('page-title').textContent={control:'조종석',projects:'프로젝트',memory:'기억',recovery:'복구',settings:'능력·설정'}[tab];
 }
 function render(s) {
   const jobs=s.jobs || [], running=jobs.filter(j=>j.status==='running').length;
@@ -92,6 +103,7 @@ function render(s) {
   $('jobs-list').innerHTML=jobs.length?jobs.map(jobHTML).join(''):'<div class="empty">첫 작업을 맡겨보세요.<br>본체 진단은 입력 없이 바로 실행할 수 있어요.</div>';
   $('events-list').innerHTML=(s.events||[]).slice(0,12).map(e=>`<li><time>${esc(date(e.at || e.createdAt))}</time>${esc(e.text || e.message)}</li>`).join('') || '<li class="muted">아직 실행 기록이 없습니다.</li>';
   $('memory-count').textContent=(s.memories||[]).length;renderMemories();
+  renderProjects();
   $('snapshots-list').innerHTML=(s.snapshots||[]).map(sn=>`<article class="snapshot-item"><div><strong>${esc(sn.label)}</strong><small>${esc(date(sn.createdAt))}</small></div><button class="button subtle" data-restore="${esc(sn.id)}">이 시점으로</button></article>`).join('') || '<div class="empty">기억과 설정을 저장해 두면 이곳에서 돌아갈 수 있어요.</div>';
   $('concurrency').value=s.concurrency;
   $('module-settings').innerHTML=Object.entries(moduleInfo).map(([key,[name,desc]])=>`<div class="setting-row"><div><h3>${name}</h3><p>${desc}</p></div><input class="switch" type="checkbox" role="switch" aria-label="${name}" data-module="${key}" ${s.modules?.[key]?'checked':''} ${key==='ai'&&!s.ai?.configured?'disabled':''}></div>`).join('');
@@ -101,7 +113,76 @@ function jobHTML(j) {
   const p=j.totalSteps?Math.min(100,Math.round((j.step||0)/j.totalSteps*100)):0;
   const canPause=['queued','running'].includes(j.status),canResume=j.status==='paused';
   const controls=[...(canPause?[['pause','멈춤']]:[]),...(canResume?[['resume','이어하기']]:[]),...(['queued','running','paused'].includes(j.status)?[['cancel','종료']]:[])].map(([action,label])=>`<button class="button subtle" data-job="${esc(j.id)}" data-action="${action}" data-version="${esc(j.version)}" ${action==='resume'&&current?.emergencyStop?'disabled':''}>${label}</button>`).join('');
-  return `<article class="job"><div class="job-top"><h3 class="job-title">${esc(j.title || j.type)}</h3><span class="status ${esc(j.status)}">${esc(names[j.status]||j.status)}</span></div><div class="job-meta"><span>${esc(date(j.createdAt))}</span><span>${j.step||0} / ${j.totalSteps||0} 단계</span></div><progress class="job-progress" aria-label="작업 진행" value="${p}" max="100"></progress>${j.error?`<p class="job-error">${esc(friendly(typeof j.error==='string'?j.error:j.error.message))}</p>`:''}<div class="job-actions">${controls}${(j.artifacts||[]).map(a=>`<button class="button subtle" data-artifact="${esc(a.id)}" data-name="${esc(a.name)}">결과 열기 ↗</button>`).join('')}</div></article>`;
+  const project=(current?.projects||[]).find(project=>project.id===j.projectId);
+  return `<article class="job"><div class="job-top"><h3 class="job-title">${esc(j.title || j.type)}</h3><span class="status ${esc(j.status)}">${esc(names[j.status]||j.status)}</span></div>${project?`<p class="job-project">프로젝트 · ${esc(project.name)}</p>`:''}<div class="job-meta"><span>${esc(date(j.createdAt))}</span><span>${j.step||0} / ${j.totalSteps||0} 단계</span></div><progress class="job-progress" aria-label="작업 진행" value="${p}" max="100"></progress>${j.error?`<p class="job-error">${esc(friendly(typeof j.error==='string'?j.error:j.error.message))}</p>`:''}<div class="job-actions">${controls}${(j.artifacts||[]).map(a=>`<button class="button subtle" data-artifact="${esc(a.id)}" data-name="${esc(a.name)}">결과 열기 ↗</button>`).join('')}</div></article>`;
+}
+function repositoryLink(value) {
+  try {
+    const url=new URL(value);
+    if(url.protocol!=='https:' || url.hostname!=='github.com' || url.port || url.username || url.password || !/^\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/?$/.test(url.pathname))return '';
+    return `<a class="text-button project-repository" href="${esc(url.href)}" target="_blank" rel="noopener noreferrer">GitHub 저장소 ↗</a>`;
+  } catch {return '';}
+}
+function renderProjects() {
+  const projects=current?.projects||[], available=current?.capabilities?.projectManagement===true;
+  $('project-count').textContent=projects.length;
+  $('project-worker-status').textContent=available?(current.capabilities.developerWorker===false?'개발 작업자 미연결':'프로젝트 문서 준비'):'프로젝트 기능 연결 필요';
+  $('project-worker-detail').textContent=available?(current.capabilities.developerWorker===false?'프로젝트 정보로 브리핑과 작업 준비 문서를 만들 수 있습니다. 저장소의 코드를 바꾸거나 배포하는 개발 작업자는 아직 연결하지 않았습니다.':'이 화면에서는 프로젝트 정보로 브리핑과 작업 준비 문서를 만듭니다. 개발 작업자의 실제 연결·실행 상태는 별도 확인이 필요합니다.'):'현재 본체가 프로젝트 관리 기능을 제공하는지 확인해 주세요.';
+  $('projects-list').innerHTML=projects.map(project=>`<article class="project-card"><div class="job-top"><h3>${esc(project.name)}</h3><span class="status ${esc(project.status)}">${esc(projectNames[project.status]||project.status)}</span></div><p class="project-summary">${esc(project.summary||'목표와 현재 상황을 적어두면 다음에 이어가기 쉬워집니다.')}</p><div class="project-next"><small>다음 작업</small><p>${esc(project.nextAction||'아직 정하지 않았습니다.')}</p></div><div class="project-meta">${repositoryLink(project.repositoryUrl)}<small>수정 ${esc(date(project.updatedAt||project.createdAt))}</small></div><div class="project-actions"><button class="button subtle" data-project-brief="${esc(project.id)}">브리핑 만들기</button><button class="button subtle" data-project-work="${esc(project.id)}">다음 작업 준비</button><button class="text-button" data-project-edit="${esc(project.id)}">내용 수정</button></div></article>`).join('') || `<div class="empty">${available?'진행하던 프로젝트를 추가해 주세요.\n목표와 다음 작업을 본체에 보관합니다.':'연결한 본체의 프로젝트를 확인할 수 없습니다.'}</div>`;
+  renderProjectRequest();renderCommandRequest();
+}
+function renderProjectRequest() {
+  const pending=projectRequests?.pending, busy=projectRequests?.sending, locked=Boolean(pending || projectStorageError), available=current?.capabilities?.projectManagement===true;
+  $('add-project').disabled=!online || !available || locked;
+  for(const button of document.querySelectorAll('[data-project-edit]'))button.disabled=!online || !available || locked;
+  for(const field of document.querySelectorAll('#project-form input, #project-form textarea, #project-form select'))field.disabled=locked;
+  $('save-project').disabled=!online || !available || locked;
+  $('save-project').textContent=busy?'접수 확인 중…':'프로젝트 저장';
+  $('project-request-status').hidden=!pending && !projectStorageError;
+  $('retry-project').hidden=!pending;
+  $('retry-project').disabled=!online || Boolean(busy || projectStorageError);
+  $('reload-project').disabled=locked;
+  if(projectStorageError)$('project-request-message').textContent='보관된 프로젝트 요청을 읽을 수 없어 저장을 멈췄습니다. 이 브라우저 탭의 저장 공간 접근을 확인해 주세요.';
+  else if(pending)$('project-request-message').textContent=busy?'프로젝트 저장을 확인하고 있습니다.':'프로젝트 저장 응답을 확인하지 못했습니다. 같은 요청을 재시도하면 중복 저장 없이 접수 여부를 확인합니다.';
+}
+function openProject(project=null) {
+  if(projectRequests?.pending || projectStorageError || !online)return;
+  editingProject=project?{id:project.id,version:project.version}:null;
+  $('project-form-title').textContent=project?'프로젝트 수정':'프로젝트 추가';
+  $('project-name').value=project?.name||'';$('project-repository').value=project?.repositoryUrl||'';
+  $('project-summary').value=project?.summary||'';$('project-next-action').value=project?.nextAction||'';
+  $('project-status').value=project?.status||'active';$('project-form-error').textContent='';$('reload-project').hidden=true;
+  if(!$('project-dialog').open)$('project-dialog').showModal();
+  $('project-name').focus();
+}
+async function submitProject(path,body) {
+  if(!online){notify('먼저 실행 본체와 연결해 주세요.');return;}
+  if(!projectRequests || projectRequests.sending)return;
+  try {
+    if(!projectRequests.pending)projectRequests.stage(path,body);
+    const request=projectRequests.send();renderProjectRequest();
+    const outcome=await request;
+    if(outcome.kind==='accepted') {
+      $('project-dialog').close();editingProject=null;notify('프로젝트를 본체에 저장했습니다.');
+    } else if(outcome.kind==='rejected') {
+      const conflict=outcome.error.status===409 && outcome.error.project && editingProject;
+      const message=conflict?'프로젝트가 다른 곳에서 변경되었습니다. 최신 내용을 불러온 뒤 다시 수정해 주세요.':outcome.error.message;
+      $('project-form-error').textContent=message;$('reload-project').hidden=!conflict;notify(message);
+    } else {
+      $('project-dialog').close();notify('접수 여부를 확인하지 못했습니다. 프로젝트의 같은 요청 재시도로 확인해 주세요.');
+    }
+  } catch(error) {$('project-form-error').textContent=error.message;notify(`프로젝트를 보내지 못했습니다. ${error.message}`);}
+  finally {renderProjectRequest();await refresh(true);}
+}
+function prepareProject(id,kind) {
+  const project=(current?.projects||[]).find(project=>project.id===id);
+  if(!project || commandRequests?.pending || commandRequests?.sending || commandStorageError)return;
+  showTab('control');
+  if(kind==='work' && !project.nextAction) {
+    $('command-type').value='command';$('command').value=`프로젝트 작업: ${project.name} | `;$('command').focus();
+    notify('준비할 작업을 명령 뒤에 적어주세요.');return;
+  }
+  void submitCommand('/api/commands',{text:kind==='brief'?`프로젝트 브리핑: ${project.id}`:`프로젝트 작업: ${project.id} | ${project.nextAction}`});
 }
 function renderMemories() {
   const q=$('memory-search').value.toLocaleLowerCase(),memories=(current?.memories||[]).filter(m=>m.text.toLocaleLowerCase().includes(q));
@@ -114,6 +195,15 @@ async function perform(fn,button) {
 }
 $('pair-form').addEventListener('submit',async(e)=>{e.preventDefault();const b=e.submitter;b.disabled=true;$('pair-error').textContent='';token=$('pair-token').value.trim();try{current=await api('/api/state');sessionStorage.setItem('yeno-token',token);$('pair-token').value='';$('pair-screen').hidden=true;connection(true);render(current);lastRevision=current.revision;}catch(err){token='';$('pair-error').textContent=err.message || '연결할 수 없습니다.';}finally{b.disabled=false;}});
 $('command-form').addEventListener('submit',e=>{e.preventDefault();if(commandRequests?.pending){void submitCommand();return;}const text=$('command').value.trim(),type=$('command-type').value;if(!text)return;void submitCommand(type==='command'?'/api/commands':'/api/jobs',type==='command'?{text}:{type,text});});
+$('add-project').addEventListener('click',()=>openProject());
+$('project-form').addEventListener('submit',e=>{
+  e.preventDefault();
+  if(projectRequests?.pending){void submitProject();return;}
+  const body={name:$('project-name').value.trim(),repositoryUrl:$('project-repository').value.trim(),summary:$('project-summary').value.trim(),nextAction:$('project-next-action').value.trim(),status:$('project-status').value};
+  void submitProject(editingProject?`/api/projects/${encodeURIComponent(editingProject.id)}/update`:'/api/projects',editingProject?{...body,revision:editingProject.version}:body);
+});
+$('retry-project').addEventListener('click',()=>void submitProject());
+$('reload-project').addEventListener('click',async()=>{await refresh(true);const project=(current?.projects||[]).find(project=>project.id===editingProject?.id);if(project)openProject(project);});
 $('memory-form').addEventListener('submit',e=>{e.preventDefault();perform(async()=>{await api('/api/memory',{text:$('memory-text').value.trim(),requestId:requestId()});$('memory-text').value='';notify('기억을 저장했습니다.');},e.submitter);});
 $('snapshot-form').addEventListener('submit',e=>{e.preventDefault();perform(async()=>{await api('/api/snapshots',{label:$('snapshot-label').value.trim(),requestId:requestId()});$('snapshot-label').value='';notify('돌아갈 지점을 저장했습니다.');},e.submitter);});
 $('memory-search').addEventListener('input',renderMemories);
@@ -130,6 +220,9 @@ document.addEventListener('click',e=>{
   if(b.dataset.close)$(b.dataset.close).close();
   if(b.dataset.example && !b.disabled){$('command').value=b.dataset.example;$('command-type').value='command';$('command').focus();}
   if(b.dataset.quick && !b.disabled)void submitCommand('/api/jobs',{type:b.dataset.quick});
+  if(b.dataset.projectEdit && !b.disabled)openProject((current?.projects||[]).find(project=>project.id===b.dataset.projectEdit));
+  if(b.dataset.projectBrief && !b.disabled)prepareProject(b.dataset.projectBrief,'brief');
+  if(b.dataset.projectWork && !b.disabled)prepareProject(b.dataset.projectWork,'work');
   if(b.dataset.job)perform(()=>api(`/api/jobs/${encodeURIComponent(b.dataset.job)}/action`,{action:b.dataset.action,...(b.dataset.version&&b.dataset.version!=='undefined'?{revision:Number(b.dataset.version)}:{}),requestId:requestId()}),b);
   if(b.dataset.restore){selectedSnapshot=b.dataset.restore;$('restore-label').textContent=current.snapshots.find(s=>s.id===selectedSnapshot)?.label||'';$('restore-dialog').showModal();}
   if(b.dataset.artifact)perform(async()=>{const r=await api(`/api/artifacts/${encodeURIComponent(b.dataset.artifact)}`,undefined,{raw:true});const text=await r.text();artifact={text,name:b.dataset.name||'YENO-result.md'};$('artifact-title').textContent=artifact.name;$('artifact-content').textContent=text;$('artifact-dialog').showModal();},b);
@@ -138,5 +231,5 @@ $('confirm-restore').addEventListener('click',e=>perform(async()=>{await api(`/a
 $('download-artifact').addEventListener('click',()=>{if(!artifact)return;const url=URL.createObjectURL(new Blob([artifact.text],{type:'text/markdown;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=artifact.name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh(true);});
 window.addEventListener('online',()=>refresh(true));window.addEventListener('offline',()=>connection(false));
-showTab('control');renderCommandRequest();if(token)refresh(true);setInterval(()=>{if(!document.hidden)refresh();},1500);
+showTab(projectRequests?.pending?'projects':'control');renderCommandRequest();renderProjectRequest();if(token)refresh(true);setInterval(()=>{if(!document.hidden)refresh();},1500);
 })().catch(error=>{const result=document.getElementById('command-result');if(result){result.hidden=false;result.textContent=`조종석을 시작하지 못했습니다. 새로고침해 주세요. ${error.message}`;}});
