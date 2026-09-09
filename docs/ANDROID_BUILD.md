@@ -22,6 +22,7 @@
 
 - GitHub 실행 환경: Ubuntu 24.04.
 - Node 24, Temurin JDK 17.
+- `android-actions/setup-android` v4의 확인한 커밋을 고정해 Android 명령줄 도구 16.0 (`12266719`)을 준비하고 `sdkmanager`를 PATH에 등록한다. 실행 이미지에 이미 설치되어 있다고 가정하지 않는다.
 - Android platform 35, build-tools 35.0.0, NDK 28.2.13676358, `aarch64-linux-android` Rust 대상.
 - JavaScript 직접 의존성과 npm lock 파일을 저장소에 고정한다.
 - Rust 직접 의존성을 JS와 호환되는 버전으로 고정한다. `Cargo.lock`은 최초 Rust 의존성 해결 때 생성해 별도 결과물로 회수한다. 그 lock을 검토·등록하기 전까지 전체 Rust 의존성이 고정된 재현 빌드라고 표현하지 않는다.
@@ -38,6 +39,14 @@ npm run tauri -- android build --debug --apk --target aarch64 --ci
 ```
 
 `ANDROID_HOME`과 `NDK_HOME`이 실제 설치 경로를 가리켜야 한다. APK가 없으면 수집 단계에서 실패한다. 워크플로 작성이나 화면 빌드만으로 APK 생성 성공을 표시하지 않는다.
+
+## 첫 실행에서 확인한 문제
+
+[실행 #1](https://github.com/wooyeonho/yeno-os/actions/runs/34308639802)은 검사 30개·의존성 설치·화면 빌드는 통과했지만 `sdkmanager: command not found`로 Android 준비 단계에서 종료됐다. APK와 Cargo lock 결과물은 생성되지 않았다. 위의 명시적 SDK 준비 단계는 이 실패를 수정하기 위해 추가했다.
+
+workflow 파일을 수정한 뒤에는 목록 화면에서 **Run workflow / 워크플로 실행**으로 새 실행을 시작한다. 기존 실행의 Re-run은 기존 workflow 커밋을 사용하므로 이 설정 변경을 검증하는 방법으로 사용하지 않는다. `main`과 `source_ref=codex` 선택은 유지한다.
+
+SDK 준비 구현 근거: [setup-android 고정 버전](https://github.com/android-actions/setup-android/tree/40fd30fb8d7440372e1316f5d1809ec01dcd3699).
 
 ## 연결과 저장
 

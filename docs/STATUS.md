@@ -37,7 +37,11 @@ JS 의존성 lock은 포함했다. Rust 직접 의존성 버전은 고정했지�
 
 ## 다음 한 작업
 
-[Android 수동 빌드](https://github.com/wooyeonho/yeno-os/actions/workflows/android-debug.yml)를 실행하고 실제 로그와 APK 결과를 확인한다. 절차는 `ANDROID_BUILD.md`를 따른다. 그다음 상주 HTTPS 코어 연결과 `DEVICE_ACCEPTANCE.md`의 폰 명령·결과·재접속 시험을 수행한다.
+최초 [GitHub 실행 #1](https://github.com/wooyeonho/yeno-os/actions/runs/34308639802)은 소스 `b34dc9fc843c6ef6fd571f80057dfdf4c7eb1f7f`를 체크아웃했고, 30개 검사(약 14.82초)·npm 설치·TypeScript/Vite 빌드를 통과했다. Android 준비 단계의 `sdkmanager: command not found`(exit 127)로 종료돼 APK·Cargo lock 결과물은 0개다.
+
+Android SDK 준비 action을 검증된 커밋으로 추가하고, SDK manager 경로·버전과 NDK 설치 경로 확인을 넣었다. 수정한 설정은 YAML 구문·단계 순서·셸 구문을 확인했으며, 새로운 GitHub 실행에서 실제 설치와 컴파일을 검증해야 한다.
+
+[Android 수동 빌드](https://github.com/wooyeonho/yeno-os/actions/workflows/android-debug.yml)에서 **새 Run workflow**를 시작하고 실제 로그와 APK 결과를 확인한다. 기존 실패 실행의 Re-run은 수정 전 workflow를 사용한다. 절차는 `ANDROID_BUILD.md`를 따른다. 그다음 상주 HTTPS 코어 연결과 `DEVICE_ACCEPTANCE.md`의 폰 명령·결과·재접속 시험을 수행한다.
 
 ## 버전 구분
 
