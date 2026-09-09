@@ -1,4 +1,4 @@
-# YENO OS — 첫 APK 생성 완료, 다음은 상주 코어 연결
+# YENO OS — 폰 첫 실행 확인, 다음은 상주 코어 연결
 
 [실제 Android 빌드](https://github.com/wooyeonho/yeno-os/actions/runs/34309339030/attempts/3)가 성공했다. 반복 실행 버튼을 누를 필요는 없다.
 
@@ -6,11 +6,11 @@
 
 - [APK 묶음 다운로드](https://github.com/wooyeonho/yeno-os/actions/runs/34309339030/artifacts/10088424404): ZIP 안에 APK 1개, SHA256SUMS.txt와 build-info.json이 있다. GitHub 보관은 2026-09-16까지다.
 - 시험 APK는 약 202 MB, 다운로드 ZIP은 약 53.5 MB다. 현재는 개발용 디버그 빌드다.
-- 폰 설치와 동작은 아직 확인하지 않았다. 설치한 앱이 명령을 수행하려면 상주 HTTPS 코어 주소와 기기 등록이 필요하다. 주소가 없는데 임의 주소를 입력하거나 연결 성공으로 표시하지 않는다.
+- 사용자 캡처로 폰 설치 후 `본체 연결` 첫 화면 표시를 확인했다. 실제 명령·보관소·재접속 검증은 남았다. 화면의 `https://yeno.example.com`은 예시이며 실제 서버 주소가 아니다.
 
 ## 다음 한 연결
 
-노트북이 꺼진 동안에도 실행될 상주 서버 계정이 필요하다. 개발 담당자가 사용할 계정·소유 권한을 확인한 뒤 `docs/PERSISTENT_CORE.md`에 준비한 설정으로 Docker 빌드·영속 저장·인증·재시작을 검증하고 HTTPS 코어와 폰을 연결한다. 신규 비용이나 실제 배포는 확인된 범위에서 진행한다.
+노트북이 꺼진 동안에도 실행될 상주 서버 계정이 필요하다. `render.yaml`과 `docs/RENDER_SETUP.md`에 Render 서버 1개 + 영구 디스크 1 GB 후보를 준비했다. 기본 월 비용은 $7.25이며 세금·포함량 초과 사용·AI 요금은 별도다. 아직 생성·결제·HTTPS 연결은 하지 않았다. 소유자 계정과 비용을 확인한 뒤 `yeno-core-pilot` 브랜치의 후보를 배포하고 실제 인증·재시작·폰 연결을 검증한다. 기존 Linux Docker 서버를 사용한다면 `docs/PERSISTENT_CORE.md`를 따른다.
 
 ## 개발을 이어갈 때
 

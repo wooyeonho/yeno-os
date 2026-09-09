@@ -10,7 +10,6 @@ import { spawn, spawnSync } from 'node:child_process';
 const runtimeDir = fileURLToPath(new URL('..', import.meta.url));
 const source = path.resolve(runtimeDir, '..');
 const dockerfile = fs.readFileSync(path.join(source, 'Dockerfile'), 'utf8');
-const launcher = dockerfile.match(/COPY <<'EOF' \/opt\/yeno\/container-start\.mjs\n([\s\S]*?)\nEOF/)[1];
 const entrypoint = JSON.parse(dockerfile.match(/^ENTRYPOINT (.+)$/m)[1]);
 const healthcheck = JSON.parse(dockerfile.match(/^\s+CMD (\[.+\])$/m)[1]);
 const skip = process.platform !== 'linux' || spawnSync('flock', ['--version']).status !== 0
@@ -41,8 +40,7 @@ function fixture(t) {
   const dataDir = path.join(directory, 'data');
   fs.mkdirSync(dataDir, { mode: 0o700 });
   fs.symlinkSync(runtimeDir, path.join(directory, 'runtime'), 'dir');
-  const launcherPath = path.join(directory, 'container-start.mjs');
-  fs.writeFileSync(launcherPath, launcher);
+  const launcherPath = path.join(runtimeDir, 'service.mjs');
   const token = randomBytes(32).toString('base64url');
   const tokenFile = path.join(directory, 'pairing-token');
   fs.writeFileSync(tokenFile, `${token}\n`, { mode: 0o400 });
@@ -66,7 +64,7 @@ function fixture(t) {
       fs.writeFileSync(script, `${prelude}\nawait import(${JSON.stringify(pathToFileURL(launcherPath).href)});\n${after}\n`);
     }
     let executable = entrypoint[0];
-    let args = entrypoint.slice(1).map(value => value.replaceAll('/opt/yeno/container-start.mjs', script));
+    let args = entrypoint.slice(1).map(value => value.replaceAll('/opt/yeno/runtime/service.mjs', script));
     if (kind === 'direct') { executable = process.execPath; args = [script]; }
     if (kind === 'shared') args = args.map(value => value.replace('--exclusive', '--shared'));
     if (kind === 'wrong-file') args = args.map(value => value.replace('$YENO_DATA_DIR/.container-runtime.flock', `${directory}/wrong.flock`));

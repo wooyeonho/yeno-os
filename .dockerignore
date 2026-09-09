@@ -4,6 +4,7 @@
 !.dockerignore
 !runtime/
 !runtime/server.mjs
+!runtime/service.mjs
 !runtime/package.json
 !runtime/lib/
 !runtime/lib/*.mjs

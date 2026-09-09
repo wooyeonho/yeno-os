@@ -1,0 +1,40 @@
+# Owner review required before Deploy Blueprint creates paid resources.
+# Keep this candidate branch fixed; developing on codex must not update the core.
+previews:
+  generation: "off"
+
+services:
+  - type: web
+    name: yeno-core-pilot
+    runtime: node
+    repo: https://github.com/wooyeonho/yeno-os
+    branch: yeno-core-pilot
+    region: singapore
+    plan: 0.5c-512mb
+    numInstances: 1
+    autoDeployTrigger: "off"
+    buildCommand: npm test
+    startCommand: sh scripts/start-render.sh
+    healthCheckPath: /api/v1/health
+    maxShutdownDelaySeconds: 30
+    disk:
+      name: yeno-core-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "24.19.0"
+      - key: NODE_ENV
+        value: production
+      - key: YENO_DATA_DIR
+        value: /var/data/yeno
+      - key: YENO_DISK_MOUNT_PATH
+        value: /var/data
+      - key: YENO_TOKEN
+        generateValue: true
+      - key: YENO_AI_BASE_URL
+        value: ""
+      - key: YENO_AI_MODEL
+        value: ""
+      - key: YENO_AI_API_KEY
+        value: ""
