@@ -149,7 +149,26 @@ export function createYenoServer(options={}) {
    if(device.tokenHash!==digest(deviceToken))throw new HttpError(409,'This enrollment credential cannot be recovered. Start a new enrollment with a new requestId.');
    return {...metadata,deviceToken};
  }
- function checkHost(req){const raw=req.headers.host;if(typeof raw!=='string'||!raw||/[\s/@\\#?]/.test(raw))throw new HttpError(403,'Invalid Host');let base;try{base=new URL(`http://${raw}`);if(base.host!==raw.toLowerCase()&&!(raw.endsWith(':80')&&base.host===raw.slice(0,-3).toLowerCase()))throw new Error();}catch{throw new HttpError(403,'Invalid Host');}if(!allowedHosts.has(base.hostname.toLowerCase())&&!allowedHosts.has(raw.toLowerCase()))throw new HttpError(403,'Host is not allowed');if(req.headers.origin){let origin;try{origin=new URL(req.headers.origin);}catch{throw new HttpError(403,'Invalid Origin');}const direct=['http:','https:'].includes(origin.protocol)&&origin.host.toLowerCase()===raw.toLowerCase();const trustedProxy=origin.protocol==='https:'&&(env.YENO_ALLOWED_HOSTS??'').split(',').map(x=>x.trim().toLowerCase()).includes(origin.host.toLowerCase());if(origin.origin!==req.headers.origin||(!direct&&!trustedProxy))throw new HttpError(403,'Origin does not match Host');}}
+ function checkHost(req){
+   const raw=req.headers.host;
+   if(typeof raw!=='string'||!raw||/[\s/@\\#?]/.test(raw))throw new HttpError(403,'Invalid Host');
+   let base;
+   try{base=new URL(`http://${raw}`);if(base.host!==raw.toLowerCase()&&!(raw.endsWith(':80')&&base.host===raw.slice(0,-3).toLowerCase()))throw new Error();}
+   catch{throw new HttpError(403,'Invalid Host');}
+   if(!allowedHosts.has(base.hostname.toLowerCase())&&!allowedHosts.has(raw.toLowerCase()))throw new HttpError(403,'Host is not allowed');
+   if(req.headers.origin){
+     let origin;
+     try{origin=new URL(req.headers.origin);}catch{throw new HttpError(403,'Invalid Origin');}
+     const direct=['http:','https:'].includes(origin.protocol)&&origin.host.toLowerCase()===raw.toLowerCase();
+     const trustedProxy=origin.protocol==='https:'&&(env.YENO_ALLOWED_HOSTS??'').split(',').map(x=>x.trim().toLowerCase()).includes(origin.host.toLowerCase());
+     // The installed Android app's pinned Tauri HTTP plugin adds its bundled
+     // WebView Origin. Allow that exact origin only on the device API; it is
+     // not proof of identity. Host checks above and bearer authentication below
+     // still apply, and legacy/browser routes retain their existing boundary.
+     const bundledNative=req.headers.origin==='http://tauri.localhost'&&req.url.startsWith('/api/v1/')&&new URL(req.url,base).pathname.startsWith('/api/v1/');
+     if(origin.origin!==req.headers.origin||(!direct&&!trustedProxy&&!bundledNative))throw new HttpError(403,'Origin does not match Host');
+   }
+ }
  async function body(req){let total=0,parts=[];for await(const part of req){total+=part.length;if(total>MAX_BODY)throw new HttpError(413,'Request body exceeds 256 KB');parts.push(part);}if(!total)return {};let result;try{result=JSON.parse(Buffer.concat(parts).toString('utf8'));}catch{throw new HttpError(400,'Invalid JSON body');}if(!result||typeof result!=='object'||Array.isArray(result))throw new HttpError(400,'JSON object required');return result;}
  function respond(res,status,payload){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(payload));}
  function mutation(req,url,b,operation){

@@ -1,3 +1,10 @@
+# 0.2.2 호환성 수정 — Android 최초 연결 Origin 오류
+
+- 사용자 실기기 캡처의 `Origin does not match Host`를 실제 HTTPS에서 같은 native Origin으로 재현했다. 기존 API 검사에서 Origin 헤더를 빠뜨려 APK 통신과의 차이를 놓친 회귀다.
+- 잠긴 HTTP 플러그인이 보내는 정확한 `http://tauri.localhost`를 `/api/v1/`에 한해 허용한다. Host 검사, 기기 등록 키와 기기 bearer 인증, 기존 웹 출처 제한을 유지한다. wildcard CORS·모든 localhost 허용·키 교체는 하지 않는다.
+- 실제 APK의 Origin을 포함한 등록·문서 생성·결과·재시작·폐기와 거부 경계를 회귀 검사에 추가한다. 기존 APK 재빌드는 필요하지 않으며 폰의 연결 완료는 소유자 확인 전까지 미검증이다.
+- 정확한 실행 검사·배포 증거는 `docs/ANDROID_ORIGIN_FIX.md`에 기록한다.
+
 # 0.2.2 — 출처를 보존하는 개선 자료 접수
 
 - 전체 63/63 검사 통과. 실제 Koyeb 빌드·76개 자료 등록·결과 생성·재시작 보존과 20개 프로젝트의 업그레이드 보존 검사 완료. 상세 증거는 `docs/LIVE_ACCEPTANCE.md`.

@@ -13,9 +13,9 @@ const runtimeRoot = fileURLToPath(new URL('../', import.meta.url));
 const TEST_TOKEN = 'integration-test-token-only-9f371a';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function rawGet(url, headers) {
+function rawGet(url, headers, requestPath) {
   return new Promise((resolve, reject) => {
-    const request = httpRequest(url, { headers }, (response) => {
+    const request = httpRequest(url, { headers, ...(requestPath === undefined ? {} : { path: requestPath }) }, (response) => {
       response.resume();
       response.once('end', () => resolve(response.statusCode));
     });
@@ -149,26 +149,78 @@ test('the runtime requires its token and rejects untrusted browser origins and h
   assert.equal((await f.api('/api/state', { headers: { origin: f.base } })).status, 200);
 });
 
+test('the bundled Android origin reaches only the versioned API and still requires credentials', async (t) => {
+  const f = await fixture(t);
+  const headers = { origin: 'http://tauri.localhost' };
+  const health = await f.api('/api/v1/health', { token: null, headers });
+  assert.equal(health.status, 200, JSON.stringify(health.body));
+  assert.equal(health.headers.get('access-control-allow-origin'), null, 'native transport needs no browser CORS exception');
+  for (const token of [null, 'wrong-token', TEST_TOKEN]) {
+    assert.equal((await f.api('/api/v1/state', { token, headers })).status, 401);
+  }
+  for (const token of [null, 'wrong-token']) {
+    assert.equal((await f.api('/api/v1/devices/enroll', {
+      method: 'POST', token, headers,
+      body: { name: 'Android', platform: 'android', requestId: randomUUID() },
+    })).status, 401);
+  }
+  for (const route of ['/', '/api/health', '/api/state', '/api/state?next=/api/v1/', '/api/v10/health', '/api/v1%2fhealth', '/api/v1/../state']) {
+    assert.equal((await f.api(route, { headers })).status, 403, `${route} must retain the legacy origin boundary`);
+  }
+  for (const requestPath of ['/api/v1', '/api/v1/%2e%2e/state', '/api/v1/../state', '//attacker.invalid/api/v1/health', 'http://attacker.invalid/api/v1/health']) {
+    assert.equal(await rawGet(f.base, { authorization: `Bearer ${TEST_TOKEN}`, ...headers }, requestPath), 403, requestPath);
+  }
+  for (const host of ['attacker.invalid', 'tauri.localhost', '127.0.0.1@attacker.invalid']) {
+    assert.equal(await rawGet(`${f.base}/api/v1/health`, { host, ...headers }), 403, `native Origin cannot authorize Host ${host}`);
+  }
+});
+
+test('native API rejects opaque, malformed, and lookalike origins', async (t) => {
+  const f = await fixture(t);
+  for (const origin of [
+    'null', 'not an origin', 'https://attacker.invalid', 'https://tauri.localhost',
+    'http://tauri.localhost/', 'http://tauri.localhost:80', 'http://tauri.localhost:3000',
+    'http://tauri.localhost.evil.invalid', 'http://tauri.localhost@attacker.invalid',
+    'http://attacker.invalid@tauri.localhost', 'http://tauri.localhost?query=1',
+    'http://tauri.localhost#fragment', 'tauri://localhost',
+  ]) {
+    assert.equal((await f.api('/api/v1/health', { token: null, headers: { origin } })).status, 403, origin);
+  }
+});
+
+test('configured HTTPS proxy origins retain legacy browser and versioned health access', async (t) => {
+  const f = await fixture(t, { YENO_ALLOWED_HOSTS: 'core.example.test' });
+  const headers = { origin: 'https://core.example.test' };
+  assert.equal((await f.api('/api/state', { headers })).status, 200);
+  assert.equal((await f.api('/api/v1/health', { token: null, headers })).status, 200);
+  assert.equal((await f.api('/api/state', { headers: { origin: 'http://core.example.test' } })).status, 403);
+  assert.equal(await rawGet(`${f.base}/api/state`, { host: 'attacker.invalid', authorization: `Bearer ${TEST_TOKEN}`, ...headers }), 403);
+});
+
 test('versioned native API enrolls, persists, and revokes a device-scoped credential', async (t) => {
   const f = await fixture(t);
+  // The pinned native HTTP plugin sends the bundled WebView Origin on every
+  // request. Omitting it here hid the real APK enrollment regression.
+  const api = (route, options = {}) => f.api(route, { ...options, headers: { origin: 'http://tauri.localhost', ...options.headers } });
   const requestId = randomUUID();
   const enrollmentBody = { name: 'Owner Android', platform: 'android', requestId };
-  const enrolled = await f.api('/api/v1/devices/enroll', {
+  const enrolled = await api('/api/v1/devices/enroll', {
     method: 'POST', body: enrollmentBody,
   });
   assert.equal(enrolled.status, 201);
   assert.equal(enrolled.body.device.name, 'Owner Android');
   const deviceToken = enrolled.body.device.deviceToken;
   assert.equal(typeof deviceToken, 'string');
-  assert.equal((await f.api('/api/v1/state')).status, 401, 'pairing token is not an API v1 session token');
-  assert.equal((await f.api('/api/v1/state', { token: deviceToken })).status, 200);
-  const command = await f.api('/api/v1/commands', {
+  assert.equal((await api('/api/v1/state')).status, 401, 'pairing token is not an API v1 session token');
+  assert.equal((await api('/api/v1/state', { token: deviceToken })).status, 200);
+  assert.equal((await f.api('/api/v1/state', { token: deviceToken })).status, 200, 'origin-less native clients remain compatible');
+  const command = await api('/api/v1/commands', {
     method: 'POST', token: deviceToken,
     body: { text: '문서 만들어: Android 명령 결과 재접속 확인', requestId: randomUUID() },
   });
   assert.equal(command.status, 201);
   const completed = await f.eventually(
-    () => f.api('/api/v1/state', { token: deviceToken }),
+    () => api('/api/v1/state', { token: deviceToken }),
     (response) => response.body.jobs.find((job) => job.id === command.body.job.id)?.status === 'completed',
     'native command should produce a durable result',
   );
@@ -184,29 +236,29 @@ test('versioned native API enrolls, persists, and revokes a device-scoped creden
 
   await f.stop();
   await f.start();
-  const enrollmentRetry = await f.api('/api/v1/devices/enroll', { method: 'POST', body: enrollmentBody });
+  const enrollmentRetry = await api('/api/v1/devices/enroll', { method: 'POST', body: enrollmentBody });
   assert.equal(enrollmentRetry.status, 201);
   assert.deepEqual(enrollmentRetry.body, enrolled.body, 'a lost enrollment response is recoverable after restart');
-  const afterRestart = await f.api('/api/v1/state', { token: deviceToken });
+  const afterRestart = await api('/api/v1/state', { token: deviceToken });
   assert.equal(afterRestart.status, 200);
   assert.equal(afterRestart.body.apiVersion, '1');
   assert.equal(afterRestart.body.jobs.find((job) => job.id === command.body.job.id).status, 'completed');
-  const result = await f.api(`/api/v1/artifacts/${artifact.id}`, { token: deviceToken });
+  const result = await api(`/api/v1/artifacts/${artifact.id}`, { token: deviceToken });
   assert.equal(result.status, 200);
   assert.match(result.body, /Android 명령 결과 재접속 확인/);
 
-  const revoked = await f.api('/api/v1/devices/revoke', {
+  const revoked = await api('/api/v1/devices/revoke', {
     method: 'POST', token: deviceToken, body: { requestId: randomUUID() },
   });
   assert.equal(revoked.status, 200);
-  assert.equal((await f.api('/api/v1/state', { token: deviceToken })).status, 401);
-  const revokedReplay = await f.api('/api/v1/devices/enroll', { method: 'POST', body: enrollmentBody });
+  assert.equal((await api('/api/v1/state', { token: deviceToken })).status, 401);
+  const revokedReplay = await api('/api/v1/devices/enroll', { method: 'POST', body: enrollmentBody });
   assert.equal(revokedReplay.status, 409, 'an enrollment retry cannot reissue a revoked credential');
   assert.ok(!JSON.stringify(revokedReplay.body).includes(deviceToken));
-  assert.equal((await f.api('/api/v1/state', { token: deviceToken })).status, 401);
+  assert.equal((await api('/api/v1/state', { token: deviceToken })).status, 401);
   await f.stop();
   await f.start();
-  assert.equal((await f.api('/api/v1/devices/enroll', { method: 'POST', body: enrollmentBody })).status, 409);
+  assert.equal((await api('/api/v1/devices/enroll', { method: 'POST', body: enrollmentBody })).status, 409);
   const saved = JSON.parse(JSON.parse(await readFile(path.join(f.dir, 'state.json'), 'utf8')).payload);
   assert.equal(Object.keys(saved.devices).length, 1, 'retries cannot silently enroll another device');
   for (const filename of ['state.json', 'state.json.bak']) {
