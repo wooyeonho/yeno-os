@@ -9,3 +9,9 @@
 - 실제 확인 상태와 남은 연결·빌드 작업은 `docs/STATUS.md`에 기록한다.
 
 본 기록은 소스 등록에 관한 것이다. 운영 서버 배포, APK/EXE 생성, 실기기 확인을 뜻하지 않는다.
+
+## 2026-09-09 — native controller candidate
+
+- Added the versioned native controller API with persistent revocable device credentials.
+- Added the Tauri 2 Android-first controller source and encrypted Stronghold connection vault.
+- Added Android build and device acceptance procedures; no APK or device verification is claimed.

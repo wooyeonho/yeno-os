@@ -16,7 +16,7 @@ export function atomicWrite(file, content) {
 export function initialState() {
  return {revision:0, emergencyStop:false, concurrency:1,
  modules:{memory:true,documents:true,diagnostics:true,ai:false},
- jobs:[], memories:[], snapshots:[], events:[], requests:{}, artifacts:{}};
+ jobs:[], memories:[], snapshots:[], events:[], requests:{}, artifacts:{}, devices:{}};
 }
 export function openStore(directory) {
  fs.mkdirSync(directory,{recursive:true,mode:0o700});
@@ -26,6 +26,9 @@ export function openStore(directory) {
  if(fs.existsSync(file)) {try{state=decode(file);}catch{try{state=decode(`${file}.bak`);recovered=true;}catch{throw new Error('Both state and backup are unreadable. Original data has been preserved.');}}}
  else if(fs.existsSync(`${file}.bak`)){state=decode(`${file}.bak`);recovered=true;}
  else state=initialState();
+ // 0.1.1 stores predate device credentials. This additive migration preserves
+ // every existing job, request receipt, artifact, and memory.
+ if(!state.devices||typeof state.devices!=='object'||Array.isArray(state.devices))state.devices={};
  function save(){
    state.revision++;
    const payload=JSON.stringify(state);

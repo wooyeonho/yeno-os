@@ -149,6 +149,47 @@ test('the runtime requires its token and rejects untrusted browser origins and h
   assert.equal((await f.api('/api/state', { headers: { origin: f.base } })).status, 200);
 });
 
+test('versioned native API enrolls, persists, and revokes a device-scoped credential', async (t) => {
+  const f = await fixture(t);
+  const requestId = randomUUID();
+  const enrolled = await f.api('/api/v1/devices/enroll', {
+    method: 'POST', body: { name: 'Owner Android', platform: 'android', requestId },
+  });
+  assert.equal(enrolled.status, 201);
+  assert.equal(enrolled.body.device.name, 'Owner Android');
+  const deviceToken = enrolled.body.device.deviceToken;
+  assert.equal(typeof deviceToken, 'string');
+  assert.equal((await f.api('/api/v1/state')).status, 401, 'pairing token is not an API v1 session token');
+  assert.equal((await f.api('/api/v1/state', { token: deviceToken })).status, 200);
+  const command = await f.api('/api/v1/commands', {
+    method: 'POST', token: deviceToken,
+    body: { text: '문서 만들어: Android 명령 결과 재접속 확인', requestId: randomUUID() },
+  });
+  assert.equal(command.status, 201);
+  const completed = await f.eventually(
+    () => f.api('/api/v1/state', { token: deviceToken }),
+    (response) => response.body.jobs.find((job) => job.id === command.body.job.id)?.status === 'completed',
+    'native command should produce a durable result',
+  );
+  const artifact = completed.body.jobs.find((job) => job.id === command.body.job.id).artifacts[0];
+
+  await f.stop();
+  await f.start();
+  const afterRestart = await f.api('/api/v1/state', { token: deviceToken });
+  assert.equal(afterRestart.status, 200);
+  assert.equal(afterRestart.body.apiVersion, '1');
+  assert.equal(afterRestart.body.jobs.find((job) => job.id === command.body.job.id).status, 'completed');
+  const result = await f.api(`/api/v1/artifacts/${artifact.id}`, { token: deviceToken });
+  assert.equal(result.status, 200);
+  assert.match(result.body, /Android 명령 결과 재접속 확인/);
+
+  const revoked = await f.api('/api/v1/devices/revoke', {
+    method: 'POST', token: deviceToken, body: { requestId: randomUUID() },
+  });
+  assert.equal(revoked.status, 200);
+  assert.equal((await f.api('/api/v1/state', { token: deviceToken })).status, 401);
+});
+
 test('unsupported commands are rejected instead of claiming successful work', async (t) => {
   const f = await fixture(t);
   const unsupportedCommand = await f.api('/api/commands', {

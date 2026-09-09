@@ -7,7 +7,8 @@ import {fileURLToPath} from 'node:url';
 import {atomicWrite,openStore,acquireRuntimeLock,digest,uid,now} from './lib/store.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
-const VERSION='0.1.1';
+const VERSION='0.2.0';
+const API_VERSION='1';
 const MAX_BODY=256*1024;
 class HttpError extends Error {constructor(status,message,extra={}){super(message);this.status=status;this.extra=extra;}}
 function requiredText(value,maximum=80000){if(typeof value!=='string'||!value.trim())throw new HttpError(400,'text must be a non-empty string');if(value.length>maximum)throw new HttpError(400,`text is limited to ${maximum} characters`);return value.trim();}
@@ -40,7 +41,7 @@ export function createYenoServer(options={}) {
  if(store.recovered)event('State recovered from the verified previous backup.');
  if(!aiEndpoint)s.modules.ai=false;
  event('YENO runtime started.');store.save();
- function state(){return {name:'YENO OS',version:VERSION,revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint,model:aiEndpoint?aiModel:null},jobs:s.jobs.map(publicJob),memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,capabilities:{localDocuments:true,persistentMemory:true,diagnostics:true,evolution:'proposals-only',ai:!!aiEndpoint,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
+ function state(){return {name:'YENO OS',version:VERSION,apiVersion:API_VERSION,revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint,model:aiEndpoint?aiModel:null},jobs:s.jobs.map(publicJob),memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,capabilities:{localDocuments:true,persistentMemory:true,diagnostics:true,evolution:'proposals-only',ai:!!aiEndpoint,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
  const save=()=>store.save();
  const touch=job=>{job.updatedAt=now();job.version++;};
  const moduleFor=type=>type==='document'?'documents':type==='ai'?'ai':'diagnostics';
@@ -112,7 +113,9 @@ export function createYenoServer(options={}) {
    }catch(error){if(!valid())return;job.status='failed';job.error=job.type==='ai'?(String(error.message).startsWith('AI provider')?error.message:'AI request failed or timed out; no provider response details retained.'):String(error.message).slice(0,300);touch(job);event(`Job failed: ${job.title}`);save();}
    if(valid()){const timer=setTimeout(()=>runStep(job,generation),250);timer.unref();}
  }
- function authenticate(req){const supplied=req.headers.authorization;if(typeof supplied!=='string'||!supplied.startsWith('Bearer '))throw new HttpError(401,'Pairing token required');const candidate=digest(supplied.slice(7));if(!crypto.timingSafeEqual(Buffer.from(candidate),Buffer.from(tokenHash)))throw new HttpError(401,'Invalid pairing token');}
+ function bearer(req){const supplied=req.headers.authorization;if(typeof supplied!=='string'||!supplied.startsWith('Bearer '))return null;return supplied.slice(7);}
+ function authenticate(req,deviceOnly=false){const credential=bearer(req);if(!credential)throw new HttpError(401,deviceOnly?'Device token required':'Pairing token required');const candidate=digest(credential);if(!deviceOnly&&crypto.timingSafeEqual(Buffer.from(candidate),Buffer.from(tokenHash)))return {kind:'pairing'};for(const device of Object.values(s.devices)){if(!device.revokedAt&&device.tokenHash===candidate){device.lastSeenAt=now();return {kind:'device',device};}}throw new HttpError(401,deviceOnly?'Invalid or revoked device token':'Invalid pairing token');}
+ function enrollDevice(b){const name=requiredText(b.name,80),platform=requiredText(b.platform,40);const id=uid(),deviceToken=crypto.randomBytes(32).toString('base64url'),createdAt=now();s.devices[id]={id,name,platform,tokenHash:digest(deviceToken),createdAt,lastSeenAt:createdAt,revokedAt:null};event(`Device enrolled: ${name} (${platform})`);return {id,name,platform,createdAt,deviceToken};}
  function checkHost(req){const raw=req.headers.host;if(typeof raw!=='string'||!raw||/[\s/@\\#?]/.test(raw))throw new HttpError(403,'Invalid Host');let base;try{base=new URL(`http://${raw}`);if(base.host!==raw.toLowerCase()&&!(raw.endsWith(':80')&&base.host===raw.slice(0,-3).toLowerCase()))throw new Error();}catch{throw new HttpError(403,'Invalid Host');}if(!allowedHosts.has(base.hostname.toLowerCase())&&!allowedHosts.has(raw.toLowerCase()))throw new HttpError(403,'Host is not allowed');if(req.headers.origin){let origin;try{origin=new URL(req.headers.origin);}catch{throw new HttpError(403,'Invalid Origin');}const direct=['http:','https:'].includes(origin.protocol)&&origin.host.toLowerCase()===raw.toLowerCase();const trustedProxy=origin.protocol==='https:'&&(env.YENO_ALLOWED_HOSTS??'').split(',').map(x=>x.trim().toLowerCase()).includes(origin.host.toLowerCase());if(origin.origin!==req.headers.origin||(!direct&&!trustedProxy))throw new HttpError(403,'Origin does not match Host');}}
  async function body(req){let total=0,parts=[];for await(const part of req){total+=part.length;if(total>MAX_BODY)throw new HttpError(413,'Request body exceeds 256 KB');parts.push(part);}if(!total)return {};let result;try{result=JSON.parse(Buffer.concat(parts).toString('utf8'));}catch{throw new HttpError(400,'Invalid JSON body');}if(!result||typeof result!=='object'||Array.isArray(result))throw new HttpError(400,'JSON object required');return result;}
  function respond(res,status,payload){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(payload));}
@@ -131,13 +134,22 @@ export function createYenoServer(options={}) {
    res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Frame-Options','DENY');res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
    try{
      checkHost(req);const url=new URL(req.url,`http://${req.headers.host}`);
-     if(req.method==='GET'&&url.pathname==='/api/health')return respond(res,200,{name:'YENO OS',version:VERSION,authRequired:true});
+     if(req.method==='GET'&&(url.pathname==='/api/health'||url.pathname==='/api/v1/health'))return respond(res,200,{name:'YENO OS',version:VERSION,apiVersion:API_VERSION,authRequired:true,authentication:'device-bearer'});
      if(!url.pathname.startsWith('/api/')){
        if(req.method!=='GET'&&req.method!=='HEAD')throw new HttpError(405,'Method not allowed');
        const allowed={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/command-request.mjs':'command-request.mjs','/style.css':'style.css','/manifest.webmanifest':'manifest.webmanifest','/icon.svg':'icon.svg'};
        const filename=allowed[url.pathname];if(!filename)throw new HttpError(404,'Not found');const file=path.join(ROOT,'public',filename);if(!fs.existsSync(file))throw new HttpError(404,'UI not available');const contentTypes={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.webmanifest':'application/manifest+json','.svg':'image/svg+xml'};res.writeHead(200,{'Content-Type':contentTypes[path.extname(file)]??'application/octet-stream'});if(req.method==='HEAD')return res.end();return fs.createReadStream(file).pipe(res);
      }
-     authenticate(req);
+     const versioned=url.pathname.startsWith('/api/v1/');
+     if(versioned&&req.method==='POST'&&url.pathname==='/api/v1/devices/enroll'){
+       const b=await body(req);const credential=bearer(req);if(!credential||!crypto.timingSafeEqual(Buffer.from(digest(credential)),Buffer.from(tokenHash)))throw new HttpError(401,'Valid pairing token required');
+       const result=mutation(req,url,b,()=>({status:201,payload:{device:enrollDevice(b)}}));return respond(res,result.status,result.payload);
+     }
+     const principal=authenticate(req,versioned);
+     if(versioned)url.pathname=url.pathname.replace(/^\/api\/v1/,'/api');
+     if(req.method==='POST'&&url.pathname==='/api/devices/revoke'){
+       await body(req);const id=principal.device?.id;if(!id||!s.devices[id])throw new HttpError(404,'Device not found');s.devices[id].revokedAt=now();event(`Device revoked: ${s.devices[id].name}`);save();return respond(res,200,{revoked:true,deviceId:id});
+     }
      if(req.method==='GET'&&url.pathname==='/api/state')return respond(res,200,state());
      if(req.method==='GET'&&url.pathname==='/api/memory'){requireModule('memory');const q=(url.searchParams.get('q')??'').toLocaleLowerCase();return respond(res,200,{memories:s.memories.filter(m=>m.text.toLocaleLowerCase().includes(q))});}
      const artifactMatch=url.pathname.match(/^\/api\/artifacts\/([a-f0-9-]+)$/);
