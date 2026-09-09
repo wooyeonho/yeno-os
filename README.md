@@ -33,6 +33,7 @@ npm start -- --no-open
 
 - [개발 지침](AGENTS.md)
 - [실제 상태](docs/STATUS.md)
+- [Koyeb 첫 연결 후보](docs/KOYEB_SETUP.md)
 - [첫 구현 작업](docs/FIRST_TASK.md)
 - [YENO 성격과 행동 기준](identity/YENO.md)
 - [기능 발견과 개선 기준](docs/DISCOVERY.md)

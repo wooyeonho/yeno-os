@@ -1,6 +1,7 @@
 # Only runtime source required by the container may enter the build context.
 **
 !Dockerfile
+!Dockerfile.koyeb
 !.dockerignore
 !runtime/
 !runtime/server.mjs
@@ -15,3 +16,5 @@
 !runtime/public/style.css
 !runtime/public/manifest.webmanifest
 !runtime/public/icon.svg
+!scripts/
+!scripts/start-koyeb.sh
