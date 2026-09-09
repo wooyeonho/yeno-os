@@ -1,0 +1,85 @@
+name: Build Android test APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Source branch or commit to build
+        required: true
+        default: codex
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: yeno-android-test
+  cancel-in-progress: false
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+      CARGO_BUILD_JOBS: '2'
+    defaults:
+      run:
+        working-directory: apps/controller
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+      - name: Record source revision
+        id: source
+        working-directory: .
+        run: |
+          git rev-parse HEAD
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verify core and controller logic
+        working-directory: .
+        run: npm --offline test
+      - name: Install locked frontend dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build frontend
+        run: npm run build
+      - name: Configure Android and Rust
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;28.2.13676358"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-linux-android
+          rustc --version
+          cargo --version
+          cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
+      - name: Initialize Android project
+        run: npm run tauri -- android init --ci --skip-targets-install
+      - name: Build ARM64 debug APK
+        run: npm run tauri -- android build --debug --apk --target aarch64 --ci
+      - name: Collect APK and build evidence
+        working-directory: .
+        run: python3 scripts/collect-android-artifacts.py
+      - name: Upload APK and checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: yeno-android-debug-${{ steps.source.outputs.sha }}
+          path: build-artifacts/android/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload resolved Rust dependencies
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: yeno-android-cargo-lock-${{ steps.source.outputs.sha }}
+          path: apps/controller/src-tauri/Cargo.lock
+          if-no-files-found: ignore
+          retention-days: 7

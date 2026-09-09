@@ -16,21 +16,22 @@ YENO's interaction design is in `identity/YENO.md`. It is a product specificatio
 
 ## Current baseline
 
-`runtime/` contains the unchanged 0.1.1 rebuild baseline. The owner's older local 0.2.3 installation is separate. Do not overwrite or silently migrate that installation.
+`runtime/` now contains the 0.2.0 candidate built on the imported 0.1.1 baseline. The owner's older local 0.2.3 installation is separate. Do not overwrite or silently migrate that installation.
 
-The runtime implements basic memory, deterministic command routing, document/diagnostic jobs, pause/resume/cancel, and memory/settings snapshots. Its optional AI call produces a draft; it is not an implemented general tool loop. The native app, persistent cloud deployment, developer workers, notifications, and native installers are not included in this starter.
+The runtime implements basic memory, deterministic command routing, document/diagnostic jobs, pause/resume/cancel, memory/settings snapshots, and versioned device authentication. Its optional AI call produces a draft; it is not an implemented general tool loop. `apps/controller` contains the native controller source; consult `docs/STATUS.md` for actual build and device verification. Persistent cloud deployment, developer workers, notifications, and native installers remain pending until evidenced.
 
 Read `YENO_START_HERE.md`, `docs/STATUS.md`, and `docs/FIRST_TASK.md` before changing code. Consult `docs/BUILD_DECISIONS.md` for the accepted architecture.
 
 ## Commands
 
 - Node 24 is the selected starter development runtime.
-- Baseline integrity, before making runtime edits: `npm run verify:baseline`.
-- Existing runtime tests: `npm test`.
+- Tests for core, controller request handling, and HTTP scope: `npm test` (Node 24).
+- Frontend build: `npm run build:controller` after `npm ci --prefix apps/controller --ignore-scripts --no-audit --no-fund`.
+- `npm run verify:baseline` and `STARTER_MANIFEST.json` document the original import only; current 0.2.0 changes intentionally differ. Do not use the old manifest as a gate for changed code or revert intentional edits to pass it.
 - Local runtime: `npm start -- --no-open`.
 - Dependencies are not needed for the existing built-in Node baseline tests. Install and lock dependencies when implementing new components.
 
-The manual GitHub verification workflow has not been executed on GitHub. It checks the baseline on Linux only and does not build or verify APK/EXE artifacts.
+GitHub workflows are manual. `android-debug.yml` builds the explicitly selected source ref and collects a test APK only if compilation succeeds. A workflow file, frontend bundle, or passing Node test is not an APK or device verification. Do not report a workflow run before checking its actual result.
 
 ## Implementation constraints
 

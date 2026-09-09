@@ -1,1 +1,26 @@
-{"$schema":"../gen/schemas/desktop-schema.json","identifier":"default","description":"YENO controller permissions","windows":["main"],"permissions":["core:default","http:default","stronghold:default"]}
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "YENO controller: owner-selected HTTPS core API, or local development API",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "https://*:*/api/v1/*"
+        },
+        {
+          "url": "http://localhost:*/api/v1/*"
+        },
+        {
+          "url": "http://127.0.0.1:*/api/v1/*"
+        }
+      ]
+    },
+    "stronghold:default"
+  ]
+}

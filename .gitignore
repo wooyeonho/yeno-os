@@ -17,3 +17,6 @@ node_modules/
 *.pfx
 *.pem
 *.key
+build-artifacts/
+**/__pycache__/
+apps/controller/src-tauri/gen/android/

@@ -1,6 +1,20 @@
-<!doctype html><html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#10231e"><title>YENO</title></head><body><main>
+<!doctype html>
+<html lang="ko">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#10231e"><title>YENO</title></head>
+<body><main>
 <header><b>YENO</b><span id="connection">연결 안 됨</span></header>
 <section id="unlock" hidden><h1>YENO 열기</h1><p>기기 인증은 암호화된 네이티브 보관소에 있습니다.</p><form id="unlock-form"><label>보관소 암호<input id="unlock-password" type="password" minlength="8" required></label><button>다시 연결</button></form></section>
-<section id="setup"><h1>본체 연결</h1><p>상주 코어의 HTTPS 주소와 일회용 연결 키를 입력하세요. 주소와 기기 인증은 앱을 닫아도 암호화해 보관됩니다.</p><form id="pair"><label>코어 주소<input id="origin" type="url" placeholder="https://yeno.example.com" required></label><label>연결 키<input id="pairing" type="password" required></label><label>보관소 암호 (8자 이상)<input id="vault-password" type="password" minlength="8" required></label><button>이 기기 연결</button></form></section>
-<section id="cockpit" hidden><div class="status"><h1 id="headline">상태 확인 중</h1><p id="seen"></p></div><form id="command"><label>명령<textarea id="text" placeholder="문서 만들어: 오늘 할 일을 정리해" required></textarea></label><button>명령 맡기기</button></form><p id="pending"></p><div class="controls"><button id="stop" type="button">전체 멈춤</button><button id="refresh" type="button">새로 확인</button></div><h2>작업과 결과</h2><div id="jobs"></div><button id="disconnect" class="secondary" type="button">이 기기 연결 해제</button></section>
-<p id="message" role="alert"></p></main><script type="module" src="/src/main.ts"></script></body></html>
+<section id="setup"><h1>본체 연결</h1><p>상주 코어의 HTTPS 주소와 연결 키를 입력하세요. 주소와 기기 인증은 앱을 닫아도 암호화해 보관됩니다.</p><form id="pair"><label>코어 주소<input id="origin" type="url" placeholder="https://yeno.example.com" required></label><label>연결 키<input id="pairing" type="password" required></label><label>보관소 암호 (8자 이상)<input id="vault-password" type="password" minlength="8" required></label><button id="pair-button">이 기기 연결</button></form></section>
+<section id="cockpit" hidden>
+<div class="status"><h1 id="headline">상태 확인 중</h1><p id="seen"></p></div>
+<form id="command"><label>명령<textarea id="text" placeholder="문서 만들어: 오늘 할 일을 정리해" required></textarea></label><button id="submit-command">명령 맡기기</button></form>
+<p id="pending"></p><button id="retry-command" class="secondary" type="button" hidden>대기 중인 원래 명령으로 다시 확인</button>
+<div class="controls"><button id="stop" type="button">전체 멈춤</button><button id="refresh" type="button">새로 확인</button></div>
+<div id="command-result" class="result" aria-live="polite" hidden><h2>최근 명령 결과</h2><p id="receipt-meta"></p><div id="receipt-body"></div></div>
+<div id="artifact-result" class="result" hidden><h2 id="artifact-title">결과 내용</h2><pre id="artifact-body" tabindex="0"></pre><button id="copy-artifact" class="secondary" type="button">결과 복사</button></div>
+<h2>작업과 결과</h2><div id="jobs"></div>
+<button id="disconnect" class="secondary" type="button">서버 토큰 폐기 후 연결 해제</button>
+<button id="local-forget" class="secondary" type="button" hidden>서버 폐기 확인 없이 이 폰에서만 지우기</button>
+</section>
+<p id="message" role="alert"></p>
+</main><script type="module" src="/src/main.ts"></script></body></html>

@@ -1,1 +1,30 @@
-{"$schema":"https://schema.tauri.app/config/2","productName":"YENO","version":"0.1.0","identifier":"kr.yeno.controller","build":{"beforeDevCommand":"npm run dev","devUrl":"http://localhost:1420","beforeBuildCommand":"npm run build","frontendDist":"../dist"},"app":{"windows":[{"title":"YENO","width":430,"height":820,"resizable":true}]},"bundle":{"active":true,"targets":"all","android":{"minSdkVersion":28}}}
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "YENO",
+  "version": "0.1.0",
+  "identifier": "kr.yeno.controller",
+  "build": {
+    "beforeDevCommand": "npm run dev -- --host 0.0.0.0 --port 1420 --strictPort",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "YENO",
+        "width": 430,
+        "height": 820,
+        "resizable": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "android": {
+      "minSdkVersion": 28
+    },
+    "icon": []
+  }
+}

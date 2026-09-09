@@ -2,27 +2,28 @@
 
 연호님의 개인 OS. Android 앱과 Windows 앱에서 같은 기억·목표·작업 결과를 확인하는 시스템을 개발합니다.
 
-현재는 **실행 코어 0.1.1과 개발 시작 파일**이 들어 있습니다. APK·EXE, 상주 운영 서버, 일반 자연어 도구 실행과 자동 개선 적용은 아직 구현·배포되지 않았습니다.
+현재는 **실행 코어 0.2.0 후보와 Android 앱 소스**가 들어 있습니다. 화면 빌드와 코어 검증은 가능하며, 실제 APK·EXE, 상주 운영 서버, 일반 자연어 도구 실행과 자동 개선 적용은 아직 완료되지 않았습니다. 정확한 실행 결과는 `docs/STATUS.md`를 확인하세요.
 
 ## 폰에서 개발 시작
 
-[YENO_START_HERE.md](YENO_START_HERE.md)를 따라 Codex에 이 저장소를 연결하세요. 소스는 이미 폴더로 등록되어 있어 ZIP 업로드나 압축 해제가 필요하지 않습니다.
+[YENO_START_HERE.md](YENO_START_HERE.md)에서 다음 APK 빌드 단계를 확인하세요. 소스는 이미 폴더로 등록되어 있고 Codex 첫 구현 작업과 PR 생성까지 진행됐습니다.
 
 첫 개발 요청:
 
 ```text
-AGENTS.md, docs/STATUS.md, docs/FIRST_TASK.md를 읽고 첫 구현 작업을 수행해.
-기준선 검증 후 Android에서 명령·결과·재접속을 확인할 코어 연결과 앱을 구현해.
-실제로 실행한 검사와 빌드 결과를 보고하고, 막힌 부분은 정확히 구분해.
+AGENTS.md와 docs/STATUS.md, docs/ANDROID_BUILD.md를 읽고 현재 작업을 이어가.
+기존 구현을 보존하고 검사·실제 APK 빌드 결과를 확인해.
+수동 빌드가 실패했다면 최초 실패 원인을 수정하고 아직 미검증인 부분을 구분해.
 ```
 
 ## 로컬 검증
 
-Node 24 이상에서 실행합니다. 현재 기준선에는 외부 패키지 설치나 모델 API 키가 필요하지 않습니다.
+Node 24 이상에서 실행합니다. 코어·명령 회귀 검사에는 외부 패키지나 모델 API 키가 필요하지 않습니다. 앱 화면 빌드에는 아래 의존성 설치가 필요합니다.
 
 ```bash
-npm run verify:baseline
 npm test
+npm ci --prefix apps/controller --ignore-scripts --no-audit --no-fund
+npm run build:controller
 npm start -- --no-open
 ```
 

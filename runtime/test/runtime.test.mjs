@@ -52,7 +52,7 @@ async function fixture(t, environment = {}) {
     clearTimeout(timer);
   }
 
-  async function start() {
+  async function start({ token = TEST_TOKEN } = {}) {
     logs = '';
     child = spawn(process.execPath, ['server.mjs'], {
       cwd: runtimeRoot,
@@ -65,7 +65,7 @@ async function fixture(t, environment = {}) {
         YENO_PORT: String(port),
         YENO_HOST: '127.0.0.1',
         YENO_DATA_DIR: dir,
-        YENO_TOKEN: TEST_TOKEN,
+        YENO_TOKEN: token,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -152,8 +152,9 @@ test('the runtime requires its token and rejects untrusted browser origins and h
 test('versioned native API enrolls, persists, and revokes a device-scoped credential', async (t) => {
   const f = await fixture(t);
   const requestId = randomUUID();
+  const enrollmentBody = { name: 'Owner Android', platform: 'android', requestId };
   const enrolled = await f.api('/api/v1/devices/enroll', {
-    method: 'POST', body: { name: 'Owner Android', platform: 'android', requestId },
+    method: 'POST', body: enrollmentBody,
   });
   assert.equal(enrolled.status, 201);
   assert.equal(enrolled.body.device.name, 'Owner Android');
@@ -173,8 +174,19 @@ test('versioned native API enrolls, persists, and revokes a device-scoped creden
   );
   const artifact = completed.body.jobs.find((job) => job.id === command.body.job.id).artifacts[0];
 
+  for (const filename of ['state.json', 'state.json.bak']) {
+    const saved = await readFile(path.join(f.dir, filename), 'utf8');
+    assert.ok(!saved.includes(deviceToken), `${filename} must not persist the issued device credential`);
+    const data = JSON.parse(JSON.parse(saved).payload);
+    assert.ok(!Object.hasOwn(data.requests[requestId].payload.device, 'deviceToken'));
+    assert.equal(data.devices[enrolled.body.device.id].tokenHash, createHash('sha256').update(deviceToken).digest('hex'));
+  }
+
   await f.stop();
   await f.start();
+  const enrollmentRetry = await f.api('/api/v1/devices/enroll', { method: 'POST', body: enrollmentBody });
+  assert.equal(enrollmentRetry.status, 201);
+  assert.deepEqual(enrollmentRetry.body, enrolled.body, 'a lost enrollment response is recoverable after restart');
   const afterRestart = await f.api('/api/v1/state', { token: deviceToken });
   assert.equal(afterRestart.status, 200);
   assert.equal(afterRestart.body.apiVersion, '1');
@@ -188,6 +200,87 @@ test('versioned native API enrolls, persists, and revokes a device-scoped creden
   });
   assert.equal(revoked.status, 200);
   assert.equal((await f.api('/api/v1/state', { token: deviceToken })).status, 401);
+  const revokedReplay = await f.api('/api/v1/devices/enroll', { method: 'POST', body: enrollmentBody });
+  assert.equal(revokedReplay.status, 409, 'an enrollment retry cannot reissue a revoked credential');
+  assert.ok(!JSON.stringify(revokedReplay.body).includes(deviceToken));
+  assert.equal((await f.api('/api/v1/state', { token: deviceToken })).status, 401);
+  await f.stop();
+  await f.start();
+  assert.equal((await f.api('/api/v1/devices/enroll', { method: 'POST', body: enrollmentBody })).status, 409);
+  const saved = JSON.parse(JSON.parse(await readFile(path.join(f.dir, 'state.json'), 'utf8')).payload);
+  assert.equal(Object.keys(saved.devices).length, 1, 'retries cannot silently enroll another device');
+  for (const filename of ['state.json', 'state.json.bak']) {
+    assert.ok(!(await readFile(path.join(f.dir, filename), 'utf8')).includes(deviceToken));
+  }
+});
+
+test('pairing-secret rotation rejects credential recovery without invalidating issued device tokens', async (t) => {
+  const f = await fixture(t);
+  const body = { name: 'Owner Android', platform: 'android', requestId: randomUUID() };
+  const enrolled = await f.api('/api/v1/devices/enroll', { method: 'POST', body });
+  assert.equal(enrolled.status, 201);
+  const deviceToken = enrolled.body.device.deviceToken;
+  const rotatedToken = 'rotated-integration-pairing-token-9f371a';
+  await f.stop();
+  await f.start({ token: rotatedToken });
+
+  const retry = await f.api('/api/v1/devices/enroll', { method: 'POST', body, token: rotatedToken });
+  assert.equal(retry.status, 409, 'rotation must never return a successful but unusable reconstructed token');
+  assert.ok(!Object.hasOwn(retry.body, 'device'));
+  assert.equal((await f.api('/api/v1/state', { token: deviceToken })).status, 200);
+  assert.equal((await f.api('/api/v1/devices/enroll', { method: 'POST', body })).status, 401);
+
+  const fresh = await f.api('/api/v1/devices/enroll', {
+    method: 'POST', token: rotatedToken, body: { ...body, requestId: randomUUID() },
+  });
+  assert.equal(fresh.status, 201);
+  assert.notEqual(fresh.body.device.id, enrolled.body.device.id);
+  assert.equal((await f.api('/api/v1/state', { token: fresh.body.device.deviceToken })).status, 200);
+});
+
+test('legacy enrollment receipts lose raw credentials while issued random tokens and owner state survive', async (t) => {
+  const f = await fixture(t);
+  const body = { name: 'Legacy Android', platform: 'android', requestId: randomUUID() };
+  const enrolled = await f.api('/api/v1/devices/enroll', { method: 'POST', body });
+  assert.equal(enrolled.status, 201);
+  const memory = await f.api('/api/memory', {
+    method: 'POST', body: { text: '마이그레이션 이후에도 남을 기억', requestId: randomUUID() },
+  });
+  assert.equal(memory.status, 201);
+  const job = await f.createJob();
+  await f.eventually(() => f.job(job.id), (item) => item.status === 'completed', 'legacy migration fixture needs a real result');
+  await f.stop();
+
+  // Reproduce the earlier candidate's random token and leaked cached response.
+  const filename = path.join(f.dir, 'state.json');
+  const before = JSON.parse(JSON.parse(await readFile(filename, 'utf8')).payload);
+  const legacyToken = `legacy-random-device-token-${randomUUID()}`;
+  before.devices[enrolled.body.device.id].tokenHash = createHash('sha256').update(legacyToken).digest('hex');
+  before.requests[body.requestId].payload.device.deviceToken = legacyToken;
+  const payload = JSON.stringify(before);
+  const envelope = JSON.stringify({ format: 1, sha256: createHash('sha256').update(payload).digest('hex'), payload });
+  await writeFile(filename, envelope);
+  await writeFile(`${filename}.bak`, envelope);
+  await f.start();
+
+  assert.equal((await f.api('/api/v1/state', { token: legacyToken })).status, 200);
+  assert.equal((await f.api('/api/v1/devices/enroll', { method: 'POST', body })).status, 409, 'legacy receipts must not mint a different credential');
+  for (const file of [filename, `${filename}.bak`]) {
+    const serialized = await readFile(file, 'utf8');
+    assert.ok(!serialized.includes(legacyToken), `${path.basename(file)} must be scrubbed on load/save`);
+    const savedEnvelope = JSON.parse(serialized);
+    assert.equal(savedEnvelope.sha256, createHash('sha256').update(savedEnvelope.payload).digest('hex'));
+    const after = JSON.parse(savedEnvelope.payload);
+    assert.deepEqual(after.jobs, before.jobs);
+    assert.deepEqual(after.memories, before.memories);
+    assert.deepEqual(after.snapshots, before.snapshots);
+    assert.deepEqual(after.artifacts, before.artifacts);
+    assert.deepEqual(Object.keys(after.requests), Object.keys(before.requests));
+    assert.equal(after.requests[body.requestId].hash, before.requests[body.requestId].hash);
+    assert.ok(!Object.hasOwn(after.requests[body.requestId].payload.device, 'deviceToken'));
+  }
+  const retained = await f.job(job.id);
+  assert.equal((await f.api(`/api/v1/artifacts/${retained.artifacts[0].id}`, { token: legacyToken })).status, 200);
 });
 
 test('unsupported commands are rejected instead of claiming successful work', async (t) => {
