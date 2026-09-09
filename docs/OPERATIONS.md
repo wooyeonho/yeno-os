@@ -22,3 +22,7 @@
 구현 후 Node 24.19.0 `npm test` **71/71 통과**, 실패·취소·건너뜀 0, 16.179초. 순수 모듈 4개와 native 명령→결과→재시작→동일 결과/요청 유지 통합 검사 1개를 추가했다. 이 소스 커밋 시점에는 운영 서버 적용·반영 후 HTTPS 검사가 남아 있다.
 
 운영 초점과 고객 실험 가설은 [OPERATING_FOCUS.md](OPERATING_FOCUS.md)를 따른다. 자동 개발 실행자는 별도 연결이다.
+
+## 실제 운영 반영
+
+2026-09-09T21:43:55Z 확인 완료. 실행 커밋 `5f80670df62ee2900b57f2ce7e4f66d4d2d2f69b`, Koyeb 배포 `7ea4c124-e1e3-482e-bb3a-1de47bf64aa4`가 Healthy다. 기존 APK와 동일한 native Origin을 포함한 실제 명령으로 3939-byte 브리핑을 생성·다운로드했고 해시 및 동일 요청의 작업 ID를 확인했다. 첫 운영 방향 문서와 갱신한 다음 작업도 실제 코어에 남겼다. 상세 결과는 [LIVE_ACCEPTANCE.md](LIVE_ACCEPTANCE.md)에 있다.
