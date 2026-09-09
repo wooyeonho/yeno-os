@@ -16,9 +16,9 @@ YENO's interaction design is in `identity/YENO.md`. It is a product specificatio
 
 ## Current baseline
 
-`runtime/` now contains the 0.2.2 project-management core built on the imported 0.1.1 baseline. The owner's older local 0.2.3 installation is separate. Do not overwrite or silently migrate that installation.
+`runtime/` now contains the 0.2.2 project/source-management core built on the imported 0.1.1 baseline. The owner's older local 0.2.3 installation is separate. Do not overwrite or silently migrate that installation.
 
-The runtime implements project registration and briefs, basic memory, deterministic command routing, document/diagnostic jobs, pause/resume/cancel, memory/settings snapshots, and versioned device authentication. Its optional AI call produces a draft; it is not an implemented general tool loop. `apps/controller` contains the native controller source; consult `docs/STATUS.md` for actual build and device verification. The Koyeb core is deployed with a persistent volume; consult the status and live acceptance documents for the exact running source. Developer workers, notifications, Windows installers, and Android phone acceptance remain pending until evidenced.
+The runtime implements durable source reviews/imports and candidate preparation documents, project registration and briefs, basic memory, deterministic command routing, document/diagnostic jobs, pause/resume/cancel, memory/settings snapshots, and versioned device authentication. Its optional AI call produces a draft; it is not an implemented general tool loop. `apps/controller` contains the native controller source; consult `docs/STATUS.md` for actual build and device verification. The Koyeb core is deployed with a persistent volume; consult the status and live acceptance documents for the exact running source. Developer workers, notifications, Windows installers, and Android phone acceptance remain pending until evidenced.
 
 Read `YENO_START_HERE.md`, `docs/STATUS.md`, and `docs/FIRST_TASK.md` before changing code. Consult `docs/BUILD_DECISIONS.md` for the accepted architecture.
 

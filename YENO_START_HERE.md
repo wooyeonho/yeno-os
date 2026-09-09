@@ -34,6 +34,12 @@
 
 명령은 문서 작업을 만들며 완료 후 결과를 열 수 있다. 웹의 프로젝트 화면은 새로 추가했지만, Android APK에 네이티브 프로젝트 탭을 추가한 것은 아니다. 자세한 계약과 범위는 [프로젝트 사용법](docs/PROJECTS.md).
 
+## 자료 확인
+
+웹의 **자료** 메뉴에 76개 자료와 검토 상태가 등록되어 있다. 기존 앱에서는 `자료 목록`을 보낸 뒤 결과에 있는 ID로 `자료 브리핑: ID`를 사용한다. 내용 확인과 적용 검토를 마친 후보는 웹 버튼 또는 `개선 후보: ID`로 준비서를 만든다. 상세 계약은 [자료 사용법](docs/SOURCES.md).
+
+미확인·일부 확인·접근 불가 자료는 개선 후보로 승격하지 않았다. 아직 AI가 자동 열람하거나 코드를 고치는 연결은 없다.
+
 ## 확인된 것과 남은 것
 
 - 실제 Docker 빌드·HTTPS 코어·인증·문서 생성·결과 다운로드·요청 중복 방지·서버 재시작 후 같은 인증/작업/결과 보존 확인. [실제 사용 검사](docs/LIVE_ACCEPTANCE.md)에 증거를 기록했다.
@@ -45,4 +51,4 @@
 
 [실제 Android 빌드](https://github.com/wooyeonho/yeno-os/actions/runs/34309339030/attempts/3)의 앱 소스는 `11a0e1f7f1cb09449a1a2f82b54f948fff416690`이다. 시험 APK 약 202 MB, ZIP 약 53.5 MB이며 개발용 디버그 빌드다. [GitHub APK 묶음](https://github.com/wooyeonho/yeno-os/actions/runs/34309339030/artifacts/10088424404)은 2026-09-16 보관 만료다.
 
-실행 코어 소스는 `yeno-koyeb-pilot`의 `25b0ff2da66a03b366c5fc32c9b660a0e6a3ced4`다. 자동 배포는 껐으며 문서 커밋만으로 서버가 바뀌지 않는다. 현재 작업은 PR #1의 `codex` 브랜치에 있다. 다음 개발은 `AGENTS.md`, `docs/STATUS.md`, `docs/LIVE_ACCEPTANCE.md`를 먼저 읽고 기존 API·기기 인증·데이터를 보존한다.
+실행 코어 소스는 `yeno-koyeb-pilot`의 `ee473e7f6d7c8b71bd4b5dee1ea95381c969a6b8`다. 자동 배포는 껐으며 문서 커밋만으로 서버가 바뀌지 않는다. 현재 작업은 PR #1의 `codex` 브랜치에 있다. 다음 개발은 `AGENTS.md`, `docs/STATUS.md`, `docs/LIVE_ACCEPTANCE.md`를 먼저 읽고 기존 API·기기 인증·데이터를 보존한다.
