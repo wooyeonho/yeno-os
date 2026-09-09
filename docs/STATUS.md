@@ -2,18 +2,20 @@
 
 [YENO 조종석](https://global-iris-gyeol-98386a17.koyeb.app/)에서 기억·문서·프로젝트·자료 기능을 사용할 수 있다. 노트북이 꺼져 있어도 상주 코어가 동작한다. 연호님의 Android 명령·앱 재접속 실기기 확인은 남아 있다.
 
+Android 최초 연결에서 관찰된 `Origin does not match Host`를 수정했다. 앱의 정확한 native Origin을 버전 API에 한해 허용하고 기존 인증·웹 출처 검사를 유지한다. 기존 APK를 재설치하지 않고 같은 입력으로 재시도할 수 있다. 수정·배포와 실기기 확인 범위는 [Origin 수정 기록](ANDROID_ORIGIN_FIX.md)을 따른다.
+
 | 항목 | 현재 확인 상태 |
 | --- | --- |
 | 코어/API | 0.2.2 / API 1 |
-| 실행 소스 | `yeno-koyeb-pilot`, `ee473e7f6d7c8b71bd4b5dee1ea95381c969a6b8` |
+| 실행 소스 | `yeno-koyeb-pilot`, `5a173ea69b6b9d32b01458330991d1c9f3b2bb8f` |
 | 서비스 | `global-iris/yeno-core`, `7fb597dd-726e-45ee-bfde-7f695f6dc8ba` |
 | 호스트 | Frankfurt Micro, 고정 1개, 8790, 자동 배포 꺼짐 |
 | 데이터 | 1 GB `yeno-core-data`, `/var/lib/yeno/data` |
-| 실제 빌드 | `010b133b-680c-42b3-8407-8b362fe8ebff` 성공 |
-| 실제 재시작 | `bd3c4123-715e-49c5-917d-e6d30113aa2b` Healthy, 이전 실행 Stopped |
+| 실제 빌드 | `1946096b-b35a-4ab4-8588-a98be088b3d7` 성공 |
+| 현재 배포 | `1946096b-b35a-4ab4-8588-a98be088b3d7` Healthy, 이전 `bd3c4123` Stopped |
 | 프로젝트 | 20개, 업그레이드 후 모든 메타데이터와 실제 결과 보존 |
 | 자료 | 76개, 재시작 후 모든 필드·버전·ID와 결과 보존 |
-| 전체 로컬 검사 | Node 24.19.0, 63/63, 실패·취소·건너뜀 0, 14.411초 |
+| 전체 로컬 검사 | Node 24.19.0, 66/66, 실패·취소·건너뜀 0, 14.668초 |
 
 기기 인증·폐기, 요청 중복 방지, 결과 다운로드 해시를 실제 HTTPS에서 확인했다. [검사 시각·범위·결과](LIVE_ACCEPTANCE.md), [프로젝트 사용법](PROJECTS.md), [자료 사용법](SOURCES.md).
 
@@ -24,10 +26,10 @@
 - [Android 빌드 #2 시도 3](https://github.com/wooyeonho/yeno-os/actions/runs/34309339030/attempts/3) 성공. 앱 소스 `11a0e1f7f1cb09449a1a2f82b54f948fff416690`.
 - Android ARM64 디버그 APK 202,311,295 bytes, ZIP 53,464,710 bytes. APK SHA-256 `38de18459ef84735ef2d0c36f890cc3f4bb188d57d7b77eec6f369eb7d47ddd6`.
 - GitHub APK 아티팩트 `10088424404` 보관 만료 2026-09-16. ZIP/내부 파일/native library 및 Cargo.lock 일치를 확인했다.
-- 사용자 캡처로 Android 설치 후 첫 연결 화면 표시를 확인했다. 등록·암호 보관·폰 명령·앱 종료/재접속은 미검증이다.
+- 사용자 캡처로 Android 설치 후 첫 연결 화면과 Origin 거부 오류를 확인했다. 서버 호환성 수정 후 등록·암호 보관·폰 명령·앱 종료/재접속의 실기기 성공은 아직 미검증이다.
 - APK CI: 코어 검사 30개 통과, TypeScript/Vite 빌드 통과, 실제 네이티브 APK 생성. SDK 누락·Tauri 의존성 충돌·아이콘 누락을 고친 이력은 CHANGELOG에 있다.
 - 프로젝트 기능 추가 전 코어 로컬 Node 24.19.0 전체 검사: **46/46 통과**, 실패·건너뜀·취소 0, 14.388초. 실제 Linux 프로세스·flock·인증·명령·SIGKILL 재시작 포함. 양성 마운트 메타데이터와 EACCES 검사는 fixture다.
-- 이전 39/43개 결과는 과거 검증 시점이며 새 결과와 합산하지 않는다. 55개 결과 이후 자료 코드를 추가한 최신 전체 검사는 63개 결과다.
+- 이전 39/43/55/63개 결과는 과거 검증 시점이며 새 결과와 합산하지 않는다. Origin 호환성 수정 후 최신 전체 검사는 66개 결과다.
 - 일반 Docker와 Render 후보는 보존했다. 실제 Render 배포나 Windows EXE는 실행하지 않았다. 로컬 모델 어댑터 검사는 시험 공급자이며 유료 모델 호출이 아니다.
 
 
