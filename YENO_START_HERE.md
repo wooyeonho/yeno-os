@@ -1,22 +1,19 @@
-# YENO OS — 다음은 첫 APK 빌드
+# YENO OS — 첫 APK 생성 완료, 다음은 상주 코어 연결
 
-비공개 GitHub 저장소와 Codex 첫 구현, PR1 생성까지 진행했다. 현재 검토 중인 소스 브랜치는 `codex`이며, 이 문서는 그 후보의 다음 단계다.
+[실제 Android 빌드](https://github.com/wooyeonho/yeno-os/actions/runs/34309339030/attempts/3)가 성공했다. 반복 실행 버튼을 누를 필요는 없다.
 
-## 지금 할 일
+## 지금 확인할 것
 
-1. [YENO Actions](https://github.com/wooyeonho/yeno-os/actions/workflows/android-debug.yml)를 연다.
-2. **Run workflow**를 누른다.
-3. 브랜치는 `main`, **Source branch or commit to build**는 `codex`로 두고 실행한다.
-4. 실행 페이지 주소를 개발 대화에 보낸다. 실제 로그·실패 원인·생성된 APK를 이어서 확인할 수 있다.
+- [APK 묶음 다운로드](https://github.com/wooyeonho/yeno-os/actions/runs/34309339030/artifacts/10088424404): ZIP 안에 APK 1개, SHA256SUMS.txt와 build-info.json이 있다. GitHub 보관은 2026-09-16까지다.
+- 시험 APK는 약 202 MB, 다운로드 ZIP은 약 53.5 MB다. 현재는 개발용 디버그 빌드다.
+- 폰 설치와 동작은 아직 확인하지 않았다. 설치한 앱이 명령을 수행하려면 상주 HTTPS 코어 주소와 기기 등록이 필요하다. 주소가 없는데 임의 주소를 입력하거나 연결 성공으로 표시하지 않는다.
 
-저장소 기본 브랜치에 수동 워크플로가 등록된 뒤 이 버튼이 나타난다. 작업을 실행하기만 하면 성공한 것으로 보지 않으며, 초록색 완료와 APK 파일 생성까지 확인한다. 실행 전에 main에 PR 전체를 병합할 필요는 없다.
+## 다음 한 연결
 
-첫 실행은 Android SDK 도구 경로 누락으로 실패해 준비 설정을 수정했다. 위 목록 화면의 **Run workflow / 워크플로 실행**으로 새 실행을 시작해야 최신 설정을 사용한다. 기존 실패 실행의 **Re-run**은 이전 설정으로 반복한다.
+노트북이 꺼진 동안에도 실행될 상주 서버 계정이 필요하다. 개발 담당자가 사용할 계정·소유 권한을 확인한 뒤 `docs/PERSISTENT_CORE.md`에 준비한 설정으로 Docker 빌드·영속 저장·인증·재시작을 검증하고 HTTPS 코어와 폰을 연결한다. 신규 비용이나 실제 배포는 확인된 범위에서 진행한다.
 
-성공하면 실행 결과의 Artifacts에서 APK 묶음을 받을 수 있다. 코어의 상주 HTTPS 주소 연결과 폰 설치 시험은 그다음이다. 아직 설치할 APK나 코어 주소가 생겼다고 가정하지 않는다.
+## 개발을 이어갈 때
 
-## 추가 개발
+현재 후보는 PR #1과 `codex` 브랜치에 있다. APK를 만든 커밋은 `11a0e1f7f1cb09449a1a2f82b54f948fff416690`이며, 이후 코어 복구 개선의 검증 결과는 `docs/STATUS.md`를 따른다. 이미 있는 구현을 0.1.1 원본 해시에 맞추려고 되돌리지 않는다.
 
-Codex 작업은 `codex` 브랜치의 최신 커밋에서 이어간다. 이미 있는 구현을 새로 만들거나 0.1.1 원본 해시에 맞추려고 되돌리지 않는다. `AGENTS.md`, `docs/STATUS.md`, `docs/ANDROID_BUILD.md`를 먼저 읽는다.
-
-워크플로는 최대 45분인 수동 시험 빌드다. GitHub Actions 사용량에 포함되며, 자동 반복·운영 서버 배포·유료 모델 호출을 켜는 설정이 아니다.
+추가 앱 수정 뒤 빌드는 `docs/ANDROID_BUILD.md`를 따른다. workflow 자체를 바꿨으면 새 Run workflow가 필요하다. source_ref=codex인 기존 workflow에서 소스만 바뀌었다면 개발 담당자가 재실행할 수 있으며, 실제 소스 커밋을 로그로 확인한다.

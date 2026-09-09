@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import {assertStandaloneDirectory} from './container-lease.mjs';
 
 export const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 export const uid = () => crypto.randomUUID();
@@ -60,11 +61,14 @@ export function openStore(directory) {
 
 export function acquireRuntimeLock(directory) {
  fs.mkdirSync(directory,{recursive:true,mode:0o700});
+ assertStandaloneDirectory(directory);
  const file=path.join(directory,'runtime.lock');
  const owner={pid:process.pid,nonce:uid(),createdAt:now()};
  for(let attempt=0;attempt<2;attempt++){
    try {const fd=fs.openSync(file,'wx',0o600);try{fs.writeFileSync(fd,JSON.stringify(owner));fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
-     return ()=>{try{const current=JSON.parse(fs.readFileSync(file,'utf8'));if(current.nonce===owner.nonce)fs.unlinkSync(file);}catch{}};
+     const release=()=>{try{const current=JSON.parse(fs.readFileSync(file,'utf8'));if(current.nonce===owner.nonce)fs.unlinkSync(file);}catch{}};
+     try{assertStandaloneDirectory(directory);}catch(error){release();throw error;}
+     return release;
    } catch(error){
      if(error.code!=='EEXIST')throw error;
      let previous;try{previous=JSON.parse(fs.readFileSync(file,'utf8'));}catch{throw new Error('Runtime lock is unreadable. Check that no YENO runtime is active before moving runtime.lock aside.');}

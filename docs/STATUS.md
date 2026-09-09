@@ -1,48 +1,53 @@
 # 실제 개발 상태 — 2026-09-09
 
-## 현재 결과
+## 첫 실제 APK 생성 성공
 
-현재는 **코어 0.2.0 후보와 Android controller 소스, 수동 APK 빌드 설정** 단계다. APK·EXE 생성, 폰 설치, 상주 HTTPS 코어 연결은 아직 완료하지 않았다. 개발 브랜치는 `codex`, 검토 대상은 PR #1이다.
+[GitHub 빌드 #2, 시도 3](https://github.com/wooyeonho/yeno-os/actions/runs/34309339030/attempts/3)이 성공했다. 사용한 앱 소스 커밋은 `11a0e1f7f1cb09449a1a2f82b54f948fff416690`이다. SDK 설치·Rust 의존성 해결·Android 프로젝트 생성·실제 컴파일·APK 수집과 업로드까지 완료했다.
 
-- 기존 `/api`를 유지하면서 `/api/v1`, 기기 등록·인증·자기 기기 폐기를 구현했다. 기존 상태는 작업·기억·결과·요청 기록을 보존하면서 `devices` 저장소를 추가한다.
-- 네이티브 HTTP 권한에 HTTPS 코어의 `/api/v1/` 경로와 개발용 loopback HTTP 범위를 추가했다. 요청은 리디렉션을 따르지 않으며 연결·응답 시간 제한이 있다.
-- Stronghold는 지속 salt 파일과 Argon2 비밀번호 파생을 사용하도록 수정했다. 실제 네이티브 보관소 생성·재해제는 Android에서 확인해야 한다.
-- 명령의 확정된 4xx 거절 후에는 새 명령을 보낼 수 있다. 네트워크·시간 초과·408·5xx 결과는 기존 요청 ID와 본문을 유지해 재접속 시 안전하게 재시도한다.
-- 기억 저장·검색 결과와 마지막 명령 응답을 표시하고, 중복 클릭·다른 코어의 대기 명령 혼용을 방지한다. 결과 파일은 클립보드 지원 여부와 관계없이 화면에 표시한다.
-- 기기 등록 토큰 원문이 요청 응답 캐시에 남던 문제를 수정했다. 새 토큰은 페어링 비밀과 무작위 기기 ID에서 HMAC으로 파생하고 저장소에는 해시와 공개 등록 정보만 남긴다. 재시작 후 등록 재시도는 동일 토큰을 돌려주며, 폐기·비밀 회전으로 복구할 수 없는 등록은 거절한다.
-- 기존 캐시의 원문 토큰은 로딩과 상태·백업 재저장 시 제거한다. 기존 랜덤 토큰 인증과 소유자 데이터는 보존한다. 외부에 보관된 과거 사본 삭제를 뜻하지 않는다.
+- 앱: YENO controller 0.1.0, Android ARM64 디버그 시험 빌드.
+- APK 크기: 202,311,295 bytes. 개발용 빌드여서 크다. ZIP 묶음은 53,464,710 bytes.
+- APK SHA-256: `38de18459ef84735ef2d0c36f890cc3f4bb188d57d7b77eec6f369eb7d47ddd6`.
+- [APK·해시·빌드 정보 ZIP](https://github.com/wooyeonho/yeno-os/actions/runs/34309339030/artifacts/10088424404). GitHub 보관 만료는 2026-09-16이다.
+- 내려받은 ZIP의 GitHub SHA-256, APK SHA-256, APK 내부 ZIP 무결성, AndroidManifest.xml·classes.dex·ARM64 native library 존재를 확인했다.
+- CI의 Cargo.lock을 회수했고 저장소의 Cargo.lock과 바이트가 일치했다.
 
-## 이번 환경에서 실제 실행한 검사
+**폰 설치·실기기 동작·상주 HTTPS 코어·실제 유료 모델 호출·Windows EXE는 아직 미검증 또는 미구현이다. APK 생성 성공을 개인 OS 1.0 완성으로 해석하지 않는다.**
 
-| 검사 | 실제 결과 |
+## 실제 검사 결과
+
+| 대상 | 결과 |
 | --- | --- |
-| Node | v24.19.0 |
-| 앱 의존성 설치 | 성공, `package-lock.json` 생성 |
-| `npm --offline test` | 30개 통과, 실패 0, 건너뜀 0; 약 16.38초 |
-| `npm run build:controller` | TypeScript 검사와 Vite 빌드 성공 |
-| 네이티브 환경 확인 | 이 환경에는 Rust/Cargo와 Android SDK/NDK·adb·sdkmanager가 없어 APK 컴파일 미실행 |
-| Astra 검토 | 프런트엔드·네이티브 설정·수동 빌드 경로 검토에서 추가 P1/P2 차단 문제 없음; 네이티브 실행 증거는 아님 |
+| 성공한 Android CI의 코어·명령 검사 | 30개 통과, 실패 0 |
+| 성공한 Android CI의 화면 빌드 | TypeScript + Vite 통과 |
+| 성공한 Android CI의 네이티브 빌드 | ARM64 APK 1개 생성·업로드 |
+| 서버 복구 수정 이후 로컬 Node 24.19.0 | 39개 통과, 실패·건너뜀 0; 약 15.06초 |
+| 추가된 컨테이너 잠금 검사 | 위 39개 중 9개. 실제 Linux 프로세스 SIGKILL·재시작, 인증·기억·결과 보존, 중복 실행과 부정확한 잠금 거절 |
+| Docker·실제 컨테이너·UID 1000 | 이 환경에서 실행 불가. Docker 이미지 빌드와 실제 컨테이너 권한·재시작 시험은 남음 |
+| Astra 검토 | 실제 배포 crate와 Tauri release lock으로 호환 버전을 확인. 네이티브 실행과 별개로 검토 기록을 구분함 |
 
-30개 검사는 코어/기존 웹 요청 22개, 네이티브 앱 명령 처리 6개, HTTP URL 범위 2개다. URL 범위 검사는 Node의 URLPattern으로 설정 패턴을 확인한 것이며 Rust 플러그인의 실제 네트워크 요청 검증은 아니다. AI 어댑터 검사는 로컬 테스트 공급자를 사용한다. 실제 유료 모델 호출은 검증하지 않았다.
+서버 복구 수정은 위 APK를 만든 커밋 이후의 코어 변경이다. Android 앱 소스·API 계약을 바꾸지 않았다. 39개 로컬 검사 결과를 APK의 CI 검사 수로 합쳐 표시하지 않는다. 모델 어댑터 검사는 로컬 시험 공급자를 사용했다.
 
-최초 Codex Cloud 작업에서는 Node 20.20.2에서 코어 검사 20개 통과, npm HTTP 403으로 앱 빌드 불가가 보고됐다. 위 표는 별도의 이번 Node 24 환경에서 재현한 최신 결과다.
+## 수정한 실제 실패
 
-## 빌드 설정과 남은 검증
+1. 최초 실행은 `sdkmanager: command not found`로 실패했다. SDK 도구를 명시적으로 설치하고 PATH를 설정하도록 수정했다.
+2. 다음 실행은 HTTP 플러그인이 요구하는 Tauri 최소 버전과 충돌했다. 실제 배포된 요구 조건에 맞춰 Tauri 2.8.2로 변경했다.
+3. 다음 컴파일은 서로 다른 시기의 Tauri runtime/wry 내부 조합 때문에 실패했다. Tauri 2.8.2 release lock의 호환 구성으로 내부 패키지를 고정하고 전체 Cargo.lock을 생성해 재검증했다.
+4. 네이티브 코드 생성에 필요한 PNG 아이콘 누락도 찾아 SVG 원본과 Tauri CLI로 생성했다.
 
-`.github/workflows/android-debug.yml`은 수동 실행 전용이며, 기본 `source_ref=codex`를 체크아웃해 검사 → 화면 빌드 → Android ARM64 디버그 빌드를 수행한다. 컴파일 성공 시에만 APK·SHA-256·소스 커밋 정보를 7일간 보관한다. 동시 실행은 1개, 제한 시간은 45분이다. 수동 버튼을 제공하려면 동일 workflow 파일을 기본 브랜치 `main`에 등록해야 한다. 이는 PR 합병이나 APK 생성 결과가 아니다.
+현재 workflow는 Cargo.lock을 다시 생성한다. 이번 실행의 lock은 기록한 파일과 일치했지만 앞으로 전체 그래프가 절대 변하지 않는다고 보장하지 않는다. 정식 릴리스 전 workflow를 `--locked` 검증으로 전환하고 정식 서명·업데이트 경로를 검증해야 한다.
 
-JS 의존성 lock은 포함했다. Rust 직접 의존성 버전은 고정했지만 전체 `Cargo.lock`은 첫 CI에서 생성·수집할 예정이므로 완전히 고정된 재현 빌드라고 부르지 않는다. 정식 서명과 업데이트 설치 경로도 아직 없다.
+## 현재 기능과 상주 코어 후보
 
-명령·마지막 응답 본문은 앱 localStorage에 저장되며 Stronghold 암호화 대상이 아니다. 기기 인증 정보는 Stronghold에 저장한다. 단일 프로세스 JSON 코어의 동시 운영 한계도 유지한다.
+- 코어 0.2.0 후보: 버전별 API, 기기 등록·인증·폐기, 기억 저장·검색, 실제 문서·진단 결과, 중단·재개·취소·전체 정지.
+- 앱: HTTPS 코어 주소, 암호로 잠긴 Stronghold, 지속 요청 ID, 거절/통신 불확실성 구분, 기억 검색·결과 표시, 재접속 처리.
+- 등록 토큰 원문을 응답 캐시에 남기지 않는 저장 방식과 기존 데이터 보존형 정리.
+- `Dockerfile`, `compose.yaml`, `.dockerignore`, `PERSISTENT_CORE.md`: 영속 볼륨, 토큰을 출력하지 않는 시작 경로, 단일 쓰기, 정상 종료와 검증된 커널 잠금 기반 crash 재시작 후보.
+- 컨테이너 모드는 상속된 실제 독점 flock을 확인해야 시작한다. 일반 실행은 해당 데이터 디렉터리를 거절한다. 과거 runtime.lock이 남으면 삭제하거나 무시하지 않고 시작을 거절한다.
 
-## 다음 한 작업
+단일 프로세스 JSON 저장소는 유지한다. 분산 운영·SQLite 마이그레이션·일반 자연어 도구 루프·자동 개선 배포는 완료되지 않았다. 앱의 대기 명령·마지막 응답은 localStorage에 저장되며 Stronghold 암호화 대상은 아니다.
 
-최초 [GitHub 실행 #1](https://github.com/wooyeonho/yeno-os/actions/runs/34308639802)은 소스 `b34dc9fc843c6ef6fd571f80057dfdf4c7eb1f7f`를 체크아웃했고, 30개 검사(약 14.82초)·npm 설치·TypeScript/Vite 빌드를 통과했다. Android 준비 단계의 `sdkmanager: command not found`(exit 127)로 종료돼 APK·Cargo lock 결과물은 0개다.
+## 다음 연결
 
-Android SDK 준비 action을 검증된 커밋으로 추가하고, SDK manager 경로·버전과 NDK 설치 경로 확인을 넣었다. 수정한 설정은 YAML 구문·단계 순서·셸 구문을 확인했으며, 새로운 GitHub 실행에서 실제 설치와 컴파일을 검증해야 한다.
+노트북이 꺼져 있어도 일을 처리할 **소유자 관리 상주 서버 계정과 HTTPS 주소**가 필요하다. 배포 파일과 검증 절차는 `PERSISTENT_CORE.md`에 준비했다. 실제 호스트에서 Docker 빌드·권한·복구를 확인한 뒤 앱의 등록 → 명령 → 결과 → 앱 종료·재접속 시험을 수행한다. 연결 정보나 실기기 관찰 없이 이를 완료했다고 기록하지 않는다.
 
-[Android 수동 빌드](https://github.com/wooyeonho/yeno-os/actions/workflows/android-debug.yml)에서 **새 Run workflow**를 시작하고 실제 로그와 APK 결과를 확인한다. 기존 실패 실행의 Re-run은 수정 전 workflow를 사용한다. 절차는 `ANDROID_BUILD.md`를 따른다. 그다음 상주 HTTPS 코어 연결과 `DEVICE_ACCEPTANCE.md`의 폰 명령·결과·재접속 시험을 수행한다.
-
-## 버전 구분
-
-원래 수입한 0.1.1은 과거 기준선이다. 현재 저장소 코어는 0.2.0 후보이며, 노트북의 별도 0.2.3 설치를 읽거나 덮어쓰거나 마이그레이션하지 않았다.
+원래 수입한 0.1.1과 노트북의 별도 0.2.3 설치를 구분하며, 기존 노트북 데이터를 읽거나 덮어쓰거나 마이그레이션하지 않았다.

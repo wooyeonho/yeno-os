@@ -5,6 +5,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {atomicWrite,openStore,acquireRuntimeLock,digest,uid,now} from './lib/store.mjs';
+import {acquireContainerLease} from './lib/container-lease.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const VERSION='0.2.0';
@@ -19,7 +20,7 @@ const examples=['기억해: 다음 여행은 여유 있게 계획한다','찾아
 export function createYenoServer(options={}) {
  const env=options.env??process.env;
  const dataDir=path.resolve(options.dataDir??env.YENO_DATA_DIR??path.join(ROOT,'data'));
- const releaseLock=acquireRuntimeLock(dataDir);
+ const releaseLock=options.containerLease===true?acquireContainerLease(dataDir):acquireRuntimeLock(dataDir);
  let store;try{store=openStore(dataDir);}catch(error){releaseLock();throw error;}
  const s=store.state;
  const secretFile=path.join(dataDir,'pairing-token');

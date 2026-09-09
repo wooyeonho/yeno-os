@@ -1,0 +1,16 @@
+# Only runtime source required by the container may enter the build context.
+**
+!Dockerfile
+!.dockerignore
+!runtime/
+!runtime/server.mjs
+!runtime/package.json
+!runtime/lib/
+!runtime/lib/*.mjs
+!runtime/public/
+!runtime/public/index.html
+!runtime/public/app.js
+!runtime/public/command-request.mjs
+!runtime/public/style.css
+!runtime/public/manifest.webmanifest
+!runtime/public/icon.svg
