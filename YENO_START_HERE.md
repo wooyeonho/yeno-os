@@ -55,4 +55,4 @@
 
 [실제 Android 빌드](https://github.com/wooyeonho/yeno-os/actions/runs/34309339030/attempts/3)의 앱 소스는 `11a0e1f7f1cb09449a1a2f82b54f948fff416690`이다. 시험 APK 약 202 MB, ZIP 약 53.5 MB이며 개발용 디버그 빌드다. [GitHub APK 묶음](https://github.com/wooyeonho/yeno-os/actions/runs/34309339030/artifacts/10088424404)은 2026-09-16 보관 만료다.
 
-실행 코어 소스는 `yeno-koyeb-pilot`의 `5f80670df62ee2900b57f2ce7e4f66d4d2d2f69b`다. Android Origin 호환성 수정과 운영 브리핑을 포함한다. 기존 APK를 재설치하지 않고 사용한다. 자동 배포는 껐으며 문서 커밋만으로 서버가 바뀌지 않는다. 현재 작업은 PR #1의 `codex` 브랜치에 있다. 다음 개발은 `AGENTS.md`, `docs/STATUS.md`, `docs/LIVE_ACCEPTANCE.md`를 먼저 읽고 기존 API·기기 인증·데이터를 보존한다.
+실행 코어 소스는 `yeno-koyeb-pilot`의 `3757f86f5287ffda3397a05a17bb96c876d9c464`다. Android Origin 호환성·운영 브리핑·암호화 백업과 소유자 기기 차단을 포함한다. 기존 APK를 재설치하지 않고 사용한다. [백업·복원 관리자 사용법](docs/BACKUP_RECOVERY.md), [출시 기준 점검](docs/RELEASE_READINESS.md)을 따른다. 자동 배포는 껐으며 문서 커밋만으로 서버가 바뀌지 않는다. 현재 작업은 PR #1의 `codex` 브랜치에 있다. 다음 개발은 `AGENTS.md`, `docs/STATUS.md`, `docs/LIVE_ACCEPTANCE.md`를 먼저 읽고 기존 API·기기 인증·데이터를 보존한다.

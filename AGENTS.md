@@ -20,6 +20,8 @@ YENO's interaction design is in `identity/YENO.md`. It is a product specificatio
 
 The runtime implements durable source reviews/imports and candidate preparation documents, project registration and briefs, operating status documents, basic memory, deterministic command routing, document/diagnostic jobs, pause/resume/cancel, memory/settings snapshots, and versioned device authentication. Its optional AI call produces a draft; it is not an implemented general tool loop. `apps/controller` contains the native controller source; consult `docs/STATUS.md` for actual build and device verification. The Koyeb core is deployed with a persistent volume; consult the status and live acceptance documents for the exact running source. The owner's Android first enrollment/state connection is evidenced by a screenshot; phone command/artifact/reopen acceptance remains pending. Developer workers, notifications and Windows installers remain pending until evidenced. Operating briefs summarize stored state; they do not autonomously operate projects or start coding workers.
 
+Owner-only encrypted full backup export and remote device revocation are implemented. Clean restore uses a fresh directory, startup guard, and runtime lease; it enables global stop, disables AI, pauses unfinished jobs and revokes restored active device credentials. The actual live dataset has been restored in a separate local process. Persistent backup/key upload failed, so do not claim ongoing independent backup storage. Follow `docs/BACKUP_RECOVERY.md` and `docs/LIVE_ACCEPTANCE.md`; never put actual backup data or keys in git.
+
 Read `YENO_START_HERE.md`, `docs/STATUS.md`, and `docs/FIRST_TASK.md` before changing code. Consult `docs/BUILD_DECISIONS.md` for the accepted architecture.
 
 ## Commands
