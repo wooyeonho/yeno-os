@@ -266,6 +266,53 @@ test('versioned native API enrolls, persists, and revokes a device-scoped creden
   }
 });
 
+test('operating briefing is a durable native command snapshot, not autonomous execution', async (t) => {
+  const f = await fixture(t);
+  const created = await f.api('/api/projects', { method: 'POST', body: {
+    name: 'YENO focus', summary: 'PRIVATE_SUMMARY_NOT_IN_BRIEF', nextAction: '첫 작업자 연결 조건 확인', status: 'active', requestId: randomUUID(),
+  } });
+  assert.equal(created.status, 201);
+  const project = created.body.project;
+  assert.equal((await f.api('/api/memory', { method: 'POST', body: { text: 'PRIVATE_MEMORY_NOT_IN_BRIEF', requestId: randomUUID() } })).status, 201);
+  const headers = { origin: 'http://tauri.localhost' };
+  const enrolled = await f.api('/api/v1/devices/enroll', { method: 'POST', headers, body: { name: 'Operating Android', platform: 'android', requestId: randomUUID() } });
+  assert.equal(enrolled.status, 201);
+  const token = enrolled.body.device.deviceToken;
+  const request = { text: '운영 브리핑', requestId: randomUUID() };
+  const submit = () => f.api('/api/v1/commands', { method: 'POST', token, headers, body: request });
+  const response = await submit();
+  assert.equal(response.status, 201);
+  assert.equal(response.body.kind, 'job');
+  const id = response.body.job.id;
+  assert.equal(response.body.job.type, 'document');
+  assert.equal(response.body.job.operatingReport, true);
+  const completed = await f.eventually(() => f.job(id), job => job.status === 'completed', 'brief should produce a file');
+  const route = `/api/v1/artifacts/${completed.artifacts[0].id}`;
+  const artifact = await f.api(route, { token, headers });
+  assert.equal(artifact.status, 200);
+  assert.match(artifact.body, /YENO focus/);
+  assert.match(artifact.body, /첫 작업자 연결 조건 확인/);
+  assert.doesNotMatch(artifact.body, /PRIVATE_SUMMARY_NOT_IN_BRIEF|PRIVATE_MEMORY_NOT_IN_BRIEF/);
+  assert.equal(artifact.headers.get('x-content-sha256'), createHash('sha256').update(artifact.body).digest('hex'));
+  assert.equal((await f.state()).capabilities.developerWorker, false);
+  assert.equal((await f.api(`/api/projects/${project.id}/update`, { method: 'POST', body: { nextAction: '다음 단계로 변경됨', revision: project.version, requestId: randomUUID() } })).status, 200);
+  assert.equal((await submit()).body.job.id, id, 'retry must not regenerate a fresh-state report');
+  await f.stop();
+  await f.start();
+  assert.equal((await submit()).body.job.id, id);
+  assert.equal((await f.api(route, { token, headers })).body, artifact.body, 'saved report remains the same point-in-time evidence after restart');
+  const refreshed = await f.api('/api/v1/commands', { method: 'POST', token, headers, body: { text: '운영 현황', requestId: randomUUID() } });
+  assert.equal(refreshed.status, 201);
+  assert.notEqual(refreshed.body.job.id, id);
+  const refreshedJob = await f.eventually(() => f.job(refreshed.body.job.id), job => job.status === 'completed', 'new request creates a fresh report');
+  const refreshedArtifact = await f.api(`/api/v1/artifacts/${refreshedJob.artifacts[0].id}`, { token, headers });
+  assert.match(refreshedArtifact.body, /다음 단계로 변경됨/);
+  await f.api('/api/control', { method: 'POST', body: { action: 'stop', requestId: randomUUID() } });
+  const stopped = await f.api('/api/v1/commands', { method: 'POST', token, headers, body: { text: '운영 브리핑', requestId: randomUUID() } });
+  assert.equal(stopped.status, 409, 'brief commands respect the global new-job stop');
+  assert.equal((await f.state()).emergencyStop, true);
+});
+
 test('pairing-secret rotation rejects credential recovery without invalidating issued device tokens', async (t) => {
   const f = await fixture(t);
   const body = { name: 'Owner Android', platform: 'android', requestId: randomUUID() };

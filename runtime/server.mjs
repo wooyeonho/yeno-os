@@ -8,6 +8,7 @@ import {atomicWrite,openStore,acquireRuntimeLock,digest,uid,now} from './lib/sto
 import {acquireContainerLease} from './lib/container-lease.mjs';
 import {ProjectError,projectNameKey,validateProjectFields,resolveProject,projectRegistryDocument,projectBriefDocument} from './lib/projects.mjs';
 import {SourceError,validateSourceFields,planSourceImport,resolveSource,sourceRegistryDocument,sourceBriefDocument} from './lib/sources.mjs';
+import {operatingBriefDocument} from './lib/operations.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const VERSION='0.2.2';
@@ -17,7 +18,7 @@ class HttpError extends Error {constructor(status,message,extra={}){super(messag
 function requiredText(value,maximum=80000){if(typeof value!=='string'||!value.trim())throw new HttpError(400,'text must be a non-empty string');if(value.length>maximum)throw new HttpError(400,`text is limited to ${maximum} characters`);return value.trim();}
 function publicJob(job){const {input,normalized,draft,...out}=job;return out;}
 function publicSnapshot(snapshot){const {data,...out}=snapshot;return out;}
-const examples=['기억해: 다음 여행은 여유 있게 계획한다','찾아줘: 여행','문서 만들어: YENO의 첫 목표는 기억과 실행이다','프로젝트 목록','프로젝트 브리핑: 프로젝트 이름','프로젝트 작업: 프로젝트 이름 | 준비할 작업','자료 목록','자료 브리핑: 자료 ID','개선 후보: 자료 ID','진단해','개선점 찾아줘'];
+const examples=['운영 브리핑','운영 현황','기억해: 이번 주에는 YENO 한 프로젝트에 집중한다','찾아줘: YENO','문서 만들어: YENO의 첫 목표는 기억과 실행이다','프로젝트 목록','프로젝트 브리핑: 프로젝트 이름','프로젝트 작업: 프로젝트 이름 | 준비할 작업','자료 목록','자료 브리핑: 자료 ID','개선 후보: 자료 ID','진단해','개선점 찾아줘'];
 
 export function createYenoServer(options={}) {
  const env=options.env??process.env;
@@ -124,7 +125,7 @@ export function createYenoServer(options={}) {
      else if(job.step===1){
        if(job.type==='document'){
          const paras=job.normalized.split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean);
-         job.draft=`# ${job.title.replace(/[\r\n]/g,' ')}\n\n작성 시각: ${now()}\n\n## 입력 내용을 문서로 정리\n${paras.map((p,i)=>`### ${i+1}\n\n${p}`).join('\n\n')}\n\n## 출처와 처리 내역\n- 출처: ${job.sourceReport?'YENO에 등록된 자료와 검토 기록':job.projectReport?'YENO에 등록된 프로젝트 정보와 소유자의 요청':'연호님이 이 작업에 입력한 텍스트'}\n- 처리: 유니코드·줄바꿈 정규화, 빈 줄 기준 문단 분리, 제목·출처 부착\n- 외부 조사 또는 AI 호출: 없음\n- 입력 SHA-256: ${job.inputSha256}\n- 원문 의미를 해석하거나 사실 확인한 문서가 아닙니다.\n`;
+         job.draft=job.operatingReport?`${job.normalized}\n\n---\n출처: YENO에 저장된 작업·프로젝트·자료의 생성 시점 상태.\n보고서 입력 SHA-256: ${job.inputSha256}\n`:`# ${job.title.replace(/[\r\n]/g,' ')}\n\n작성 시각: ${now()}\n\n## 입력 내용을 문서로 정리\n${paras.map((p,i)=>`### ${i+1}\n\n${p}`).join('\n\n')}\n\n## 출처와 처리 내역\n- 출처: ${job.sourceReport?'YENO에 등록된 자료와 검토 기록':job.projectReport?'YENO에 등록된 프로젝트 정보와 소유자의 요청':'연호님이 이 작업에 입력한 텍스트'}\n- 처리: 유니코드·줄바꿈 정규화, 빈 줄 기준 문단 분리, 제목·출처 부착\n- 외부 조사 또는 AI 호출: 없음\n- 입력 SHA-256: ${job.inputSha256}\n- 원문 의미를 해석하거나 사실 확인한 문서가 아닙니다.\n`;
        }else if(job.type==='diagnostics')job.draft=diagnosticDocument(job);
        else if(job.type==='evolution')job.draft=evolutionDocument();
        else {const draft=await aiDraft(job);if(!valid())return;job.draft=`# ${job.title}\n\n${draft}\n\n---\nAI 생성 초안 · 모델: ${aiModel}\n외부 사실 검증이나 도구 실행은 하지 않았습니다.\n입력 SHA-256: ${job.inputSha256}\n`;}
@@ -224,6 +225,11 @@ export function createYenoServer(options={}) {
        if(url.pathname==='/api/jobs')return {status:201,payload:{job:publicJob(newJob(b))}};
        if(url.pathname==='/api/commands'){
          const text=requiredText(b.text);let match;
+         if(/^운영\s+(?:브리핑|현황)$/i.test(text)){
+           const report=operatingBriefDocument({projects:s.projects,jobs:s.jobs,sources:s.sources,memories:s.memories,emergencyStop:s.emergencyStop,aiConfigured:!!aiEndpoint,developerWorker:false,generatedAt:now()});
+           const job=newJob({type:'document',text:report,title:'YENO 운영 브리핑'});job.operatingReport=true;
+           return {status:201,payload:{kind:'job',job:publicJob(job)}};
+         }
          if(/^자료\s+목록$/i.test(text))return {status:201,payload:{kind:'job',job:sourceDocumentJob(null,sourceRegistryDocument(s.sources),'개선 자료 목록')}};
          if((match=text.match(/^자료\s+브리핑\s*[:：]\s*(.+)$/is))){const source=resolveSource(s.sources,match[1]);return {status:201,payload:{kind:'job',job:sourceDocumentJob(source,sourceBriefDocument(source),`${source.title} 자료 브리핑`)}};}
          if((match=text.match(/^개선\s+후보\s*[:：]\s*(.+)$/is))){const source=resolveSource(s.sources,match[1]);return {status:201,payload:{kind:'job',job:sourceDocumentJob(source,sourceBriefDocument(source,true),`${source.title} 개선 후보 준비서`)}};}
