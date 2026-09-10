@@ -18,7 +18,10 @@ export class PendingCommandConflict extends Error {
 }
 
 export function isDefinitiveRejection(error: unknown): boolean {
-  return error instanceof HttpFailure && error.status >= 400 && error.status < 500 && error.status !== 408;
+  // Authentication can fail before the server checks an earlier accepted ID.
+  // An expired receipt (410) still identifies accepted work. Preserve its ID
+  // until its outcome is reconciled; all 5xx, including capacity507, also stay.
+  return error instanceof HttpFailure && error.status >= 400 && error.status < 500 && ![401, 403, 408, 410].includes(error.status);
 }
 
 export class CommandSession {

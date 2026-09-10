@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { acquireRuntimeLock, digest } from './store.mjs';
 import { validateProjectRegistry } from './projects.mjs';
 import { validateSourceRegistry } from './sources.mjs';
+import { validateRequestLedger } from './request-ledger.mjs';
 
 export const BACKUP_MAX_PLAINTEXT_BYTES = 16 * 1024 * 1024;
 export const BACKUP_MAX_ARCHIVE_BYTES = BACKUP_MAX_PLAINTEXT_BYTES + 36;
@@ -37,7 +38,8 @@ function memories(value) {
   }
 }
 function validateState(state) {
-  keys(state, STATE_KEYS);
+  keys(state, [...STATE_KEYS, 'requestLedger'], STATE_KEYS);
+  validateRequestLedger(state);
   if (!integer(state.revision, 0, Number.MAX_SAFE_INTEGER - 1) || typeof state.emergencyStop !== 'boolean' || !integer(state.concurrency, 1, 3)) fail('invalid runtime settings');
   modules(state.modules); memories(state.memories);
   validateProjectRegistry(state.projects); validateSourceRegistry(state.sources, state.projects);

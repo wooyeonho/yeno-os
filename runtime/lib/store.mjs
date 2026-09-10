@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import {assertStandaloneDirectory} from './container-lease.mjs';
 import {validateProjectRegistry} from './projects.mjs';
 import {validateSourceRegistry} from './sources.mjs';
+import {initializeRequestLedger,validateRequestLedger} from './request-ledger.mjs';
 
 export const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 export const uid = () => crypto.randomUUID();
@@ -19,7 +20,7 @@ export function atomicWrite(file, content) {
 export function initialState() {
  return {revision:0, emergencyStop:false, concurrency:1,
  modules:{memory:true,documents:true,diagnostics:true,ai:false},
- jobs:[], memories:[], snapshots:[], events:[], requests:{}, artifacts:{}, devices:{}, projects:[], sources:[]};
+ jobs:[], memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[]};
 }
 function sanitizeEnrollmentReceipts(state) {
  // Early 0.2.0 candidates cached the complete enrollment response. Preserve
@@ -43,7 +44,7 @@ export function openStore(directory) {
  fs.mkdirSync(directory,{recursive:true,mode:0o700});
  const file=path.join(directory,'state.json');
  let state, recovered=false;
- const decode = file => {const envelope=JSON.parse(fs.readFileSync(file,'utf8')); if(digest(envelope.payload)!==envelope.sha256)throw new Error('checksum mismatch'); const data=JSON.parse(envelope.payload); if(!Array.isArray(data.jobs)||!Array.isArray(data.memories)||!Array.isArray(data.snapshots)||!Array.isArray(data.events)||!data.modules||!data.requests||!data.artifacts||!Number.isInteger(data.revision))throw new Error('invalid state schema');if(Object.hasOwn(data,'projects'))validateProjectRegistry(data.projects);if(Object.hasOwn(data,'sources'))validateSourceRegistry(data.sources,data.projects??[]);return sanitizeEnrollmentReceipts(data);};
+ const decode = file => {const envelope=JSON.parse(fs.readFileSync(file,'utf8')); if(digest(envelope.payload)!==envelope.sha256)throw new Error('checksum mismatch'); const data=JSON.parse(envelope.payload); if(!Array.isArray(data.jobs)||!Array.isArray(data.memories)||!Array.isArray(data.snapshots)||!Array.isArray(data.events)||!data.modules||!data.requests||!data.artifacts||!Number.isInteger(data.revision))throw new Error('invalid state schema');if(Object.hasOwn(data,'projects'))validateProjectRegistry(data.projects);if(Object.hasOwn(data,'sources'))validateSourceRegistry(data.sources,data.projects??[]);sanitizeEnrollmentReceipts(data);validateRequestLedger(data);return data;};
  if(fs.existsSync(file)) {try{state=decode(file);}catch{try{state=decode(`${file}.bak`);recovered=true;}catch{throw new Error('Both state and backup are unreadable. Original data has been preserved.');}}}
  else if(fs.existsSync(`${file}.bak`)){state=decode(`${file}.bak`);recovered=true;}
  else state=initialState();
@@ -56,6 +57,10 @@ export function openStore(directory) {
  // Only legacy stores without a source registry receive an empty one. A malformed
  // existing registry is a recovery error, never a reason to discard source reviews.
  if(!Object.hasOwn(state,'sources'))state.sources=[];
+ // Keep accepted identities independently of the bounded response cache.
+ // Existing hashes migrate unchanged; IDs evicted by older runtimes cannot
+ // be reconstructed from a job alone and are not claimed as recovered.
+ initializeRequestLedger(state);
  function save(){
    state.revision++;
    sanitizeEnrollmentReceipts(state);

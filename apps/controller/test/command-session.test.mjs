@@ -11,7 +11,7 @@ function session(store, send, overrides = {}) {
 }
 
 test('definitive 4xx frees the command slot for corrected text and a fresh ID', async () => {
-  for (const status of [400, 401, 403, 409, 413, 422, 429]) {
+  for (const status of [400, 409, 413, 422, 429]) {
     const store = storage();
     await assert.rejects(session(store, async () => { throw new HttpFailure(status, 'rejected'); }).submit('bad command'));
     let sent;
@@ -36,6 +36,29 @@ test('network, timeout, 408 and 5xx preserve exact identity across app restart',
     assert.deepEqual(sent, pending);
     assert.equal(restarted.pending, null);
     assert.equal(session(store, async () => {}).receipt.payload.job.id, 'same-job');
+  }
+});
+
+test('accepted work with an expired receipt, auth failure or full ledger never receives a replacement command ID', async () => {
+  for (const status of [401, 403, 410, 507]) {
+    const store = storage();
+    let accepted = 0, failure = null;
+    const identities = new Set();
+    const send = async command => {
+      if (failure) throw new HttpFailure(failure, 'Outcome requires reconciliation');
+      if (!identities.has(command.requestId)) { identities.add(command.requestId); accepted++; }
+      throw new TypeError('First accepted response lost');
+    };
+    const first = session(store, send);
+    await assert.rejects(first.submit('문서 만들어: preserve accepted command'));
+    assert.equal(accepted, 1);
+    failure = status;
+    const restarted = session(store, send, { createId: () => { throw new Error('Do not replace an unresolved identity'); } });
+    await assert.rejects(restarted.submit(first.pending.text), error => error.status === status);
+    assert.deepEqual(restarted.pending, first.pending);
+    await assert.rejects(restarted.submit('문서 만들어: replacement'), PendingCommandConflict);
+    assert.equal(accepted, 1);
+    assert.equal(identities.size, 1);
   }
 });
 

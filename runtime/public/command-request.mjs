@@ -53,8 +53,10 @@ export function createCommandRequest({storage, transport, key = DEFAULT_KEY,
           // Authentication/Host checks happen before receipt lookup. A 401/403
           // after a lost response cannot prove the original write was rejected;
           // retain it so reconnecting can recover the same accepted receipt.
+          // A 410 means the server still knows this was accepted, but cannot
+          // replay the expired response. A fresh ID could execute it twice.
           const definite = Number.isInteger(error?.status) && error.status >= 400 &&
-            error.status < 500 && ![401, 403, 408].includes(error.status);
+            error.status < 500 && ![401, 403, 408, 410].includes(error.status);
           if (definite) {
             try { clear(); }
             catch (storageError) { return {kind: 'uncertain', error: storageError, request}; }

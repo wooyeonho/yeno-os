@@ -90,25 +90,27 @@ test('project migration adds only an absent registry and preserves existing stat
   const dir = await temporaryDirectory(t);
   const legacy = initialState();
   delete legacy.projects;
+  delete legacy.requestLedger;
   Object.assign(legacy, {
     revision: 24, emergencyStop: true, concurrency: 2,
     jobs: [{ id: randomUUID(), status: 'completed', artifacts: [{ id: 'result-kept' }] }],
     memories: [{ id: randomUUID(), text: '원본 기억' }],
     snapshots: [{ id: randomUUID(), data: { memories: ['snapshot-kept'], settings: {} } }],
     events: [{ id: randomUUID(), text: 'event-kept' }],
-    requests: { retained: { hash: 'request-hash', status: 201, payload: { job: { id: 'old-job' } } } },
+    requests: { retained: { hash: digest('request-hash'), status: 201, payload: { job: { id: 'old-job' } } } },
     artifacts: { 'result-kept': { sha256: 'old-hash', filename: 'old.md' } },
     devices: { 'old-device': { tokenHash: 'retained-device-hash', revokedAt: null } },
   });
   const filename = path.join(dir, 'state.json');
   await writeFile(filename, envelope(legacy));
   const opened = openStore(dir);
-  assert.deepEqual(opened.state, { ...legacy, projects: [] });
+  const requestLedger = { retained: { hash: digest('request-hash'), status: 201 } };
+  assert.deepEqual(opened.state, { ...legacy, requestLedger, projects: [] });
   const registered = { id: randomUUID(), name: '기존 프로젝트', summary: '설명', repositoryUrl: '', nextAction: '', status: 'paused', version: 3, createdAt: '2026-09-09T00:00:00Z', updatedAt: '2026-09-09T01:00:00Z' };
   opened.state.projects.push(registered);
   opened.save();
   const again = openStore(dir);
-  assert.deepEqual(again.state, { ...legacy, revision: 25, projects: [registered] });
+  assert.deepEqual(again.state, { ...legacy, requestLedger, revision: 25, projects: [registered] });
   assert.equal(JSON.parse(await readFile(filename, 'utf8')).sha256, digest(JSON.parse(await readFile(filename, 'utf8')).payload));
 
   for (const projects of [
@@ -169,7 +171,7 @@ test('project routes retain auth, device revocation, create retries and optimist
   assert.equal(state.capabilities.developerWorker, false);
   assert.equal(state.apiVersion, '1');
   assert.equal(state.version, '0.2.2');
-  assert.equal((await f.post('/api/v1/devices/revoke', {}, token)).status, 200);
+  assert.equal((await f.post('/api/v1/devices/revoke', { requestId: randomUUID() }, token)).status, 200);
   assert.equal((await f.api('/api/v1/projects', { token })).status, 401);
   assert.equal((await f.post(route, { revision: 2, status: 'active', requestId: randomUUID() }, token)).status, 401);
   assert.deepEqual((await f.api('/api/projects')).body.projects, [updated.body.project]);

@@ -2,7 +2,7 @@ import './style.css';
 import { fetch } from '@tauri-apps/plugin-http';
 import { appDataDir, join } from '@tauri-apps/api/path';
 import { Stronghold, type Store } from '@tauri-apps/plugin-stronghold';
-import { CommandSession, HttpFailure, type CommandReceipt } from './command-session.ts';
+import { CommandSession, HttpFailure, isDefinitiveRejection, type CommandReceipt } from './command-session.ts';
 
 type Job = { id: string; title: string; status: string; version: number; updatedAt: string; artifacts: { id: string; name: string }[] };
 type State = { name: string; apiVersion: string; revision: number; emergencyStop: boolean; jobs: Job[] };
@@ -184,7 +184,7 @@ async function pair(event: SubmitEvent) {
         body: JSON.stringify({ name: 'YENO Android Controller', platform: 'android', requestId: enrollmentId }),
       }, response => response.json());
     } catch (error) {
-      if (error instanceof HttpFailure && error.status >= 400 && error.status < 500 && error.status !== 408) localStorage.removeItem(enrollmentKey);
+      if (isDefinitiveRejection(error)) localStorage.removeItem(enrollmentKey);
       throw error;
     }
     if (!body.device?.id || !body.device.deviceToken) throw new Error('기기 등록 응답을 확인하지 못했습니다. 같은 연결로 재시도하세요.');

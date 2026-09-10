@@ -80,6 +80,27 @@ test('timeouts and server errors retain the request while definite rejection cle
   assert.equal(request.pending.body.text, '거절 확인 후 새 명령');
 });
 
+test('expired accepted receipts and identity capacity failures retain the same request across reload', async () => {
+  for (const status of [410, 507]) {
+    const storage = memoryStorage();
+    let calls = 0;
+    const sent = [];
+    const transport = async (path, body) => {
+      calls++; sent.push(structuredClone({path, body}));
+      if (calls === 1) throw new TypeError('Original accepted response was lost');
+      throw httpError(status);
+    };
+    const initial = createCommandRequest({storage, transport, makeId: () => 'accepted-original'});
+    initial.stage('/api/commands', {text: '문서 만들어: original'});
+    assert.equal((await initial.send()).kind, 'uncertain');
+    const reloaded = createCommandRequest({storage, transport, makeId: () => {throw new Error('Do not replace an unresolved request ID');}});
+    assert.equal((await reloaded.send()).kind, 'uncertain');
+    assert.deepEqual(reloaded.pending, initial.pending);
+    assert.deepEqual(sent[1], sent[0]);
+    assert.throws(() => reloaded.stage('/api/commands', {text: '문서 만들어: replacement'}), /접수 여부/);
+  }
+});
+
 test('an unresolved request blocks replacement and overlapping sends share one transport', async () => {
   const storage = memoryStorage();
   let release, calls = 0;

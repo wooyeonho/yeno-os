@@ -11,6 +11,7 @@ import {SourceError,validateSourceFields,planSourceImport,resolveSource,sourceRe
 import {operatingBriefDocument} from './lib/operations.mjs';
 import {exportBackup} from './lib/backup.mjs';
 import {DeviceAdminError,publicDevices,revokeDevice} from './lib/device-admin.mjs';
+import {RequestLedgerError,validateRequestId,fingerprintRequest,findReceipt,checkCapacity,rememberReceipt,lookupRequest,REQUEST_LEDGER_MAX_ENTRIES,REQUEST_CACHE_MAX_BYTES} from './lib/request-ledger.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const VERSION='0.2.2';
@@ -47,7 +48,7 @@ export function createYenoServer(options={}) {
  if(store.recovered)event('State recovered from the verified previous backup.');
  if(!aiEndpoint)s.modules.ai=false;
  event('YENO runtime started.');store.save();
- function state(){return {name:'YENO OS',version:VERSION,apiVersion:API_VERSION,revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint,model:aiEndpoint?aiModel:null},jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,capabilities:{localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,developerWorker:false,diagnostics:true,evolution:'proposals-only',ai:!!aiEndpoint,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
+ function state(){return {name:'YENO OS',version:VERSION,apiVersion:API_VERSION,requestTracking:{retained:Object.keys(s.requestLedger).length,capacity:REQUEST_LEDGER_MAX_ENTRIES,cached:Object.keys(s.requests).length,cacheMaxBytes:REQUEST_CACHE_MAX_BYTES},revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint,model:aiEndpoint?aiModel:null},jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,capabilities:{localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,developerWorker:false,diagnostics:true,evolution:'proposals-only',ai:!!aiEndpoint,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
  // A failed filesystem write leaves its outcome uncertain. Retain its request
  // identity in memory, but never acknowledge a cached receipt or expose that
  // state through the API until the complete state has been persisted again.
@@ -174,16 +175,26 @@ export function createYenoServer(options={}) {
  }
  async function body(req){let total=0,parts=[];for await(const part of req){total+=part.length;if(total>MAX_BODY)throw new HttpError(413,'Request body exceeds 256 KB');parts.push(part);}if(!total)return {};let result;try{result=JSON.parse(Buffer.concat(parts).toString('utf8'));}catch{throw new HttpError(400,'Invalid JSON body');}if(!result||typeof result!=='object'||Array.isArray(result))throw new HttpError(400,'JSON object required');return result;}
  function respond(res,status,payload){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(payload));}
- function mutation(req,url,b,operation){
+ function mutation(req,url,b,operation,{required=false,safetyAction=false,fingerprintPath=url.pathname}={}){
    ensureDurable();
-   const requestId=b.requestId;if(requestId!==undefined&&(typeof requestId!=='string'||!requestId.trim()||requestId.length>160))throw new HttpError(400,'requestId must be a string of 1–160 characters');
-   const canonical=value=>{if(Array.isArray(value))return value.map(canonical);if(value&&typeof value==='object')return Object.fromEntries(Object.keys(value).sort().map(k=>[k,canonical(value[k])]));return value;};
-   const copy={...b};delete copy.requestId;const hash=digest(JSON.stringify({method:req.method,path:url.pathname,body:canonical(copy)}));
-   if(requestId&&Object.hasOwn(s.requests,requestId)){const old=s.requests[requestId];if(old.hash!==hash)throw new HttpError(409,'requestId was already used for a different request');return {status:old.status,payload:old.payload};}
+   const requestId=validateRequestId(b.requestId,{required});
+   const hash=fingerprintRequest(req.method,fingerprintPath,b);
+   let persistReceipt=!!requestId;
+   if(requestId){
+     const receipt=findReceipt(s,requestId,hash);if(receipt)return receipt;
+     try{checkCapacity(s,requestId);}catch(error){
+       // A full ledger must never prevent an authenticated stop or revoke.
+       // These safety actions converge on a disabled state and cannot start
+       // work. The response explicitly discloses the unrecorded identity.
+       if(!safetyAction||!(error instanceof RequestLedgerError)||error.extra.code!=='REQUEST_LEDGER_CAPACITY')throw error;
+       persistReceipt=false;
+     }
+   }
    const result=operation();
    if(result.payload?.name==='YENO OS')result.payload.revision=s.revision+1;
    if(result.payload?.state?.name==='YENO OS')result.payload.state.revision=s.revision+1;
-   if(requestId){Object.defineProperty(s.requests,requestId,{value:structuredClone({hash,...result}),enumerable:true,writable:true,configurable:true});const keys=Object.keys(s.requests);for(const old of keys.slice(0,Math.max(0,keys.length-2000)))delete s.requests[old];}
+   if(persistReceipt)rememberReceipt(s,requestId,hash,result);
+   else if(requestId)result.payload.receiptPersisted=false;
    save();schedule();return result;
  }
  const server=http.createServer(async(req,res)=>{
@@ -199,7 +210,7 @@ export function createYenoServer(options={}) {
      const versioned=url.pathname.startsWith('/api/v1/');
      if(versioned&&req.method==='POST'&&url.pathname==='/api/v1/devices/enroll'){
        const b=await body(req);const credential=bearer(req);if(!credential||!crypto.timingSafeEqual(Buffer.from(digest(credential)),Buffer.from(tokenHash)))throw new HttpError(401,'Valid pairing token required');
-       const result=mutation(req,url,b,()=>({status:201,payload:{device:enrollDevice(b)}}));return respond(res,result.status,{device:enrollmentResponse(result.payload.device)});
+       const result=mutation(req,url,b,()=>({status:201,payload:{device:enrollDevice(b)}}),{required:true});return respond(res,result.status,{device:enrollmentResponse(result.payload.device)});
      }
      const principal=authenticate(req,versioned);
      if(versioned)url.pathname=url.pathname.replace(/^\/api\/v1/,'/api');
@@ -217,7 +228,7 @@ export function createYenoServer(options={}) {
          const receipt=revokeDevice(s,ownerRevoke[1]);
          if(!receipt.alreadyRevoked)event(`Device revoked by owner: ${receipt.deviceId}`);
          return {status:200,payload:receipt};
-       });
+       },{required:true,safetyAction:true});
        return respond(res,result.status,result.payload);
      }
      // Full backups contain private state and credential hashes. Only the
@@ -236,8 +247,15 @@ export function createYenoServer(options={}) {
        return res.end(archive);
      }
      if(req.method==='POST'&&url.pathname==='/api/devices/revoke'){
-       await body(req);const id=principal.device?.id;if(!id||!s.devices[id])throw new HttpError(404,'Device not found');s.devices[id].revokedAt=now();event(`Device revoked: ${s.devices[id].name}`);save();return respond(res,200,{revoked:true,deviceId:id});
+       const b=await body(req);const id=principal.device?.id;if(!id||!s.devices[id])throw new HttpError(404,'Device not found');
+       // The effective target comes from authentication, not the body. Bind
+       // that target into the fingerprint so another device cannot receive a
+       // successful cached revocation for a different device and stay active.
+       const result=mutation(req,url,b,()=>{s.devices[id].revokedAt=now();event(`Device revoked: ${s.devices[id].name}`);return {status:200,payload:{revoked:true,deviceId:id}};},{required:versioned,safetyAction:true,fingerprintPath:`/api/devices/${id}/self-revoke`});
+       return respond(res,result.status,result.payload);
      }
+     const requestMatch=url.pathname.match(/^\/api\/requests\/([^/]+)$/);
+     if(req.method==='GET'&&requestMatch){let id;try{id=decodeURIComponent(requestMatch[1]);}catch{throw new HttpError(400,'Invalid encoded requestId');}return respond(res,200,{request:lookupRequest(s,id)});}
      if(req.method==='GET'&&url.pathname==='/api/state')return respond(res,200,state());
      if(req.method==='GET'&&url.pathname==='/api/projects')return respond(res,200,{projects:s.projects});
      if(req.method==='GET'&&url.pathname==='/api/sources')return respond(res,200,{sources:s.sources});
@@ -295,9 +313,9 @@ export function createYenoServer(options={}) {
        const restoreMatch=url.pathname.match(/^\/api\/snapshots\/([a-f0-9-]+)\/restore$/);
        if(restoreMatch){if(b.confirm!==true)throw new HttpError(400,'Explicit confirm:true is required');const snapshot=s.snapshots.find(x=>x.id===restoreMatch[1]);if(!snapshot)throw new HttpError(404,'Snapshot not found');if(s.jobs.some(j=>['running','queued'].includes(j.status)))throw new HttpError(409,'Pause or stop all active jobs before restoring');const pre=takeSnapshot(`복원 전 자동 저장 — ${snapshot.label}`);s.memories=structuredClone(snapshot.data.memories);s.concurrency=snapshot.data.settings.concurrency;s.modules=structuredClone(snapshot.data.settings.modules);if(!aiEndpoint)s.modules.ai=false;event(`Memory/settings restored: ${snapshot.label}. Job and event history preserved.`);return {status:200,payload:{snapshot:publicSnapshot(snapshot),preRestoreSnapshot:publicSnapshot(pre),state:state()}};}
        throw new HttpError(404,'Not found');
-     });
+     },{required:versioned,safetyAction:url.pathname==='/api/control'&&b.action==='stop'});
      respond(res,result.status,result.payload);
-   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError;respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
+   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError||error instanceof RequestLedgerError;respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
  });
  server.requestTimeout=15000;server.headersTimeout=10000;
  function shutdown(){if(closed)return;closed=true;clearTimeout(schedulerTimer);for(const job of s.jobs)if(['running','queued'].includes(job.status)){job.status='paused';job.pauseReason='shutdown';touch(job);}for(const controller of controllers.values())controller.abort();event('Runtime stopped; unfinished jobs paused.');try{save();}finally{releaseLock();server.close();}}

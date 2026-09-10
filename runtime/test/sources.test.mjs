@@ -97,18 +97,20 @@ test('source migration preserves legacy records and rejects corrupt registries w
   t.after(() => rm(dir, { recursive: true, force: true }));
   const legacy = initialState();
   delete legacy.sources;
+  delete legacy.requestLedger;
   Object.assign(legacy, {
     revision: 37, emergencyStop: true,
     memories: [{ id: randomUUID(), text: '남겨야 할 기억' }],
     jobs: [{ id: randomUUID(), status: 'completed', artifacts: [{ id: 'retained-result' }] }],
-    requests: { existing: { hash: 'kept', status: 201, payload: { job: { id: 'prior-job' } } } },
+    requests: { existing: { hash: digest('kept'), status: 201, payload: { job: { id: 'prior-job' } } } },
     artifacts: { 'retained-result': { sha256: 'previous-hash', filename: 'original.md' } },
     devices: { retained: { tokenHash: 'device-hash', revokedAt: null } },
   });
   const filename = path.join(dir, 'state.json');
   await writeFile(filename, envelope(legacy));
   const opened = openStore(dir);
-  assert.deepEqual(opened.state, { ...legacy, sources: [] });
+  const requestLedger = { existing: { hash: digest('kept'), status: 201 } };
+  assert.deepEqual(opened.state, { ...legacy, requestLedger, sources: [] });
   const registered = {
     id: randomUUID(), ...sourceInput(), canonicalUrl: 'https://example.com/guide',
     projectId: null, ...reviewed, version: 2,
@@ -116,7 +118,7 @@ test('source migration preserves legacy records and rejects corrupt registries w
   };
   opened.state.sources.push(registered);
   opened.save();
-  assert.deepEqual(openStore(dir).state, { ...legacy, revision: 38, sources: [registered] });
+  assert.deepEqual(openStore(dir).state, { ...legacy, requestLedger, revision: 38, sources: [registered] });
   for (const sources of [
     null, {}, [null], [{ ...registered, summary: null }], [{ ...registered, extra: true }],
     [{ ...registered, id: 'not-an-id' }], [{ ...registered, version: 0 }],
@@ -256,7 +258,7 @@ test('source routes enforce device authentication, immutable URLs, revision chec
   assert.equal(state.capabilities.developerWorker, false);
   assert.equal(state.apiVersion, '1');
   assert.equal(state.version, '0.2.2');
-  assert.equal((await f.post('/api/v1/devices/revoke', {}, token)).status, 200);
+  assert.equal((await f.post('/api/v1/devices/revoke', { requestId: randomUUID() }, token)).status, 200);
   assert.equal((await f.api('/api/v1/sources', { token })).status, 401);
   assert.equal((await f.post(route, change, token)).status, 401, 'authentication precedes stored receipt replay');
   assert.deepEqual((await f.api('/api/sources')).body.sources, [updated.body.source]);
