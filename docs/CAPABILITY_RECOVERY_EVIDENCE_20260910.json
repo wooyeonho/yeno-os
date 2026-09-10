@@ -12,5 +12,11 @@
   "projectBotsAvailable": false,
   "providerConfigured": false,
   "actualModelCalls": 0,
-  "phoneVerified": false
+  "phoneVerified": false,
+  "artifactPersistence": {
+    "backlogReplacement": "failed",
+    "videoCreate": "failed",
+    "error": "transfer_failed",
+    "attempts": 2
+  }
 }
