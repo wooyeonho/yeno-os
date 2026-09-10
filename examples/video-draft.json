@@ -1,0 +1,13 @@
+{
+  "title": "가격표 밖의 비용",
+  "sourceUrl": "https://github.com/wooyeonho/yeno-os",
+  "rights": "original-text-and-graphics",
+  "scenes": [
+    {"heading": "싼 가격이\n싼 선택일까요?", "body": "물건을 비교할 때\n가격표 다음에 볼 것들.", "seconds": 4},
+    {"heading": "얼마나 오래\n쓸 건가요?", "body": "사용 기간을 맞춰야\n비교의 기준도 같아집니다.", "seconds": 4},
+    {"heading": "소모품 비용도\n더해 보세요.", "body": "필터 · 리필 · 배터리\n계속 필요한 것이 있나요?", "seconds": 4},
+    {"heading": "교체와 배송도\n비용입니다.", "body": "언제 다시 사야 하는지,\n추가 비용이 있는지 확인하세요.", "seconds": 4},
+    {"heading": "구매가 + 소모품\n+ 교체 · 배송비", "body": "같은 기간 동안 들어갈\n확인 가능한 비용을 비교하세요.", "seconds": 4},
+    {"heading": "다음 구매 전,\n한 번 더 확인.", "body": "특정 상품 추천 · 광고 없음\nYENO 콘텐츠 제작 시험", "seconds": 4}
+  ]
+}

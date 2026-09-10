@@ -1,0 +1,84 @@
+{
+  "sources": [
+    {
+      "url": "https://github.com/NousResearch/hermes-agent",
+      "title": "Hermes Agent — 검증된 경험을 재사용 절차로",
+      "readingStatus": "read",
+      "decision": "candidate",
+      "summary": "2026-09-10 공식 README와 Skills System·Security 문서를 읽음(저장소 전체 코드 정독 아님). 지속 기억, 세션 검색, 경험을 스킬로 보존하는 구조, 예약 작업·복수 모델·격리 실행 백엔드를 확인. 신규 출시 주장이 아닌 YENO 부족 기능에 대한 새 검토.",
+      "application": "FEAT-005. 기존 기억/수집기에 더해 성공한 작업의 입력·허용 도구·결과·실패·검사 증거를 procedure 후보로 저장하고 별도 재현 후 채택. Hermes 전체를 두 번째 코어로 운영하지 않고 패턴부터 적용. 최소 검증: 합성 작업 3건 중 재현 성공 1건만 활성 후보, 외부 문서의 명령 및 비밀 포함 후보는 차단. 실행 연결/모델 인증/사용량 제한 필요; 이번 설치·모델 호출 0.",
+      "riskNotes": "README에서 MIT 표시 확인. 개별 스킬/의존성의 조건은 별도 확인. 스킬 파일은 실행 가능한 코드로 취급; 라이선스·커밋·해시·권한·재현 증거 없이는 설치/자동 승격 금지. 프로젝트 디렉터리는 보안 경계가 아님. 운영 비밀/개인 기억을 worker에 전달하지 않음. 공식 문서: https://hermes-agent.nousresearch.com/docs/user-guide/features/skills 및 https://hermes-agent.nousresearch.com/docs/user-guide/security",
+      "projectId": null
+    },
+    {
+      "url": "https://github.com/OpenHands/software-agent-sdk",
+      "title": "OpenHands SDK — 격리된 코드 실행 작업자 후보",
+      "readingStatus": "read",
+      "decision": "candidate",
+      "summary": "2026-09-10 공식 README와 https://docs.openhands.dev/overview/introduction 확인. 파일 편집·터미널·작업 추적 도구, Agent Server의 원격 실행 경계와 Docker/Kubernetes 기반 격리 배치가 제시돼 있음. 현재 YENO의 읽기/초안 봇과 달리 실제 코드 실행자를 구성하는 SDK. 미설치·미배포.",
+      "application": "FEAT-006. YENO가 durable job/중단/예산/결과의 주체로 남고 작업별 격리 worker에 최소 저장소 사본만 전달. 첫 동시 실행 1개. 최소 검증: 비밀 없는 fixture 코드 오류를 고쳐 diff+테스트+실패 로그 반환, 제한 시간 종료와 재접속 중복 실행 방지 확인. 현재 로컬 Docker와 운영 worker가 없어 이 검증 미실행. 별도 계산 자원·모델 인증·예산 필요; 기존 소형 코어에 추가 상주 설치 보류.",
+      "riskNotes": "SDK README MIT 표시 확인; 각 관련 저장소/모델 조건은 별도. 모델 출력 코드는 비신뢰 입력이며 container만으로 완전 격리 보장 불가. 호스트 Docker 소켓·서버 토큰·개인 데이터·서명 키 미제공, 명시적 네트워크/자원 제한. 자동 공개 발행/배포 권한 미부여. 기존 루프 및 job 제어와 연결하는 개발 필요.",
+      "projectId": null
+    },
+    {
+      "url": "https://github.com/harry0703/MoneyPrinterTurbo",
+      "title": "MoneyPrinterTurbo — 기존 영상 자동화 계보 복구",
+      "readingStatus": "read",
+      "decision": "candidate",
+      "summary": "2026-09-10 공식 README 확인. 주제/키워드·사용자 대본, 로컬 또는 외부 영상 소재, 음성/자막과 MP4 제작, API/CLI/WebUI 옵션을 제공. 음성 없이 사용자 소재로 만드는 경로도 있음. 임의 URL의 내용을 검증하고 자동 완성하는 기능으로 확대 해석하지 않음. 과거 YENO 파일에 Claude 쇼츠/MoneyPrinterTurbo/AI 영상 자동화 계보가 확인됨.",
+      "application": "FEAT-007. 공개 URL→본문 확보/접근 상태→사실·사용권 확인→대본→영상→미리보기의 단계별 결과를 YENO job으로 연결. 이번에는 외부 코드를 설치하지 않고 자체 renderer로 검토한 한국어 대본→24초 720×1280 무음 MP4 제작/전체 디코딩을 검증. URL 수집·TTS·코어 작업 연결·폰 결과 전달은 미구현. 최소 후속 검증: 허용한 원문 1개로 source 해시→검토 대본→MP4 관계와 중단 후 재시도 확인. 공식 요구 자원 4코어/4GB 이상, 외부 미디어/TTS/모델 비용 별도.",
+      "riskNotes": "README MIT 표시 확인. 글/사진/영상/음악/폰트/음성은 각각 권리와 조건 확인 필요. 홍보성 모델 중계/우회 광고는 채택하지 않음. 로그인 영상 무단 수집·타인 음성 모사·자동 게시 미연결. 자체 시제품은 창작 텍스트·도형과 로컬 한글 폰트로 만들었으며 rights 선언은 법률 검증의 대체가 아님. 외부 제작 서비스 호출·결제 0.",
+      "projectId": null
+    },
+    {
+      "url": "https://github.com/block/buzz",
+      "title": "Block Buzz — 기존 Buzz HQ 참조 복구",
+      "readingStatus": "read",
+      "decision": "deferred",
+      "summary": "2026-09-10 공식 README에서 Block의 Apache-2.0 협업 워크스페이스, Nostr 기반 메시지/작업/검토 구조 확인. 과거 기록 YST-0097의 Buzz Block 원문 X 링크와 연결 관계를 복구. 현재 YENO의 Buzz HQ 프로젝트 등록은 이 제품 설치 증거가 아님.",
+      "application": "도구를 추가 설치하기보다 기존 Buzz HQ를 기회→고객 문제/근거→작은 제품→콘텐츠 초안→실제 성과 기록의 담당 프로젝트로 유지. YENO job/결과/폰 앱과 겹치는 별도 relay·workspace 도입은 운영 부담 때문에 보류. 필요 시 검토/아티팩트 인계 구조만 적용.",
+      "riskNotes": "본체 Apache-2.0 표시 확인, 각 의존성 별도. 공개 relay에 개인 목표/프로젝트/비밀이 전송되지 않도록 검토 필요. 모바일 앱이나 relay를 이번에 설치/연결하지 않음.",
+      "projectId": null
+    },
+    {
+      "url": "https://www.threads.com/share/BAVbqbnjbv/",
+      "title": "사용자 Threads 자료 BAVbqbnjbv — 내용 확인 대기",
+      "readingStatus": "unavailable",
+      "decision": "pending",
+      "summary": "2026-09-10 공유 링크 열람 및 검색으로 원문 내용을 확인하지 못함. 영상/도구의 기능을 추측하지 않음.",
+      "application": "사용자에게 재전송을 요구하지 않고 공개 원 제작자 자료 조사와 병행. 식별 가능한 원문을 확보하기 전 채택하지 않음.",
+      "riskNotes": "내용·권리·개인정보·서비스 이용조건 미확인. 링크 보존은 동영상 다운로드/설치가 아님.",
+      "projectId": null
+    },
+    {
+      "url": "https://www.instagram.com/reel/Dck62Csjn8E/",
+      "title": "기존 Grok Bot 분석·재구성 참조 — 원문 미확인",
+      "readingStatus": "unavailable",
+      "decision": "pending",
+      "summary": "과거 파일 YENO_OS_CONTENT_MAP_DRAFT.html YST-0636~0639에서 원래 링크 복구. 기록은 공용 추론 라우터·MCP/플러그인 도구·coordinator·로컬 격리 실행·사용량 회계를 설명. 현재 Instagram 열람 제한으로 원문과 실제 GitHub 저장소 미확인. 과거 버전/아카이브/제작자 주장을 현재 사실로 재사용하지 않음.",
+      "application": "Grok API 연결과 이 사용자가 참조한 프로젝트를 분리. 공용 모델 라우터/도구 bridge/격리 worker/usage ledger 요구사항으로 계보만 복구. 실제 코드 재사용은 원 저장소 확인 후 검토.",
+      "riskNotes": "역공학 코드·브랜드·자산·자격 증명 재사용 권한 미확인. 비공개 코드 유출·이용 제한 우회는 적용하지 않음.",
+      "projectId": null
+    },
+    {
+      "url": "https://x.com/dravenip/status/2091688351942508876",
+      "title": "기존 Grok Bot God Mode 참조 — 원문 미확인",
+      "readingStatus": "unavailable",
+      "decision": "pending",
+      "summary": "과거 파일 YST-0356~0359에서 별도 원 링크 복구. 옛 요약에는 총괄→분야 담당→독립 검토→중요 외부 실행에 소유자 판단 구조. 현재 X는 403으로 원문 미확인.",
+      "application": "프로젝트마다 역할·완료 산출물·실행 범위를 정하고 결과 증거로 비교하는 요구사항만 복구. 팀 역할표를 실제 병렬 실행이나 무인 개발 완료로 표시하지 않음.",
+      "riskNotes": "원문 내용/이용조건 미확인. 과거 요약은 1차 원문 검증을 대체하지 않음. 모델 간 합의는 사실 검증이나 과학적 증거가 아님.",
+      "projectId": null
+    },
+    {
+      "url": "https://www.instagram.com/reel/DbFm9uWz5hF/",
+      "title": "기존 링크 기반 영상 제작 참조 — 원문 미확인",
+      "readingStatus": "unavailable",
+      "decision": "pending",
+      "summary": "JARVIS_CORRECTED_MASTER_CONFIRMATION_20260825_KO.md CHAT-013에서 복구한 영상 링크. 현재 원문 열람 실패. 과거 INT-006에는 링크→각도→대본→소재→권리→미리보기→게시 승인 단계가 기록됨.",
+      "application": "정확한 영상 기능은 미확인으로 유지하고, 확인 가능한 MoneyPrinterTurbo 공식 자료와 자체 영상 renderer를 활용해 검증 가능한 단계를 구현.",
+      "riskNotes": "원 영상·음악·글·인물에 대한 이용권 미확인. 무단 복제/자동 공개 게시 없음.",
+      "projectId": null
+    }
+  ]
+}
