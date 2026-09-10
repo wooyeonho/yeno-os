@@ -61,6 +61,29 @@ export function validateProjectRegistry(projects) {
   }
 }
 
+export function planProjectImport(body, projects) {
+  if (!body || Object.keys(body).some(k => !['requestId','projects','archive'].includes(k)) || !Array.isArray(body.projects) || body.projects.length < 1 || body.projects.length > 100 || !Array.isArray(body.archive ?? []) || (body.archive ?? []).length > 100) throw new ProjectError(400, 'Provide 1–100 projects and at most 100 archive references.');
+  const names = new Set(), archiveIds = new Set();
+  const entries = body.projects.map(input => {
+    if (!input || typeof input !== 'object' || Array.isArray(input) || Object.hasOwn(input,'requestId')) throw new ProjectError(400, 'Invalid imported project.');
+    const fields = validateProjectFields({...input,requestId:body.requestId},{creating:true});
+    const key = projectNameKey(fields.name);
+    if (names.has(key)) throw new ProjectError(409, 'Duplicate imported project name.');
+    names.add(key);
+    const existing = projects.find(p => projectNameKey(p.name) === key);
+    if (existing && Object.entries(fields).some(([k,v])=>existing[k]!==v)) throw new ProjectError(409, 'Existing project differs; review it before importing.');
+    return {fields,existing};
+  });
+  const archive = (body.archive ?? []).map(ref => {
+    if (!ref || Object.keys(ref).sort().join() !== 'id,revision' || archiveIds.has(ref.id)) throw new ProjectError(400,'Invalid or duplicate archive reference.');
+    archiveIds.add(ref.id);
+    const project = projects.find(p=>p.id===ref.id);
+    if (!project || project.version!==ref.revision || names.has(projectNameKey(project.name))) throw new ProjectError(409,'Archive target changed or overlaps imported projects.');
+    return project;
+  });
+  return {entries,archive};
+}
+
 export function resolveProject(projects, reference) {
   const value = reference.trim();
   const project = projects.find(item => item.id === value) ?? projects.find(item => projectNameKey(item.name) === projectNameKey(value));

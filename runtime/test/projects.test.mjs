@@ -31,6 +31,33 @@ test('phone command accepts a canonical project code and returns its real artifa
   assert.ok(artifact.body.includes('공개 신호를 기존 프로젝트에 연결'));
 });
 
+test('portfolio import is atomic, reuses matching entries, archives references and cancels only their bots', async t => {
+  const f=await fixture(t);
+  const old=await f.project({name:'repository-reference'});
+  const existing=await f.project({name:'C01 — Buzz HQ',summary:'original goal',nextAction:'restart'});
+  const batch=await f.post('/api/bots',{action:'start',projectIds:[old.id],requestId:randomUUID()});
+  assert.equal(batch.status,200);
+  const baseline=await f.state();
+  const fields=p=>Object.fromEntries(['name','summary','nextAction','repositoryUrl','status'].map(k=>[k,p[k]]));
+  const projects=[fields(existing),...Array.from({length:48},(_,i)=>({name:`original-${i}`,summary:'original goal',nextAction:'restart'}))];
+  const invalid=await f.post('/api/projects/import',{projects:[...projects,{name:'invalid',status:'invented'}],archive:[{id:old.id,revision:old.version}],requestId:randomUUID()});
+  assert.equal(invalid.status,400);
+  assert.deepEqual((await f.state()).projects,baseline.projects);
+  assert.deepEqual((await f.state()).jobs,baseline.jobs);
+  const request={projects,archive:[{id:old.id,revision:old.version}],requestId:randomUUID()};
+  const accepted=await f.post('/api/projects/import',request);
+  assert.equal(accepted.status,201);
+  assert.equal(accepted.body.createdCount,48);assert.equal(accepted.body.reusedCount,1);
+  assert.equal(accepted.body.archivedCount,1);assert.equal(accepted.body.cancelledJobIds.length,1);
+  const replay=await f.post('/api/projects/import',request);
+  assert.equal(replay.status,201);
+  const state=await f.state();
+  assert.equal(state.projects.filter(p=>p.status!=='archived').length,49);
+  assert.equal(state.projects.length,50);
+  assert.equal(state.jobs.find(j=>j.id===accepted.body.cancelledJobIds[0]).status,'cancelled');
+  assert.deepEqual(state.projects.find(p=>p.id===existing.id),existing);
+});
+
 const runtimeRoot = fileURLToPath(new URL('../', import.meta.url));
 const TOKEN = 'project-integration-synthetic-token';
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));

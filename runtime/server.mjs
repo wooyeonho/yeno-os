@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {atomicWrite,openStore,acquireRuntimeLock,digest,uid,now} from './lib/store.mjs';
 import {acquireContainerLease} from './lib/container-lease.mjs';
-import {ProjectError,projectNameKey,validateProjectFields,resolveProject,projectRegistryDocument,projectBriefDocument} from './lib/projects.mjs';
+import {ProjectError,projectNameKey,planProjectImport,validateProjectFields,resolveProject,projectRegistryDocument,projectBriefDocument} from './lib/projects.mjs';
 import {SourceError,validateSourceFields,planSourceImport,resolveSource,sourceRegistryDocument,sourceBriefDocument} from './lib/sources.mjs';
 import {operatingBriefDocument} from './lib/operations.mjs';
 import {exportBackup} from './lib/backup.mjs';
@@ -340,6 +340,15 @@ export function createYenoServer(options={}) {
          return controlDiscovery(b.enabled);
        }
        if(url.pathname==='/api/memory')return {status:201,payload:{memory:addMemory(b)}};
+       if(url.pathname==='/api/projects/import'){
+         const plan=planProjectImport(b,s.projects), archivedIds=new Set(plan.archive.map(p=>p.id));
+         // Validate the entire batch before changing any records. Existing matching entries are reused.
+         const projects=plan.entries.map(p=>p.existing??addProject({...p.fields,requestId:b.requestId}));
+         for(const p of plan.archive)updateProject(p.id,{status:'archived',revision:p.version,requestId:b.requestId});
+         const cancelledJobIds=[];
+         for(const job of s.jobs)if(job.botAssignment&&archivedIds.has(job.projectId)&&['queued','running','paused'].includes(job.status)){job.status='cancelled';delete job.draft;invalidate(job);touch(job);cancelledJobIds.push(job.id);}
+         return {status:201,payload:{projects,createdCount:plan.entries.filter(p=>!p.existing).length,reusedCount:plan.entries.filter(p=>p.existing).length,archivedCount:plan.archive.length,cancelledJobIds}};
+       }
        if(url.pathname==='/api/projects')return {status:201,payload:{project:addProject(b)}};
        const projectUpdate=url.pathname.match(/^\/api\/projects\/([a-f0-9-]+)\/update$/);
        if(projectUpdate)return {status:200,payload:{project:updateProject(projectUpdate[1],b)}};
