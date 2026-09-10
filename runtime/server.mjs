@@ -13,6 +13,7 @@ import {exportBackup} from './lib/backup.mjs';
 import {DeviceAdminError,publicDevices,revokeDevice} from './lib/device-admin.mjs';
 import {RequestLedgerError,validateRequestId,fingerprintRequest,findReceipt,checkCapacity,rememberReceipt,lookupRequest,REQUEST_LEDGER_MAX_ENTRIES,REQUEST_CACHE_MAX_BYTES} from './lib/request-ledger.mjs';
 import {createDiscovery,discoveryDocument,DISCOVERY_REPOS} from './lib/discovery.mjs';
+import {agentConfig,agentUsage,runAgent,recoverAgentJournals,automaticMission,AgentError} from './lib/agent.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const VERSION='0.2.2';
@@ -20,12 +21,13 @@ const API_VERSION='1';
 const MAX_BODY=256*1024;
 class HttpError extends Error {constructor(status,message,extra={}){super(message);this.status=status;this.extra=extra;}}
 function requiredText(value,maximum=80000){if(typeof value!=='string'||!value.trim())throw new HttpError(400,'text must be a non-empty string');if(value.length>maximum)throw new HttpError(400,`text is limited to ${maximum} characters`);return value.trim();}
-function publicJob(job){const {input,normalized,draft,...out}=job;return out;}
+function publicJob(job){const {input,normalized,draft,agentJournal,...out}=job;return {...out,...(agentJournal?{agent:{provider:agentJournal.provider,model:agentJournal.model,calls:agentJournal.calls.length,unknownCalls:agentJournal.calls.filter(call=>call.status!=='settled').length,toolResults:agentJournal.history.filter(message=>message.role==='tool').length}}:{})};}
 function publicSnapshot(snapshot){const {data,...out}=snapshot;return out;}
-const examples=['운영 브리핑','운영 현황','기억해: 이번 주에는 YENO 한 프로젝트에 집중한다','찾아줘: YENO','문서 만들어: YENO의 첫 목표는 기억과 실행이다','프로젝트 목록','프로젝트 브리핑: 프로젝트 이름','프로젝트 작업: 프로젝트 이름 | 준비할 작업','자료 목록','자료 브리핑: 자료 ID','개선 후보: 자료 ID','진단해','개선점 찾아줘'];
+const examples=['자율 점검','자율 임무: 공식 자료를 읽고 다음 개선 초안을 만들어줘','운영 브리핑','운영 현황','기억해: 이번 주에는 YENO 한 프로젝트에 집중한다','찾아줘: YENO','문서 만들어: YENO의 첫 목표는 기억과 실행이다','프로젝트 목록','프로젝트 브리핑: 프로젝트 이름','프로젝트 작업: 프로젝트 이름 | 준비할 작업','자료 목록','자료 브리핑: 자료 ID','개선 후보: 자료 ID','진단해','개선점 찾아줘'];
 
 export function createYenoServer(options={}) {
  const env=options.env??process.env;
+ const agentSettings=agentConfig(env);
  const dataDir=path.resolve(options.dataDir??env.YENO_DATA_DIR??path.join(ROOT,'data'));
  const releaseLock=options.containerLease===true?acquireContainerLease(dataDir):acquireRuntimeLock(dataDir);
  let store;try{store=openStore(dataDir);}catch(error){releaseLock();throw error;}
@@ -47,9 +49,10 @@ export function createYenoServer(options={}) {
  for(const job of s.jobs)if(['running','queued'].includes(job.status)){job.status='paused';job.pauseReason='restart';job.updatedAt=now();job.version++;restarted++;}
  if(restarted)event(`${restarted} unfinished job(s) paused after restart; owner resume required.`);
  if(store.recovered)event('State recovered from the verified previous backup.');
- if(!aiEndpoint)s.modules.ai=false;
+ if(store.recovered||(!aiEndpoint&&!agentSettings.ready))s.modules.ai=false;
+ recoverAgentJournals(s.jobs);
  event('YENO runtime started.');store.save();
- function state(){return {name:'YENO OS',version:VERSION,apiVersion:API_VERSION,requestTracking:{retained:Object.keys(s.requestLedger).length,capacity:REQUEST_LEDGER_MAX_ENTRIES,cached:Object.keys(s.requests).length,cacheMaxBytes:REQUEST_CACHE_MAX_BYTES},revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint,model:aiEndpoint?aiModel:null},discovery:{...s.discovery,repositories:DISCOVERY_REPOS},jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,capabilities:{localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,scheduledSourceDiscovery:true,developerWorker:false,diagnostics:true,evolution:'proposals-only',ai:!!aiEndpoint,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
+ function state(){return {name:'YENO OS',version:VERSION,apiVersion:API_VERSION,requestTracking:{retained:Object.keys(s.requestLedger).length,capacity:REQUEST_LEDGER_MAX_ENTRIES,cached:Object.keys(s.requests).length,cacheMaxBytes:REQUEST_CACHE_MAX_BYTES},revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint||agentSettings.ready,draftConfigured:!!aiEndpoint,model:aiEndpoint?aiModel:agentSettings.ready?agentSettings.model:null},agent:{configured:agentSettings.ready,provider:agentSettings.provider,model:agentSettings.model||null,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs),automaticReviews:agentSettings.ready&&agentSettings.auto&&s.modules.ai&&s.discovery.enabled&&!s.emergencyStop,tools:['runtime_inspect','sources_list','source_read_release'],developmentExecution:false},discovery:{...s.discovery,repositories:DISCOVERY_REPOS},jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,capabilities:{localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,scheduledSourceDiscovery:true,boundedAgentLoop:true,developerWorker:false,diagnostics:true,evolution:'proposals-only',ai:!!aiEndpoint||agentSettings.ready,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
  // A failed filesystem write leaves its outcome uncertain. Retain its request
  // identity in memory, but never acknowledge a cached receipt or expose that
  // state through the API until the complete state has been persisted again.
@@ -60,18 +63,21 @@ export function createYenoServer(options={}) {
  const discovery=createDiscovery({state:s,save,event,ensureDurable,fetchImpl:options.discoveryFetch});
  function controlDiscovery(enabled){if(enabled&&s.emergencyStop)throw new HttpError(409,'Release emergency stop before enabling source discovery');discovery.setEnabled(enabled);event(`Official source discovery ${enabled?'enabled':'disabled'}; no model or coding execution.`);return {status:200,payload:{discovery:structuredClone(s.discovery)}};}
  const touch=job=>{job.updatedAt=now();job.version++;};
- const moduleFor=type=>type==='document'?'documents':type==='ai'?'ai':'diagnostics';
+ const moduleFor=type=>type==='document'?'documents':['ai','agent'].includes(type)?'ai':'diagnostics';
  function requireModule(name){if(!s.modules[name])throw new HttpError(409,`${name} module is disabled`);}
  function newJob(body){
-   const type=body.type;if(!['document','diagnostics','evolution','ai'].includes(type))throw new HttpError(422,'Unsupported job type');
+   const type=body.type;if(!['document','diagnostics','evolution','ai','agent'].includes(type))throw new HttpError(422,'Unsupported job type');
+   if(type==='agent'&&!agentSettings.ready)throw new HttpError(409,'자율 임무는 모델 인증·모델 이름·하루 호출 상한 연결이 필요합니다. 자율 점검에서 연결 상태를 확인하세요.');
    requireModule(moduleFor(type));
    if(type==='ai'&&!aiEndpoint)throw new HttpError(409,'AI provider is not configured');
    if(s.emergencyStop)throw new HttpError(409,'Emergency stop is active. Resume the runtime first.');
    let project;
    if(body.projectId!==undefined){if(typeof body.projectId!=='string'||!s.projects.some(item=>item.id===body.projectId))throw new HttpError(404,'Project not found.');project=s.projects.find(item=>item.id===body.projectId);}
    const text=type==='diagnostics'||type==='evolution'?(body.text?requiredText(body.text):type):requiredText(body.text);
-   const title=body.title?requiredText(body.title,160):(type==='document'?'문서 만들기':type==='diagnostics'?'YENO 상태 진단':type==='evolution'?'경험 기반 개선 제안':'AI 초안 작성');
+   if(type==='agent'&&text.length>20000)throw new HttpError(400,'Agent mission text is limited to 20000 characters');
+   const title=body.title?requiredText(body.title,160):(type==='document'?'문서 만들기':type==='diagnostics'?'YENO 상태 진단':type==='evolution'?'경험 기반 개선 제안':type==='agent'?'YENO 자율 임무':'AI 초안 작성');
    const job={id:uid(),title,type,input:text,status:'queued',step:0,totalSteps:3,createdAt:now(),updatedAt:now(),error:null,version:1,artifacts:[]};
+   if(type==='agent')job.agentJournal={provider:agentSettings.provider,model:agentSettings.model,calls:[],history:[{role:'user',content:text}]};
    if(project)job.projectId=project.id;
    s.jobs.unshift(job);event(`Job queued: ${title}`);return job;
  }
@@ -90,6 +96,8 @@ export function createYenoServer(options={}) {
  function schedule(){if(closed||schedulerTimer)return;schedulerTimer=setTimeout(tick,150);schedulerTimer.unref();}
  function tick(){schedulerTimer=null;if(closed)return;
    void discovery.tick();
+   const mission=automaticMission(s,agentSettings);
+   if(mission){const job=newJob({type:'agent',title:'YENO 자동 자료 검토',text:mission.text});job.agentJournal.automaticKey=mission.key;save();}
    if(!s.emergencyStop){for(const job of s.jobs.slice().reverse()){if(active()>=s.concurrency)break;if(job.status==='queued'){if(!s.modules[moduleFor(job.type)]){job.status='paused';job.pauseReason='moduleDisabled';touch(job);save();continue;}job.status='running';delete job.pauseReason;touch(job);save();const generation=(generations.get(job.id)??0)+1;generations.set(job.id,generation);runStep(job,generation);}}}
    schedule();
  }
@@ -111,7 +119,11 @@ export function createYenoServer(options={}) {
  function diagnosticDocument(job){
    const files=fs.readdirSync(ROOT,{withFileTypes:true}).filter(e=>e.isFile()).map(e=>({name:e.name,bytes:fs.statSync(path.join(ROOT,e.name)).size}));
    const counts=Object.fromEntries(['queued','running','paused','completed','failed','cancelled'].map(status=>[status,s.jobs.filter(j=>j.status===status).length]));
-   return `# YENO 실제 상태 진단\n\n작성 시각: ${now()}\n\n- Node: ${process.version}\n- 운영체제: ${os.platform()} ${os.arch()}\n- CPU 논리 코어: ${os.cpus().length}\n- 시스템 메모리: ${(os.totalmem()/1024**3).toFixed(2)} GiB\n- 현재 여유 메모리: ${(os.freemem()/1024**3).toFixed(2)} GiB\n- YENO 프로세스 RSS: ${(process.memoryUsage().rss/1024**2).toFixed(1)} MiB\n- 동시 실행 한도: ${s.concurrency}\n- 기억: ${s.memories.length}개\n- 스냅샷: ${s.snapshots.length}개\n- AI 설정: ${aiEndpoint?'설정됨 (이번 진단에는 호출하지 않음)':'설정 안 됨'}\n\n## 작업 상태\n${Object.entries(counts).map(([k,v])=>`- ${k}: ${v}`).join('\n')}\n\n## 본체 최상위 파일 실측\n${files.map(f=>`- ${f.name}: ${f.bytes} bytes`).join('\n')}\n\n## 범위\n이 실행 환경과 YENO 저장 상태만 측정했습니다. 연결되지 않은 집 PC나 원격 서비스를 진단하지 않았습니다.\n`;
+   return `# YENO 실제 상태 진단\n\n작성 시각: ${now()}\n\n- Node: ${process.version}\n- 운영체제: ${os.platform()} ${os.arch()}\n- CPU 논리 코어: ${os.cpus().length}\n- 시스템 메모리: ${(os.totalmem()/1024**3).toFixed(2)} GiB\n- 현재 여유 메모리: ${(os.freemem()/1024**3).toFixed(2)} GiB\n- YENO 프로세스 RSS: ${(process.memoryUsage().rss/1024**2).toFixed(1)} MiB\n- 동시 실행 한도: ${s.concurrency}\n- 기억: ${s.memories.length}개\n- 스냅샷: ${s.snapshots.length}개\n- AI 설정: ${aiEndpoint||agentSettings.ready?'설정됨 (이번 진단에는 호출하지 않음)':'설정 안 됨'}\n\n## 작업 상태\n${Object.entries(counts).map(([k,v])=>`- ${k}: ${v}`).join('\n')}\n\n## 본체 최상위 파일 실측\n${files.map(f=>`- ${f.name}: ${f.bytes} bytes`).join('\n')}\n\n## 범위\n이 실행 환경과 YENO 저장 상태만 측정했습니다. 연결되지 않은 집 PC나 원격 서비스를 진단하지 않았습니다.\n`;
+ }
+ function agentConnectionDocument(){
+   const usage=agentUsage(s.jobs);
+   return `\n## AI 실행 연결\n- 제공자: ${agentSettings.provider}\n- 준비: ${agentSettings.ready?'설정 있음 — 실제 호출 성공은 별도 확인':'모델 인증·모델 이름·호출 상한 연결 대기'}\n- 오늘 시도: ${usage.attempts} / 하루 상한 ${agentSettings.dailyCallLimit}회\n- 응답 미확인: ${usage.unknown}회\n- 사용량 누락: ${usage.usageMissing}회\n- 자동 자료 검토 설정: ${agentSettings.auto?'켜짐':'꺼짐'}\n- 명령: 자율 임무: 공식 자료를 읽고 다음 개선 초안을 만들어줘\n모델이 읽기 도구를 선택하고 결과를 문서로 남깁니다. 제공자 1개만 사용하며 코드·권한·결제·배포를 실행하지 않습니다. 호출 횟수 제한은 결제 금액 보장이 아닙니다.\n`;
  }
  function evolutionDocument(){
    const failures=s.jobs.filter(j=>j.status==='failed');
@@ -135,11 +147,17 @@ export function createYenoServer(options={}) {
          job.draft=job.operatingReport?`${job.normalized}\n\n---\n출처: YENO에 저장된 작업·프로젝트·자료의 생성 시점 상태.\n보고서 입력 SHA-256: ${job.inputSha256}\n`:`# ${job.title.replace(/[\r\n]/g,' ')}\n\n작성 시각: ${now()}\n\n## 입력 내용을 문서로 정리\n${paras.map((p,i)=>`### ${i+1}\n\n${p}`).join('\n\n')}\n\n## 출처와 처리 내역\n- 출처: ${job.sourceReport?'YENO에 등록된 자료와 검토 기록':job.projectReport?'YENO에 등록된 프로젝트 정보와 소유자의 요청':'연호님이 이 작업에 입력한 텍스트'}\n- 처리: 유니코드·줄바꿈 정규화, 빈 줄 기준 문단 분리, 제목·출처 부착\n- 외부 조사 또는 AI 호출: 없음\n- 입력 SHA-256: ${job.inputSha256}\n- 원문 의미를 해석하거나 사실 확인한 문서가 아닙니다.\n`;
        }else if(job.type==='diagnostics')job.draft=diagnosticDocument(job);
        else if(job.type==='evolution')job.draft=evolutionDocument();
+       else if(job.type==='agent'){
+         const controller=new AbortController();controllers.set(job.id,controller);
+         const timeout=setTimeout(()=>controller.abort(),90000);
+         try {const draft=await runAgent({job,state:s,config:agentSettings,save:()=>{if(closed)throw new AgentError('runtime_closed');save();},signal:controller.signal,fetchImpl:options.agentFetch});if(!valid())return;job.draft=draft;}
+         finally{clearTimeout(timeout);if(controllers.get(job.id)===controller)controllers.delete(job.id);}
+       }
        else {const draft=await aiDraft(job);if(!valid())return;job.draft=`# ${job.title}\n\n${draft}\n\n---\nAI 생성 초안 · 모델: ${aiModel}\n외부 사실 검증이나 도구 실행은 하지 않았습니다.\n입력 SHA-256: ${job.inputSha256}\n`;}
        job.step=2;
      }else if(job.step===2){writeArtifact(job,job.draft,`${job.type}-${job.id.slice(0,8)}.md`);delete job.draft;job.step=3;job.status='completed';event(`Job completed and output verified: ${job.title}`);}
      touch(job);save();
-   }catch(error){if(!valid())return;job.status='failed';job.error=job.type==='ai'?(String(error.message).startsWith('AI provider')?error.message:'AI request failed or timed out; no provider response details retained.'):String(error.message).slice(0,300);touch(job);event(`Job failed: ${job.title}`);save();}
+   }catch(error){if(!valid())return;job.status='failed';job.error=job.type==='agent'?(error instanceof AgentError?error.message:'Agent execution stopped or failed; inspect preserved checkpoints.'):job.type==='ai'?(String(error.message).startsWith('AI provider')?error.message:'AI request failed or timed out; no provider response details retained.'):String(error.message).slice(0,300);touch(job);event(`Job failed: ${job.title}`);save();}
    if(valid()){const timer=setTimeout(()=>runStep(job,generation),250);timer.unref();}
  }
  function bearer(req){const supplied=req.headers.authorization;if(typeof supplied!=='string'||!supplied.startsWith('Bearer '))return null;return supplied.slice(7);}
@@ -285,10 +303,11 @@ export function createYenoServer(options={}) {
        if(url.pathname==='/api/jobs')return {status:201,payload:{job:publicJob(newJob(b))}};
        if(url.pathname==='/api/commands'){
          const text=requiredText(b.text);let match;
-         if(/^자율\s*점검$/i.test(text))return {status:201,payload:{kind:'job',job:sourceDocumentJob(null,discoveryDocument(s.discovery),'YENO 자율 점검')}};
+         if((match=text.match(/^자율\s+임무\s*[:：]\s*(.+)$/is)))return {status:201,payload:{kind:'job',job:publicJob(newJob({type:'agent',text:match[1]}))}};
+         if(/^자율\s*점검$/i.test(text))return {status:201,payload:{kind:'job',job:sourceDocumentJob(null,discoveryDocument(s.discovery)+agentConnectionDocument(),'YENO 자율 점검')}};
          if((match=text.match(/^자료\s+자동수집\s+(시작|중지)$/))){const result=controlDiscovery(match[1]==='시작');return {...result,payload:{kind:'discovery',...result.payload}};}
          if(/^운영\s+(?:브리핑|현황)$/i.test(text)){
-           const report=operatingBriefDocument({projects:s.projects,jobs:s.jobs,sources:s.sources,memories:s.memories,emergencyStop:s.emergencyStop,aiConfigured:!!aiEndpoint,developerWorker:false,generatedAt:now()});
+           const report=operatingBriefDocument({projects:s.projects,jobs:s.jobs,sources:s.sources,memories:s.memories,emergencyStop:s.emergencyStop,aiConfigured:!!aiEndpoint||agentSettings.ready,developerWorker:false,generatedAt:now()});
            const job=newJob({type:'document',text:report,title:'YENO 운영 브리핑'});job.operatingReport=true;
            return {status:201,payload:{kind:'job',job:publicJob(job)}};
          }
@@ -315,14 +334,14 @@ export function createYenoServer(options={}) {
        }
        if(url.pathname==='/api/settings'){
          if(b.concurrency!==undefined&&(!Number.isInteger(b.concurrency)||b.concurrency<1||b.concurrency>3))throw new HttpError(400,'concurrency must be 1, 2, or 3');
-         if(b.modules!==undefined){if(!b.modules||typeof b.modules!=='object'||Array.isArray(b.modules))throw new HttpError(400,'modules must be an object');for(const [name,value]of Object.entries(b.modules)){if(!Object.hasOwn(s.modules,name)||typeof value!=='boolean')throw new HttpError(400,'Unknown module or non-boolean value');if(name==='ai'&&value&&!aiEndpoint)throw new HttpError(409,'AI provider is not configured');}}
+         if(b.modules!==undefined){if(!b.modules||typeof b.modules!=='object'||Array.isArray(b.modules))throw new HttpError(400,'modules must be an object');for(const [name,value]of Object.entries(b.modules)){if(!Object.hasOwn(s.modules,name)||typeof value!=='boolean')throw new HttpError(400,'Unknown module or non-boolean value');if(name==='ai'&&value&&!aiEndpoint&&!agentSettings.ready)throw new HttpError(409,'AI provider is not configured');}}
          if(b.concurrency!==undefined)s.concurrency=b.concurrency;if(b.modules)Object.assign(s.modules,b.modules);
          for(const job of s.jobs)if(['running','queued'].includes(job.status)&&!s.modules[moduleFor(job.type)]){job.status='paused';job.pauseReason='moduleDisabled';touch(job);invalidate(job);}
          event('Runtime settings updated.');return {status:200,payload:state()};
        }
        if(url.pathname==='/api/snapshots')return {status:201,payload:{snapshot:publicSnapshot(takeSnapshot(b.label))}};
        const restoreMatch=url.pathname.match(/^\/api\/snapshots\/([a-f0-9-]+)\/restore$/);
-       if(restoreMatch){if(b.confirm!==true)throw new HttpError(400,'Explicit confirm:true is required');const snapshot=s.snapshots.find(x=>x.id===restoreMatch[1]);if(!snapshot)throw new HttpError(404,'Snapshot not found');if(s.jobs.some(j=>['running','queued'].includes(j.status)))throw new HttpError(409,'Pause or stop all active jobs before restoring');const pre=takeSnapshot(`복원 전 자동 저장 — ${snapshot.label}`);s.memories=structuredClone(snapshot.data.memories);s.concurrency=snapshot.data.settings.concurrency;s.modules=structuredClone(snapshot.data.settings.modules);if(!aiEndpoint)s.modules.ai=false;event(`Memory/settings restored: ${snapshot.label}. Job and event history preserved.`);return {status:200,payload:{snapshot:publicSnapshot(snapshot),preRestoreSnapshot:publicSnapshot(pre),state:state()}};}
+       if(restoreMatch){if(b.confirm!==true)throw new HttpError(400,'Explicit confirm:true is required');const snapshot=s.snapshots.find(x=>x.id===restoreMatch[1]);if(!snapshot)throw new HttpError(404,'Snapshot not found');if(s.jobs.some(j=>['running','queued'].includes(j.status)))throw new HttpError(409,'Pause or stop all active jobs before restoring');const pre=takeSnapshot(`복원 전 자동 저장 — ${snapshot.label}`);s.memories=structuredClone(snapshot.data.memories);s.concurrency=snapshot.data.settings.concurrency;s.modules=structuredClone(snapshot.data.settings.modules);if(!aiEndpoint&&!agentSettings.ready)s.modules.ai=false;event(`Memory/settings restored: ${snapshot.label}. Job and event history preserved.`);return {status:200,payload:{snapshot:publicSnapshot(snapshot),preRestoreSnapshot:publicSnapshot(pre),state:state()}};}
        throw new HttpError(404,'Not found');
      },{required:versioned,safetyAction:(url.pathname==='/api/control'&&b.action==='stop')||(url.pathname==='/api/discovery'&&b.enabled===false)});
      respond(res,result.status,result.payload);

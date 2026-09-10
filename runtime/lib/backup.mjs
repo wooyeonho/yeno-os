@@ -6,6 +6,7 @@ import { validateProjectRegistry } from './projects.mjs';
 import { validateSourceRegistry } from './sources.mjs';
 import { validateRequestLedger } from './request-ledger.mjs';
 import { validateDiscovery } from './discovery.mjs';
+import { validateAgentJournal, recoverAgentJournals } from './agent.mjs';
 
 export const BACKUP_MAX_PLAINTEXT_BYTES = 16 * 1024 * 1024;
 export const BACKUP_MAX_ARCHIVE_BYTES = BACKUP_MAX_PLAINTEXT_BYTES + 36;
@@ -14,7 +15,7 @@ const MAGIC = Buffer.from('YENOBK1\n');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const HASH = /^[a-f0-9]{64}$/;
 const STATE_KEYS = ['revision', 'emergencyStop', 'concurrency', 'modules', 'jobs', 'memories', 'snapshots', 'events', 'requests', 'artifacts', 'devices', 'projects', 'sources'];
-const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason'];
+const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal'];
 const fail = message => { throw new Error(`Backup: ${message}`); };
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = (value, min, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value) && value >= min && value <= max;
@@ -49,7 +50,8 @@ function validateState(state) {
   const jobs = new Map(), references = new Set();
   for (const job of state.jobs) {
     keys(job, JOB_KEYS, ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts']);
-    if (!UUID.test(job.id) || jobs.has(job.id) || !string(job.title, 160) || !string(job.input, 80000) || !['document', 'diagnostics', 'evolution', 'ai'].includes(job.type) || !['queued', 'running', 'paused', 'completed', 'failed', 'cancelled'].includes(job.status) || !integer(job.step, 0, 3) || job.totalSteps !== 3 || !integer(job.version, 1, Number.MAX_SAFE_INTEGER - 1) || !Array.isArray(job.artifacts) || (job.error !== null && !string(job.error))) fail('invalid job');
+    if (!UUID.test(job.id) || jobs.has(job.id) || !string(job.title, 160) || !string(job.input, 80000) || !['document', 'diagnostics', 'evolution', 'ai', 'agent'].includes(job.type) || !['queued', 'running', 'paused', 'completed', 'failed', 'cancelled'].includes(job.status) || !integer(job.step, 0, 3) || job.totalSteps !== 3 || !integer(job.version, 1, Number.MAX_SAFE_INTEGER - 1) || !Array.isArray(job.artifacts) || (job.error !== null && !string(job.error))) fail('invalid job');
+    if (job.agentJournal) validateAgentJournal(job.agentJournal);
     timestamp(job.createdAt); timestamp(job.updatedAt);
     if (Date.parse(job.updatedAt) < Date.parse(job.createdAt)) fail('invalid job timestamp order');
     if (job.status === 'completed' && (job.step !== 3 || job.artifacts.length === 0)) fail('invalid completed job');
@@ -213,6 +215,7 @@ export function restoreBackup({ archive, key, targetDir }) {
   const state = payload.state, restoredAt = new Date().toISOString();
   let pausedJobCount = 0, revokedDeviceCount = 0;
   state.emergencyStop = true; state.modules.ai = false; state.revision++;
+  recoverAgentJournals(state.jobs);
   if (state.discovery) {
     state.discovery.enabled = false;
     if (state.discovery.lastRun?.status === 'running') { state.discovery.lastRun.status = 'interrupted'; state.discovery.lastRun.finishedAt = restoredAt; }
