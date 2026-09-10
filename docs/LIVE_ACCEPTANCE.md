@@ -1,3 +1,19 @@
+# 최신: 공개 오픈소스·스킬 자동 수집 실제 가동 — 2026-09-10
+
+실행 소스 `25b2242c0fe8a5ffa5f4f1a2ac46778543f3f392`, Koyeb 배포 `912de00b-f919-462d-8288-d7c43e81d985`의 **Docker 빌드 성공 / Healthy / Active deployment / 1 of 1 running**을 확인했다. 실제 이미지 manifest SHA-256 `adbd939cf02f9e1550e9ad1d11075f79a0846b00dc123f9e62a9c2d732340c72`. [범위·명령·API 연결법](ECOSYSTEM_INTAKE.md).
+
+- Node 24.19.0 전체 **140/140 통과**, 실패·취소·생략 0, 17.943초. 기존 검사와 합산하지 않는다. SHA/경로/원문 검증, 재시작·중단·복원, 읽기 도구, NVIDIA/Moonshot 도구 호출 및 추론 체크포인트를 검사했다. 제공자 응답은 모의 테스트이며 실제 모델 호출은 **0회**다.
+- 실제 서버 수집: `2026-09-10T03:51:24.931Z` 시작 → `2026-09-10T03:51:31.514Z` **completed**. 6개 분야 GitHub 검색 모두 ok/각 5개 메타데이터, 최종 저장소 **3개** 접수. 다음 시각 `2026-09-11T03:51:24.931Z`(한국 시각 9월 11일 12:51:24). ChatGPT 예약과 독립된 코어 일정이며 `enabled=true`다.
+- 접수한 실제 저장소는 NVIDIA/skills, anthropics/skills, 검색으로 발견한 DietrichGebert/ponytail이다. 고정 커밋에서 README 3개·라이선스 파일 2개·SKILL.md 6개, 합계 **11개 문서의 제한된 발췌**를 보존했다. 잘림 표시와 SHA-256/Git blob SHA를 함께 기록한다. NVIDIA에는 Apache-2.0, Ponytail에는 MIT가 관찰됐으며 Anthropic 저장소 라이선스는 UNKNOWN으로 남겼다. 개별 스킬의 조건을 모두 확인한 것이 아니다.
+- 세 자료 모두 `readingStatus=partial`, `decision=pending`이다. 원문 접수를 스킬 설치/채택/전체 저장소 정독으로 표시하지 않는다. 기존 프로젝트 **20개**·자료 **79개**·작업 **12개**·기억·스냅샷 전체 필드와 기존 릴리스 수집 일정의 보존을 비교했다. 검증 후 자료 **82개**, 작업 **13개**, revision **151**다.
+- NVIDIA 준비 설정이 실제 API에 반영됐다: provider=nvidia, model=moonshotai/kimi-k3, dailyCallLimit=4, automaticReviews=false, configured=false, attempts=0. API 키는 연결하지 않았고 AI 자동 검토는 아직 작동하지 않는다. 키 연결 후 실제 한 임무를 확인하고 자동 검토를 켜는 단계가 남았다.
+- 기존 명령 API에 `흡수 현황`을 보내 job `564f711f-d36e-4ec3-8040-cd94a941a9a9`, artifact `7fecf9d3-30b6-4f70-9ceb-684518fee673`를 생성했다. 실제 다운로드 **3132 bytes**, SHA-256 `c20ad997744422e2b092f8489c0de9104087179f05aa59365dd1c75cc9caee74`가 서버 해시와 일치했다. 검증 시각 `2026-09-10T03:52:59.410230+00:00`. 폰에서는 같은 명령을 보낼 수 있지만 이번 확인은 HTTPS API 검사이며 Android 실기기 조작 증거는 아니다.
+- 현재 가능한 것은 자율 발견·선택된 원문 보존·일정/중복/중단 관리다. 키 없는 AI 검토, 스킬 실행·격리 코드 수정·효과 시험·자동 배포 승격, Windows EXE/PC 제어는 완료되지 않았다. 새로운 APK 설치·유료 호출·계정 생성도 하지 않았다.
+
+관리 화면의 마우스 입력/탭 연결 시간 초과로 배포가 지연됐다. 준비된 Save and deploy 메뉴의 With build를 키보드로 실행한 뒤 실제 새 커밋의 빌드와 API를 확인했다. 실패한 입력을 배포 성공으로 계산하지 않았다. 전환 중 상태 GET 시간 초과는 동일 읽기 재시도로 회수했고, 수집/문서 생성은 저장된 동일 request ID를 사용했다.
+
+아래는 이전 시점의 구현·운영 이력이다.
+
 # 최신: AI 읽기 도구 실행 고리 배포 — 2026-09-10
 
 소스 `6cb0773ab54b416fb562d56126ef66fa5823796e`를 기존 Koyeb 서비스에 반영했다. 배포 `eff66f3c-5c65-4517-ad7a-943371dc5c1d` **Healthy / Active**, 1 of 1 running, 이전 `9b0191bf`는 Stopped다. 실제 Docker 이미지 manifest SHA-256 `2aba79b6767cee242bccae11938da5866c2e85365c7b4e4507d1d7457da7bc12`.
