@@ -6,6 +6,7 @@ import { validateProjectRegistry } from './projects.mjs';
 import { validateSourceRegistry } from './sources.mjs';
 import { validateRequestLedger } from './request-ledger.mjs';
 import { validateDiscovery } from './discovery.mjs';
+import { validateEcosystem } from './ecosystem.mjs';
 import { validateAgentJournal, recoverAgentJournals } from './agent.mjs';
 
 export const BACKUP_MAX_PLAINTEXT_BYTES = 16 * 1024 * 1024;
@@ -40,8 +41,9 @@ function memories(value) {
   }
 }
 function validateState(state) {
-  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery'], STATE_KEYS);
+  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem'], STATE_KEYS);
   validateRequestLedger(state);
+  if (Object.hasOwn(state, 'ecosystem')) validateEcosystem(state.ecosystem);
   if (Object.hasOwn(state, 'discovery')) validateDiscovery(state.discovery);
   if (!integer(state.revision, 0, Number.MAX_SAFE_INTEGER - 1) || typeof state.emergencyStop !== 'boolean' || !integer(state.concurrency, 1, 3)) fail('invalid runtime settings');
   modules(state.modules); memories(state.memories);
@@ -216,6 +218,7 @@ export function restoreBackup({ archive, key, targetDir }) {
   let pausedJobCount = 0, revokedDeviceCount = 0;
   state.emergencyStop = true; state.modules.ai = false; state.revision++;
   recoverAgentJournals(state.jobs);
+  if(state.ecosystem){state.ecosystem.enabled=false;if(state.ecosystem.lastRun?.status==='running'){state.ecosystem.lastRun.status='interrupted';state.ecosystem.lastRun.finishedAt=restoredAt;}}
   if (state.discovery) {
     state.discovery.enabled = false;
     if (state.discovery.lastRun?.status === 'running') { state.discovery.lastRun.status = 'interrupted'; state.discovery.lastRun.finishedAt = restoredAt; }
