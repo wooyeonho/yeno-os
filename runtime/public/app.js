@@ -140,11 +140,13 @@ function repositoryLink(value) {
   } catch {return '';}
 }
 function renderProjects() {
-  const projects=current?.projects||[], available=current?.capabilities?.projectManagement===true;
+  const all=current?.projects||[], available=current?.capabilities?.projectManagement===true;
+  const query=$('project-search').value.trim().toLocaleLowerCase(), filter=$('project-filter').value;
+  const projects=all.filter(p=>(filter==='archived'?p.status==='archived':p.status!=='archived') && (!query || `${p.name} ${p.summary}`.toLocaleLowerCase().includes(query)));
   $('project-count').textContent=projects.length;
   $('project-worker-status').textContent=available?(current.capabilities.developerWorker===false?'개발 작업자 미연결':'프로젝트 문서 준비'):'프로젝트 기능 연결 필요';
   $('project-worker-detail').textContent=available?(current.capabilities.developerWorker===false?'프로젝트 정보로 브리핑과 작업 준비 문서를 만들 수 있습니다. 저장소의 코드를 바꾸거나 배포하는 개발 작업자는 아직 연결하지 않았습니다.':'이 화면에서는 프로젝트 정보로 브리핑과 작업 준비 문서를 만듭니다. 개발 작업자의 실제 연결·실행 상태는 별도 확인이 필요합니다.'):'현재 본체가 프로젝트 관리 기능을 제공하는지 확인해 주세요.';
-  $('projects-list').innerHTML=projects.map(project=>`<article class="project-card"><div class="job-top"><h3>${esc(project.name)}</h3><span class="status ${esc(project.status)}">${esc(projectNames[project.status]||project.status)}</span></div><p class="project-summary">${esc(project.summary||'목표와 현재 상황을 적어두면 다음에 이어가기 쉬워집니다.')}</p><div class="project-next"><small>다음 작업</small><p>${esc(project.nextAction||'아직 정하지 않았습니다.')}</p></div><div class="project-meta">${repositoryLink(project.repositoryUrl)}<small>수정 ${esc(date(project.updatedAt||project.createdAt))}</small></div><div class="project-actions"><button class="button subtle" data-project-brief="${esc(project.id)}">브리핑 만들기</button><button class="button subtle" data-project-work="${esc(project.id)}">다음 작업 준비</button><button class="text-button" data-project-edit="${esc(project.id)}">내용 수정</button></div></article>`).join('') || `<div class="empty">${available?'진행하던 프로젝트를 추가해 주세요.\n목표와 다음 작업을 본체에 보관합니다.':'연결한 본체의 프로젝트를 확인할 수 없습니다.'}</div>`;
+  $('projects-list').innerHTML=projects.map(project=>`<article class="project-card"><div class="job-top"><h3>${esc(project.name)}</h3><span class="status ${esc(project.status)}">${esc(projectNames[project.status]||project.status)}</span></div><p class="project-summary">${esc(project.summary ? (project.summary.length>300?project.summary.slice(0,300)+'…':project.summary) : '목표와 현재 상황을 적어두면 다음에 이어가기 쉬워집니다.')}</p><div class="project-next"><small>다음 작업</small><p>${esc(project.nextAction||'아직 정하지 않았습니다.')}</p></div><div class="project-meta">${repositoryLink(project.repositoryUrl)}<small>수정 ${esc(date(project.updatedAt||project.createdAt))}</small></div><div class="project-actions"><button class="button subtle" data-project-brief="${esc(project.id)}">브리핑 만들기</button><button class="button subtle" data-project-work="${esc(project.id)}">다음 작업 준비</button><button class="text-button" data-project-edit="${esc(project.id)}">내용 수정</button></div></article>`).join('') || `<div class="empty">${available?'진행하던 프로젝트를 추가해 주세요.\n목표와 다음 작업을 본체에 보관합니다.':'연결한 본체의 프로젝트를 확인할 수 없습니다.'}</div>`;
   renderProjectRequest();renderCommandRequest();
 }
 function renderProjectRequest() {
@@ -335,6 +337,8 @@ async function perform(fn,button) {
 }
 $('pair-form').addEventListener('submit',async(e)=>{e.preventDefault();const b=e.submitter;b.disabled=true;$('pair-error').textContent='';token=$('pair-token').value.trim();try{current=await api('/api/state');sessionStorage.setItem('yeno-token',token);$('pair-token').value='';$('pair-screen').hidden=true;connection(true);render(current);lastRevision=current.revision;}catch(err){token='';$('pair-error').textContent=err.message || '연결할 수 없습니다.';}finally{b.disabled=false;}});
 $('command-form').addEventListener('submit',e=>{e.preventDefault();if(commandRequests?.pending){void submitCommand();return;}const text=$('command').value.trim(),type=$('command-type').value;if(!text)return;void submitCommand(type==='command'?'/api/commands':'/api/jobs',type==='command'?{text}:{type,text});});
+$('project-search').addEventListener('input',renderProjects);
+$('project-filter').addEventListener('change',renderProjects);
 $('add-project').addEventListener('click',()=>openProject());
 $('project-form').addEventListener('submit',e=>{
   e.preventDefault();

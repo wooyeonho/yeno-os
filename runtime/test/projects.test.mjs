@@ -7,6 +7,29 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { digest, initialState, openStore } from '../lib/store.mjs';
+import { projectRegistryDocument, resolveProject } from '../lib/projects.mjs';
+
+test('original portfolio remains fully visible after archiving repository references', () => {
+  const old = Array.from({length:20},(_,i)=>({name:`legacy-${i}`,status:'archived'}));
+  const original = Array.from({length:49},(_,i)=>({id:String(i),name:`original-${i}`,status:'active',nextAction:'restart'}));
+  const doc = projectRegistryDocument([...old,...original]);
+  for (const p of original) assert.ok(doc.includes(`## ${p.name}\n`));
+  assert.ok(!doc.includes('legacy-'));
+  assert.ok(doc.includes('49개'));
+  assert.equal(resolveProject([{id:'one',name:'C01 — Buzz HQ'}],'c01').id,'one');
+  assert.throws(()=>resolveProject([{name:'C01 — One'},{name:'C01 — Two'}],'C01'),error=>error.status===409);
+});
+
+test('phone command accepts a canonical project code and returns its real artifact', async t => {
+  const f = await fixture(t);
+  await f.project({name:'C01 — Buzz HQ',summary:'공개 신호를 기존 프로젝트에 연결'});
+  const response = await f.post('/api/commands',{text:'프로젝트 브리핑: C01',requestId:randomUUID()});
+  assert.equal(response.status,201);
+  const job = await f.completed(response.body.job.id);
+  const artifact = await f.api(`/api/artifacts/${job.artifacts[0].id}`);
+  assert.equal(artifact.status,200);
+  assert.ok(artifact.body.includes('공개 신호를 기존 프로젝트에 연결'));
+});
 
 const runtimeRoot = fileURLToPath(new URL('../', import.meta.url));
 const TOKEN = 'project-integration-synthetic-token';

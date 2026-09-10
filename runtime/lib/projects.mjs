@@ -64,13 +64,18 @@ export function validateProjectRegistry(projects) {
 export function resolveProject(projects, reference) {
   const value = reference.trim();
   const project = projects.find(item => item.id === value) ?? projects.find(item => projectNameKey(item.name) === projectNameKey(value));
-  if (!project) throw new ProjectError(404, 'Project not found. Register it first or use its exact name or ID.');
-  return project;
+  if (project) return project;
+  const matches = /^[A-Z]\d{2}(?:-\d{1,2})?$/i.test(value)
+    ? projects.filter(item => item.name.split(/\s+/)[0].toUpperCase() === value.toUpperCase()) : [];
+  if (matches.length > 1) throw new ProjectError(409, 'Project code is ambiguous. Use its exact name or ID.');
+  if (matches.length === 1) return matches[0];
+  throw new ProjectError(404, 'Project not found. Register it first or use its exact name or ID.');
 }
 
 const statusLabel = value => ({ active: '진행', paused: '보류', archived: '보관' })[value];
 
 export function projectRegistryDocument(projects) {
+  projects = projects.filter(project => project.status !== 'archived');
   const shown = projects.slice(0, 50);
   const excerpt = value => value.length > 500 ? `${value.slice(0, 500)}… (요약됨)` : value;
   return `# YENO 프로젝트 목록\n\n등록 프로젝트: ${projects.length}개\n관리 상태는 YENO 안의 분류이며 실제 호스팅 상태를 뜻하지 않습니다.\n목록은 최대 50개, 다음 작업은 500자까지 표시합니다. 전체 내용은 “프로젝트 브리핑: 이름 또는 ID”로 확인하세요.\n\n${shown.length ? shown.map(project => `## ${project.name}\n- ID: ${project.id}\n- 관리 상태: ${statusLabel(project.status)}\n- 저장소: ${project.repositoryUrl || '미등록'}\n- 다음 작업: ${excerpt(project.nextAction) || '미정'}`).join('\n\n') : '등록된 프로젝트가 없습니다.'}${projects.length > shown.length ? `\n\n표시 ${shown.length}개 / 전체 ${projects.length}개. 나머지 ${projects.length - shown.length}개는 웹의 프로젝트 목록에서 확인하거나 이름 또는 ID로 브리핑을 요청하세요.` : ''}\n\n개발 작업자 연결: 미연결. 이 문서는 저장된 등록정보로 작성했습니다.`;
