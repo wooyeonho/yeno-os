@@ -1,0 +1,50 @@
+{
+  "restoration": {
+    "verifiedAt": "2026-09-10T16:23:04.142020+00:00",
+    "sourceCommit": "7411e3b1b0feede5053b1353455e2e71227b9ae0",
+    "revision": 175,
+    "originalEntries": 49,
+    "archivedReferences": 20,
+    "cancelledWrongBots": 20,
+    "importCreated": 41,
+    "importReused": 8,
+    "preserved": [
+      "original repository metadata",
+      "unrelated jobs and results",
+      "sources",
+      "memories",
+      "snapshots"
+    ],
+    "actualModelCalls": 0,
+    "providerConfigured": false
+  },
+  "commands": {
+    "verifiedAt": "2026-09-10T16:27:26.202983+00:00",
+    "revision": 186,
+    "commands": [
+      {
+        "command": "프로젝트 목록",
+        "jobId": "f80c33b6-21f3-4af3-a673-0f616f1a6c9f",
+        "artifactId": "4231a395-9970-41f8-98bb-90f80cc64ff3",
+        "bytes": 15376,
+        "sha256": "7efbc2dc512cbe24226cc4046a2ffeb4741f1d9ba77be4545b37b9101532e6c2"
+      },
+      {
+        "command": "프로젝트 브리핑: C01",
+        "jobId": "3ab96dbb-bda9-4c5c-b5d2-25905ffab964",
+        "artifactId": "1dac843b-099f-447f-8268-37d205b769bd",
+        "bytes": 1893,
+        "sha256": "c4e54a90bf7c4cb1e5316f78e97c6c8d4f3147eaf091b62786990525fe057854"
+      }
+    ],
+    "actualModelCalls": 0,
+    "scope": "actual HTTPS command and artifact download; Android device interaction not performed"
+  },
+  "deploymentId": "dd1a5752-a345-49fb-903b-6ebb076742a8",
+  "testResult": {
+    "passed": 153,
+    "failed": 0,
+    "durationSeconds": 18.379,
+    "realModelCalls": 0
+  }
+}
