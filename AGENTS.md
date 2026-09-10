@@ -33,7 +33,7 @@ Read `YENO_START_HERE.md`, `docs/STATUS.md`, and `docs/FIRST_TASK.md` before cha
 - Local runtime: `npm start -- --no-open`.
 - Dependencies are not needed for the existing built-in Node baseline tests. Install and lock dependencies when implementing new components.
 
-GitHub workflows are manual. `android-debug.yml` builds the explicitly selected source ref and collects a test APK only if compilation succeeds. A workflow file, frontend bundle, or passing Node test is not an APK or device verification. Do not report a workflow run before checking its actual result.
+The owner authorized automatic Android builds on 2026-09-10. `android-debug.yml` runs for relevant controller/build-input changes pushed to codex and retains manual dispatch. Push builds check out the triggering commit SHA; manual builds use source_ref. Documentation-only changes do not build an APK. Builds remain serial, time-limited to 45 minutes, contents:read only, and publish private artifacts for seven days; they do not install on the phone or deploy the core. It collects a test APK only if compilation succeeds. A workflow file, frontend bundle, or passing Node test is not an APK or device verification. Do not report a workflow run before checking its actual result.
 
 ## Implementation constraints
 

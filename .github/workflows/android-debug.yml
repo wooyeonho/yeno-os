@@ -1,6 +1,16 @@
 name: Build Android test APK
+run-name: Android APK · ${{ github.event_name }} · ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.sha }}
 
 on:
+  push:
+    branches: [codex]
+    paths:
+      - 'apps/controller/**'
+      - '.github/workflows/android-debug.yml'
+      - 'scripts/collect-android-artifacts.py'
+      - 'scripts/write-android-summary.py'
+      - 'scripts/native-config.mjs'
+      - 'scripts/native-config.test.mjs'
   workflow_dispatch:
     inputs:
       source_ref:
@@ -29,7 +39,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.sha }}
           persist-credentials: false
       - name: Record source revision
         id: source
@@ -78,12 +88,18 @@ jobs:
         working-directory: .
         run: python3 scripts/collect-android-artifacts.py
       - name: Upload APK and checksums
+        id: apk
         uses: actions/upload-artifact@v4
         with:
           name: yeno-android-debug-${{ steps.source.outputs.sha }}
           path: build-artifacts/android/
           if-no-files-found: error
           retention-days: 7
+      - name: Show APK download
+        working-directory: .
+        env:
+          APK_DOWNLOAD_URL: ${{ steps.apk.outputs.artifact-url }}
+        run: python3 scripts/write-android-summary.py
       - name: Upload resolved Rust dependencies
         if: always()
         uses: actions/upload-artifact@v4
