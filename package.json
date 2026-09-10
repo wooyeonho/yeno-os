@@ -3,10 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "verify:baseline": "node scripts/verify-baseline.mjs",
-    "test": "npm --prefix runtime test",
-    "start": "npm --prefix runtime start --"
+    "test": "node --test runtime/test/*.test.mjs apps/controller/test/*.test.mjs scripts/native-config.test.mjs",
+    "start": "npm --prefix runtime start --",
+    "build:controller": "npm --prefix apps/controller run build"
   }
 }

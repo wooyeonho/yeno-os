@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import {assertStandaloneDirectory} from './container-lease.mjs';
+import {validateProjectRegistry} from './projects.mjs';
+import {validateSourceRegistry} from './sources.mjs';
+import {initializeRequestLedger,validateRequestLedger} from './request-ledger.mjs';
 
 export const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 export const uid = () => crypto.randomUUID();
@@ -16,32 +20,73 @@ export function atomicWrite(file, content) {
 export function initialState() {
  return {revision:0, emergencyStop:false, concurrency:1,
  modules:{memory:true,documents:true,diagnostics:true,ai:false},
- jobs:[], memories:[], snapshots:[], events:[], requests:{}, artifacts:{}};
+ jobs:[], memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[]};
+}
+function sanitizeEnrollmentReceipts(state) {
+ // Early 0.2.0 candidates cached the complete enrollment response. Preserve
+ // the receipt and all other state, but never persist that raw credential.
+ for(const receipt of Object.values(state.requests)){
+   const device=receipt?.payload?.device;
+   if(device&&typeof device==='object'&&Object.hasOwn(device,'deviceToken'))delete device.deviceToken;
+ }
+ return state;
+}
+function encodeState(state) {
+ const payload=JSON.stringify(state);
+ return JSON.stringify({format:1,sha256:digest(payload),payload});
 }
 export function openStore(directory) {
+ // A crashed restore must never be interpreted as an empty first-run store.
+ // lstat also rejects a dangling marker symlink; only completed restoration
+ // removes this marker after the state and artifacts are durable.
+ try {fs.lstatSync(path.join(directory,'restore-in-progress'));throw new Error('Backup restore is incomplete. Preserve this directory and restore into a new directory.');}
+ catch(error){if(error.code!=='ENOENT')throw error;}
  fs.mkdirSync(directory,{recursive:true,mode:0o700});
  const file=path.join(directory,'state.json');
  let state, recovered=false;
- const decode = file => {const envelope=JSON.parse(fs.readFileSync(file,'utf8')); if(digest(envelope.payload)!==envelope.sha256)throw new Error('checksum mismatch'); const data=JSON.parse(envelope.payload); if(!Array.isArray(data.jobs)||!Array.isArray(data.memories)||!Array.isArray(data.snapshots)||!Array.isArray(data.events)||!data.modules||!data.requests||!data.artifacts||!Number.isInteger(data.revision))throw new Error('invalid state schema'); return data;};
+ const decode = file => {const envelope=JSON.parse(fs.readFileSync(file,'utf8')); if(digest(envelope.payload)!==envelope.sha256)throw new Error('checksum mismatch'); const data=JSON.parse(envelope.payload); if(!Array.isArray(data.jobs)||!Array.isArray(data.memories)||!Array.isArray(data.snapshots)||!Array.isArray(data.events)||!data.modules||!data.requests||!data.artifacts||!Number.isInteger(data.revision))throw new Error('invalid state schema');if(Object.hasOwn(data,'projects'))validateProjectRegistry(data.projects);if(Object.hasOwn(data,'sources'))validateSourceRegistry(data.sources,data.projects??[]);sanitizeEnrollmentReceipts(data);validateRequestLedger(data);return data;};
  if(fs.existsSync(file)) {try{state=decode(file);}catch{try{state=decode(`${file}.bak`);recovered=true;}catch{throw new Error('Both state and backup are unreadable. Original data has been preserved.');}}}
  else if(fs.existsSync(`${file}.bak`)){state=decode(`${file}.bak`);recovered=true;}
  else state=initialState();
+ // 0.1.1 stores predate device credentials. This additive migration preserves
+ // every existing job, request receipt, artifact, and memory.
+ if(!state.devices||typeof state.devices!=='object'||Array.isArray(state.devices))state.devices={};
+ // Add the registry only to older stores; never replace an existing registry.
+ // Project data is deliberately outside memory/settings snapshot restoration.
+ if(!Object.hasOwn(state,'projects'))state.projects=[];
+ // Only legacy stores without a source registry receive an empty one. A malformed
+ // existing registry is a recovery error, never a reason to discard source reviews.
+ if(!Object.hasOwn(state,'sources'))state.sources=[];
+ // Keep accepted identities independently of the bounded response cache.
+ // Existing hashes migrate unchanged; IDs evicted by older runtimes cannot
+ // be reconstructed from a job alone and are not claimed as recovered.
+ initializeRequestLedger(state);
  function save(){
    state.revision++;
-   const payload=JSON.stringify(state);
-   if(fs.existsSync(file)){try{decode(file); atomicWrite(`${file}.bak`,fs.readFileSync(file));}catch{}}
-   atomicWrite(file,JSON.stringify({format:1,sha256:digest(payload),payload}));
+   sanitizeEnrollmentReceipts(state);
+   // Re-encode the verified previous state so legacy secrets are not copied
+   // into a new backup. This does not erase older copies outside this store.
+   let previous;
+   for(const candidate of [file,`${file}.bak`]){
+     if(!fs.existsSync(candidate))continue;
+     try{previous=decode(candidate);break;}catch{}
+   }
+   if(previous)atomicWrite(`${file}.bak`,encodeState(previous));
+   atomicWrite(file,encodeState(state));
  }
  return {state,save,recovered,directory};
 }
 
 export function acquireRuntimeLock(directory) {
  fs.mkdirSync(directory,{recursive:true,mode:0o700});
+ assertStandaloneDirectory(directory);
  const file=path.join(directory,'runtime.lock');
  const owner={pid:process.pid,nonce:uid(),createdAt:now()};
  for(let attempt=0;attempt<2;attempt++){
    try {const fd=fs.openSync(file,'wx',0o600);try{fs.writeFileSync(fd,JSON.stringify(owner));fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
-     return ()=>{try{const current=JSON.parse(fs.readFileSync(file,'utf8'));if(current.nonce===owner.nonce)fs.unlinkSync(file);}catch{}};
+     const release=()=>{try{const current=JSON.parse(fs.readFileSync(file,'utf8'));if(current.nonce===owner.nonce)fs.unlinkSync(file);}catch{}};
+     try{assertStandaloneDirectory(directory);}catch(error){release();throw error;}
+     return release;
    } catch(error){
      if(error.code!=='EEXIST')throw error;
      let previous;try{previous=JSON.parse(fs.readFileSync(file,'utf8'));}catch{throw new Error('Runtime lock is unreadable. Check that no YENO runtime is active before moving runtime.lock aside.');}

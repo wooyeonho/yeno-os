@@ -80,6 +80,27 @@ test('timeouts and server errors retain the request while definite rejection cle
   assert.equal(request.pending.body.text, '거절 확인 후 새 명령');
 });
 
+test('expired accepted receipts and identity capacity failures retain the same request across reload', async () => {
+  for (const status of [410, 507]) {
+    const storage = memoryStorage();
+    let calls = 0;
+    const sent = [];
+    const transport = async (path, body) => {
+      calls++; sent.push(structuredClone({path, body}));
+      if (calls === 1) throw new TypeError('Original accepted response was lost');
+      throw httpError(status);
+    };
+    const initial = createCommandRequest({storage, transport, makeId: () => 'accepted-original'});
+    initial.stage('/api/commands', {text: '문서 만들어: original'});
+    assert.equal((await initial.send()).kind, 'uncertain');
+    const reloaded = createCommandRequest({storage, transport, makeId: () => {throw new Error('Do not replace an unresolved request ID');}});
+    assert.equal((await reloaded.send()).kind, 'uncertain');
+    assert.deepEqual(reloaded.pending, initial.pending);
+    assert.deepEqual(sent[1], sent[0]);
+    assert.throws(() => reloaded.stage('/api/commands', {text: '문서 만들어: replacement'}), /접수 여부/);
+  }
+});
+
 test('an unresolved request blocks replacement and overlapping sends share one transport', async () => {
   const storage = memoryStorage();
   let release, calls = 0;
@@ -125,4 +146,101 @@ test('failure to clear an accepted request keeps the same ID for a safe retry', 
   storage.removeItem = remove;
   assert.equal((await request.send()).kind, 'accepted');
   assert.equal(request.pending, null);
+});
+
+test('project edits preserve the original revision and payload across timeout and reload', async () => {
+  const storage = memoryStorage();
+  const allowPath = path => path === '/api/projects' || /^\/api\/projects\/[a-zA-Z0-9-]+\/update$/.test(path);
+  const path = '/api/projects/project-one/update';
+  const sent = [], receipts = new Map();
+  let loseResponse = true, revision = 4;
+  const transport = async (url, body) => {
+    sent.push({url, body: structuredClone(body)});
+    if (!receipts.has(body.requestId)) {
+      assert.equal(body.revision, revision);
+      revision += 1;
+      receipts.set(body.requestId, {project: {id: 'project-one', name: body.name, version: revision}});
+    }
+    if (loseResponse) {loseResponse = false; throw new DOMException('Response lost after save', 'TimeoutError');}
+    return receipts.get(body.requestId);
+  };
+  const options = {storage, transport, allowPath, key: 'project-queue', makeId: () => 'project-edit-request'};
+  const before = createCommandRequest(options);
+  before.stage(path, {revision: 4, name: 'YENO', nextAction: '실제 재시작 검증'});
+  assert.equal((await before.send()).kind, 'uncertain');
+  assert.equal(revision, 5);
+  const commands = createCommandRequest({storage, transport: async () => ({job: {id: 'independent-command'}}), makeId: () => 'command-request'});
+  commands.stage('/api/jobs', {type: 'diagnostics'});
+  assert.equal((await commands.send()).kind, 'accepted');
+  assert.equal(storage.values.size, 1, 'unrelated command must not clear the pending project edit');
+  const reloaded = createCommandRequest({...options, makeId: () => {throw new Error('Retry must preserve its ID');}});
+  assert.equal(reloaded.pending.body.revision, 4);
+  const accepted = await reloaded.send();
+  assert.equal(accepted.kind, 'accepted');
+  assert.equal(accepted.result.project.version, 5);
+  assert.equal(revision, 5);
+  assert.deepEqual(sent[0], sent[1]);
+  assert.equal(reloaded.pending, null);
+});
+
+test('project path access requires explicit opt-in and only definite rejections clear project requests', async () => {
+  const storage = memoryStorage();
+  const defaultRequests = createCommandRequest({storage, transport: async () => ({})});
+  assert.throws(() => defaultRequests.stage('/api/projects', {name: 'YENO'}), /지원하지 않는/);
+  let failure = httpError(500);
+  const projectRequests = createCommandRequest({storage, key: 'project-queue', makeId: () => 'project-request',
+    allowPath: path => path === '/api/projects', transport: async () => {throw failure;}});
+  assert.throws(() => projectRequests.stage('/api/control', {action: 'resume'}), /지원하지 않는/);
+  assert.throws(() => projectRequests.stage('https://example.com/api/projects', {name: 'YENO'}), /지원하지 않는/);
+  projectRequests.stage('/api/projects', {name: 'YENO'});
+  assert.equal((await projectRequests.send()).kind, 'uncertain');
+  assert.equal(projectRequests.pending.body.requestId, 'project-request');
+  failure = httpError(400);
+  assert.equal((await projectRequests.send()).kind, 'rejected');
+  assert.equal(projectRequests.pending, null);
+  projectRequests.stage('/api/projects', {name: 'YENO'});
+  failure = httpError(409);
+  assert.equal((await projectRequests.send()).kind, 'rejected');
+  assert.equal(projectRequests.pending, null);
+  storage.setItem('project-queue', JSON.stringify({version: 1, path: '/api/control', body: {requestId: 'invalid-reload'}}));
+  assert.throws(() => createCommandRequest({storage, key: 'project-queue', transport: async () => ({}), allowPath: path => path === '/api/projects'}), /보관된 명령/);
+});
+
+test('authentication failures after a lost response retain the receipt identity through reauthentication', async () => {
+  for (const path of ['/api/commands', '/api/projects']) {
+    const storage = memoryStorage(), receipts = new Map(), sent = [];
+    let executions = 0, loseFirstResponse = true, authFailure = null;
+    const transport = async (url, body) => {
+      sent.push({url, body: structuredClone(body)});
+      // Like the core, authentication rejects before consulting the ledger.
+      if (authFailure) throw httpError(authFailure);
+      if (!receipts.has(body.requestId)) {
+        executions += 1;
+        receipts.set(body.requestId, {acceptedId: 'first-and-only-result'});
+      }
+      if (loseFirstResponse) {loseFirstResponse = false; throw new TypeError('Response lost after acceptance');}
+      return receipts.get(body.requestId);
+    };
+    const options = {storage, transport, makeId: () => 'auth-continuity-request',
+      ...(path === '/api/projects' ? {key: 'project-queue', allowPath: candidate => candidate === path} : {})};
+    let requests = createCommandRequest(options);
+    requests.stage(path, path === '/api/projects' ? {name: 'YENO'} : {text: '문서 만들어: 인증 재연결 검사'});
+    assert.equal((await requests.send()).kind, 'uncertain');
+    assert.equal(executions, 1);
+    for (const status of [401, 403]) {
+      authFailure = status;
+      assert.equal((await requests.send()).kind, 'uncertain');
+      assert.equal(requests.pending.body.requestId, 'auth-continuity-request');
+      assert.equal(storage.values.size, 1);
+    }
+    requests = createCommandRequest({...options, makeId: () => {throw new Error('Reauthentication must preserve the pending ID');}});
+    authFailure = null;
+    const accepted = await requests.send();
+    assert.equal(accepted.kind, 'accepted');
+    assert.equal(accepted.result.acceptedId, 'first-and-only-result');
+    assert.equal(executions, 1);
+    assert.deepEqual(sent.at(-1), sent[0]);
+    assert.equal(requests.pending, null);
+    assert.equal(storage.values.size, 0);
+  }
 });

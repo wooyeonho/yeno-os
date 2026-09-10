@@ -1,0 +1,47 @@
+name: yeno-core
+
+services:
+  core:
+    build:
+      context: .
+    image: yeno-core:local
+    container_name: yeno-core
+    restart: unless-stopped
+    stop_grace_period: 30s
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      YENO_HOST: "0.0.0.0"
+      YENO_PORT: "8790"
+      YENO_DATA_DIR: /var/lib/yeno
+      YENO_ALLOWED_HOSTS: "${YENO_PUBLIC_HOST:?Set the exact HTTPS hostname, without scheme or path}"
+      YENO_TOKEN_FILE: /run/secrets/yeno_pairing_token
+      # This package deliberately makes no model-provider calls.
+      YENO_AI_BASE_URL: ""
+      YENO_AI_MODEL: ""
+      YENO_AI_API_KEY: ""
+    ports:
+      - "127.0.0.1:8790:8790"
+    volumes:
+      - core-data:/var/lib/yeno
+    secrets:
+      - yeno_pairing_token
+    logging:
+      driver: local
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+volumes:
+  core-data:
+    # Stable across source-directory changes. Never attach multiple bare runtimes.
+    name: yeno-core-data
+
+secrets:
+  yeno_pairing_token:
+    # Store the secret outside this checkout; the variable contains a path only.
+    file: "${YENO_PAIRING_TOKEN_FILE:?Set the absolute path to the private pairing-token file}"

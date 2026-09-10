@@ -1,0 +1,90 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {randomBytes,randomUUID,createHash} from 'node:crypto';
+import {start} from '../server.mjs';
+import {decryptBackup,restoreBackup} from '../lib/backup.mjs';
+import {main as backupCLI} from '../../scripts/backup.mjs';
+
+const owner='backup-api-test-owner-credential';
+async function fixture(t){
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'yeno-backup-api-'));
+  const core=await start({dataDir:path.join(dir,'original'),port:0,token:owner,env:{}});
+  t.after(()=>{core.shutdown();fs.rmSync(dir,{recursive:true,force:true});});
+  const origin=`http://127.0.0.1:${core.server.address().port}`;
+  const api=async(route,body,credential=owner,headers={})=>fetch(origin+route,{method:body===undefined?'GET':'POST',headers:{...(credential?{Authorization:`Bearer ${credential}`} : {}),'Content-Type':'application/json',...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});
+  return {dir,core,origin,api};
+}
+async function enrollment(api,name){
+  const r=await api('/api/v1/devices/enroll',{name,platform:'test',requestId:randomUUID()},owner,{Origin:'http://tauri.localhost'});
+  assert.equal(r.status,201);return (await r.json()).device;
+}
+test('owner backup exports a real document and clean restore preserves its bytes and request identity',async t=>{
+  const {dir,core,api,origin}=await fixture(t);
+  const device=await enrollment(api,'source-phone');
+  const command={text:'문서 만들어: backup preserves real output',requestId:randomUUID()};
+  const commandResponse=await api('/api/v1/commands',command,device.deviceToken,{Origin:'http://tauri.localhost'});
+  assert.equal(commandResponse.status,201);
+  const receipt=await commandResponse.json();
+  const id=receipt.job.id;
+  for(let i=0;i<100&&!core.state().jobs.find(x=>x.id===id)?.artifacts.length;i++)await new Promise(resolve=>setTimeout(resolve,30));
+  const job=core.state().jobs.find(x=>x.id===id);
+  assert.equal(job.status,'completed');
+  const output=Buffer.from(await (await api(`/api/v1/artifacts/${job.artifacts[0].id}`,undefined,device.deviceToken)).arrayBuffer());
+  const keyFile=path.join(dir,'backup.key'),archiveFile=path.join(dir,'copy.yenobak'),connectionFile=path.join(dir,'connection.json');
+  await backupCLI(['keygen','--key-file',keyFile]);
+  fs.writeFileSync(connectionFile,JSON.stringify({origin,pairingToken:owner}),{mode:0o600});
+  const exported=await backupCLI(['export','--connection-file',connectionFile,'--key-file',keyFile,'--output',archiveFile]);
+  assert.equal(exported.artifacts,1);
+  const archive=fs.readFileSync(archiveFile),key=Buffer.from(fs.readFileSync(keyFile,'utf8').trim(),'hex');
+  const decoded=decryptBackup(archive,key);
+  assert.equal(decoded.state.jobs[0].input,'backup preserves real output');
+  assert.equal(archive.includes(Buffer.from(owner)),false);
+  assert.equal(archive.includes(Buffer.from(device.deviceToken)),false);
+  const envelope=fs.readFileSync(path.join(core.dataDir,'state.json'),'utf8');
+  assert.equal(envelope.includes(key.toString('hex')),false);
+  assert.equal(envelope.includes('encryptionKey'),false);
+  const target=path.join(dir,'restored');
+  await backupCLI(['restore','--archive',archiveFile,'--key-file',keyFile,'--target',target]);
+  const replacement=await start({dataDir:target,port:0,token:'a-new-owner-pairing-credential',env:{}});
+  t.after(()=>replacement.shutdown());
+  const base=`http://127.0.0.1:${replacement.server.address().port}`;
+  assert.equal(replacement.state().emergencyStop,true);
+  const denied=await fetch(base+'/api/v1/state',{headers:{Authorization:`Bearer ${device.deviceToken}`}});
+  assert.equal(denied.status,401);
+  const newDevice=await (await fetch(base+'/api/v1/devices/enroll',{method:'POST',headers:{Authorization:'Bearer a-new-owner-pairing-credential','Content-Type':'application/json'},body:JSON.stringify({name:'restored-phone',platform:'test',requestId:randomUUID()})})).json();
+  const headers={Authorization:`Bearer ${newDevice.device.deviceToken}`,'Content-Type':'application/json',Origin:'http://tauri.localhost'};
+  const retried=await fetch(base+'/api/v1/commands',{method:'POST',headers,body:JSON.stringify(command)});
+  assert.equal(retried.status,201);assert.deepEqual(await retried.json(),receipt);
+  assert.equal(replacement.state().jobs.filter(x=>x.id===id).length,1);
+  const restoredOutput=await fetch(base+`/api/v1/artifacts/${job.artifacts[0].id}`,{headers});
+  assert.deepEqual(Buffer.from(await restoredOutput.arrayBuffer()),output);
+  assert.equal(restoredOutput.headers.get('x-content-sha256'),createHash('sha256').update(output).digest('hex'));
+  // Shut down before directory cleanup; original runtime is independent.
+  replacement.shutdown();
+});
+test('backup and remote device administration require owner; revocation survives core restart',async t=>{
+  const {api,core,dir}=await fixture(t);const a=await enrollment(api,'lost-phone'),b=await enrollment(api,'kept-phone');
+  const request={encryptionKey:randomBytes(32).toString('hex')};
+  assert.equal((await api('/api/backups/export',request,null)).status,401);
+  assert.equal((await api('/api/backups/export',request,a.deviceToken)).status,403);
+  assert.equal((await api('/api/v1/backups/export',request,a.deviceToken,{Origin:'http://tauri.localhost'})).status,403);
+  assert.equal((await api('/api/backups/export',request,owner,{Origin:'https://attacker.invalid'})).status,403);
+  assert.equal((await api('/api/backups/export',{encryptionKey:'password'})).status,400);
+  assert.equal((await api('/api/devices',undefined,b.deviceToken)).status,403);
+  const devices=await (await api('/api/devices')).json();
+  assert.equal(devices.devices.length,2);assert.equal(JSON.stringify(devices).includes('tokenHash'),false);
+  const route=`/api/devices/${a.id}/revoke`,body={requestId:randomUUID()};
+  assert.equal((await api(route,body,b.deviceToken)).status,403);
+  assert.equal((await api(route,{})).status,400);
+  const receipt=await (await api(route,body)).json();assert.equal(receipt.revoked,true);
+  assert.deepEqual(await (await api(route,body)).json(),receipt);
+  assert.equal((await api('/api/v1/state',undefined,a.deviceToken)).status,401);
+  assert.equal((await api('/api/v1/state',undefined,b.deviceToken)).status,200);
+  core.shutdown();
+  const restarted=await start({dataDir:path.join(dir,'original'),port:0,token:owner,env:{}});
+  const r=await fetch(`http://127.0.0.1:${restarted.server.address().port}/api/v1/state`,{headers:{Authorization:`Bearer ${a.deviceToken}`}});
+  assert.equal(r.status,401);restarted.shutdown();
+});

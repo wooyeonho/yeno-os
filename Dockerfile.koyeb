@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1
+FROM node:24-bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends util-linux \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /opt/yeno/runtime /opt/yeno/scripts /var/lib/yeno \
+    && chown node:node /var/lib/yeno \
+    && chmod 0700 /var/lib/yeno
+
+WORKDIR /opt/yeno
+COPY runtime/server.mjs runtime/service.mjs runtime/package.json ./runtime/
+COPY runtime/lib/ ./runtime/lib/
+COPY runtime/public/ ./runtime/public/
+COPY scripts/start-koyeb.sh ./scripts/
+
+ENV NODE_ENV=production \
+    YENO_HOST=0.0.0.0 \
+    YENO_PORT=8790 \
+    YENO_DISK_MOUNT_PATH=/var/lib/yeno \
+    YENO_DATA_DIR=/var/lib/yeno/data
+
+# The attached Koyeb volume must already permit this user to write. An image
+# chown does not repair a mounted volume. Startup fails rather than escalating.
+USER node:node
+EXPOSE 8790
+STOPSIGNAL SIGTERM
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["node", "--input-type=module", "-e", "try { const r = await fetch('http://127.0.0.1:' + (process.env.YENO_PORT || '8790') + '/api/v1/health', { signal: AbortSignal.timeout(3000), redirect: 'error' }); const h = await r.json(); if (!r.ok || h.name !== 'YENO OS' || h.apiVersion !== '1' || h.authRequired !== true) process.exit(1); } catch { process.exit(1); }"]
+
+ENTRYPOINT ["/bin/sh", "scripts/start-koyeb.sh"]

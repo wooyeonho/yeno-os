@@ -3,17 +3,18 @@
 const DEFAULT_KEY = 'yeno-pending-command-v1';
 const ALLOWED_PATHS = new Set(['/api/commands', '/api/jobs']);
 
-function validRequest(value) {
-  return value?.version === 1 && ALLOWED_PATHS.has(value.path) &&
+function validRequest(value, allowPath) {
+  return value?.version === 1 && typeof value.path === 'string' && allowPath(value.path) &&
     value.body && typeof value.body === 'object' && !Array.isArray(value.body) &&
     typeof value.body.requestId === 'string' && value.body.requestId.length > 0;
 }
 
 export function createCommandRequest({storage, transport, key = DEFAULT_KEY,
-  makeId = () => crypto.randomUUID(), now = () => new Date().toISOString()}) {
+  makeId = () => crypto.randomUUID(), now = () => new Date().toISOString(),
+  allowPath = (path) => ALLOWED_PATHS.has(path)}) {
   const stored = storage.getItem(key);
   let pending = stored === null ? null : JSON.parse(stored);
-  if (stored !== null && !validRequest(pending)) throw new Error('보관된 명령 요청을 읽을 수 없습니다.');
+  if (stored !== null && !validRequest(pending, allowPath)) throw new Error('보관된 명령 요청을 읽을 수 없습니다.');
   let inFlight = null;
   const copy = (value) => value === null ? null : structuredClone(value);
   const clear = () => {
@@ -28,9 +29,9 @@ export function createCommandRequest({storage, transport, key = DEFAULT_KEY,
     get sending() { return inFlight !== null; },
     stage(path, body) {
       if (pending) throw new Error('이전 명령의 접수 여부를 먼저 확인해 주세요.');
-      if (!ALLOWED_PATHS.has(path)) throw new Error('지원하지 않는 명령 경로입니다.');
+      if (typeof path !== 'string' || !allowPath(path)) throw new Error('지원하지 않는 명령 경로입니다.');
       const request = {version: 1, path, body: {...copy(body), requestId: makeId()}, createdAt: now()};
-      if (!validRequest(request)) throw new Error('명령 요청을 저장할 수 없습니다.');
+      if (!validRequest(request, allowPath)) throw new Error('명령 요청을 저장할 수 없습니다.');
       // Persist before the first network request, including the exact payload.
       storage.setItem(key, JSON.stringify(request));
       pending = request;
@@ -49,8 +50,13 @@ export function createCommandRequest({storage, transport, key = DEFAULT_KEY,
         } catch (error) {
           // A timeout, lost response, invalid success body, or 5xx can all follow
           // an accepted command. HTTP 408 likewise does not settle acceptance.
+          // Authentication/Host checks happen before receipt lookup. A 401/403
+          // after a lost response cannot prove the original write was rejected;
+          // retain it so reconnecting can recover the same accepted receipt.
+          // A 410 means the server still knows this was accepted, but cannot
+          // replay the expired response. A fresh ID could execute it twice.
           const definite = Number.isInteger(error?.status) && error.status >= 400 &&
-            error.status < 500 && error.status !== 408;
+            error.status < 500 && ![401, 403, 408, 410].includes(error.status);
           if (definite) {
             try { clear(); }
             catch (storageError) { return {kind: 'uncertain', error: storageError, request}; }

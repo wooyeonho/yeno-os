@@ -2,7 +2,7 @@
 
 ## Role
 
-Act as the dedicated development lead for 연호님의 personal OS. Turn the agreed goal into working code, installable artifacts, and verifiable results. The owner is not a developer and currently uses an Android phone while the Windows laptop is powered off.
+The owner explicitly assigns development, design and verification to the current Codex session. Do the work directly, keep reports concise, and avoid unnecessary tool/model usage. Do not require a separate AI developer worker as a prerequisite. Act as the dedicated development lead for 연호님의 personal OS. Turn the agreed goal into working code, installable artifacts, and verifiable results. The owner is not a developer and currently uses an Android phone while the Windows laptop is powered off.
 
 Choose a sensible default for routine implementation choices. Continue reversible, authorized implementation and fixes without asking the owner to manage every step. Ask one short question only when a missing account, target, or decision materially blocks the next action. Explain exactly what is needed.
 
@@ -16,21 +16,24 @@ YENO's interaction design is in `identity/YENO.md`. It is a product specificatio
 
 ## Current baseline
 
-`runtime/` contains the unchanged 0.1.1 rebuild baseline. The owner's older local 0.2.3 installation is separate. Do not overwrite or silently migrate that installation.
+`runtime/` now contains the 0.2.2 project/source-management core built on the imported 0.1.1 baseline. The owner's older local 0.2.3 installation is separate. Do not overwrite or silently migrate that installation.
 
-The runtime implements basic memory, deterministic command routing, document/diagnostic jobs, pause/resume/cancel, and memory/settings snapshots. Its optional AI call produces a draft; it is not an implemented general tool loop. The native app, persistent cloud deployment, developer workers, notifications, and native installers are not included in this starter.
+The runtime implements durable source reviews/imports and candidate preparation documents, project registration and briefs, operating status documents, basic memory, deterministic command routing, document/diagnostic jobs, pause/resume/cancel, memory/settings snapshots, and versioned device authentication. Its optional AI call produces a draft; it is not an implemented general tool loop. `apps/controller` contains the native controller source; consult `docs/STATUS.md` for actual build and device verification. The Koyeb core is deployed with a persistent volume; consult the status and live acceptance documents for the exact running source. The owner's Android first enrollment/state connection is evidenced by a screenshot; phone command/artifact/reopen acceptance remains pending. Developer workers, notifications and Windows installers remain pending until evidenced. Operating briefs summarize stored state; they do not autonomously operate projects or start coding workers.
+
+Native mutations now require requestId. The compact requestLedger retains at most 20,000 accepted identities without automatic eviction, separately from the 2,000-entry/2MiB reply cache. Read docs/REQUEST_IDENTITY.md for capacity, replay, recovery and downgrade limits. Client retry changes require a newly built/installed APK; frontend compilation is not APK delivery. Owner-only encrypted full backup export and remote device revocation are implemented. Clean restore uses a fresh directory, startup guard, and runtime lease; it enables global stop, disables AI, pauses unfinished jobs and revokes restored active device credentials. The actual live dataset has been restored in a separate local process. Persistent backup/key upload failed, so do not claim ongoing independent backup storage. Follow `docs/BACKUP_RECOVERY.md` and `docs/LIVE_ACCEPTANCE.md`; never put actual backup data or keys in git.
 
 Read `YENO_START_HERE.md`, `docs/STATUS.md`, and `docs/FIRST_TASK.md` before changing code. Consult `docs/BUILD_DECISIONS.md` for the accepted architecture.
 
 ## Commands
 
 - Node 24 is the selected starter development runtime.
-- Baseline integrity, before making runtime edits: `npm run verify:baseline`.
-- Existing runtime tests: `npm test`.
+- Tests for core, controller request handling, and HTTP scope: `npm test` (Node 24).
+- Frontend build: `npm run build:controller` after `npm ci --prefix apps/controller --ignore-scripts --no-audit --no-fund`.
+- `npm run verify:baseline` and `STARTER_MANIFEST.json` document the original import only; current 0.2.0 changes intentionally differ. Do not use the old manifest as a gate for changed code or revert intentional edits to pass it.
 - Local runtime: `npm start -- --no-open`.
 - Dependencies are not needed for the existing built-in Node baseline tests. Install and lock dependencies when implementing new components.
 
-The manual GitHub verification workflow has not been executed on GitHub. It checks the baseline on Linux only and does not build or verify APK/EXE artifacts.
+GitHub workflows are manual. `android-debug.yml` builds the explicitly selected source ref and collects a test APK only if compilation succeeds. A workflow file, frontend bundle, or passing Node test is not an APK or device verification. Do not report a workflow run before checking its actual result.
 
 ## Implementation constraints
 
@@ -41,7 +44,7 @@ The manual GitHub verification workflow has not been executed on GitHub. It chec
 - Global stop must not depend on a model decision. Report whether the stop reached each worker. Releasing the global latch must not silently resume all jobs.
 - Keep durable core state separate from disposable development environments. A Git worktree is not a security sandbox. Do not give arbitrary generated code the core's secrets, entire memory, or signing keys.
 - Codex Cloud is a development environment; the ongoing YENO core needs a separate persistent host. SDK-driven coding executes where its worker is hosted, and is not an assumed API for starting Codex Cloud chats.
-- First integrate and verify one coding worker. Use Astra for important planning/review when available. Add Claude Code as a second real integration when needed. Never claim a tool ran because its prompt file exists.
+- Current development is performed directly by Codex as requested. A future unattended runtime worker is a separate product capability, not a prerequisite for current coding/design work. Do not add providers or delegate to extra workers contrary to the owner’s instruction. Never present the current session’s actions as unattended core execution.
 - Do not silently enable previously disabled provider automation. Follow the owner's current authorization and existing applicable constraints.
 - Use fake providers for fault cases, then a bounded real provider verification with configured credentials and budget. Track reservations, settlement, and unknown usage. Do not enable new spending or public deployment without the necessary authorization.
 - Event or scheduled work requires an owner-assigned scope. Internal processing of already assigned jobs is distinct from creating new recurring work.

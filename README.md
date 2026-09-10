@@ -2,27 +2,28 @@
 
 연호님의 개인 OS. Android 앱과 Windows 앱에서 같은 기억·목표·작업 결과를 확인하는 시스템을 개발합니다.
 
-현재는 **실행 코어 0.1.1과 개발 시작 파일**이 들어 있습니다. APK·EXE, 상주 운영 서버, 일반 자연어 도구 실행과 자동 개선 적용은 아직 구현·배포되지 않았습니다.
+현재는 **Koyeb에서 실제 실행 중인 코어 0.2.0과 Android 시험 APK**가 있습니다. [YENO 조종석](https://global-iris-gyeol-98386a17.koyeb.app/)에서 개인 연결 키로 사용할 수 있습니다. HTTPS 명령·문서 결과·중복 방지와 서버 재시작 후 보존을 검증했습니다. Android 실기기 등록·재접속, 실제 AI 모델 호출, Windows EXE·노트북 조작·자율 개선 배포는 아직 확인되지 않았습니다. 정확한 검사 범위는 `docs/LIVE_ACCEPTANCE.md`와 `docs/STATUS.md`를 확인하세요.
 
 ## 폰에서 개발 시작
 
-[YENO_START_HERE.md](YENO_START_HERE.md)를 따라 Codex에 이 저장소를 연결하세요. 소스는 이미 폴더로 등록되어 있어 ZIP 업로드나 압축 해제가 필요하지 않습니다.
+[YENO_START_HERE.md](YENO_START_HERE.md)의 실제 주소와 첫 명령으로 연결하세요. 연결 키는 소스에 포함하지 않습니다.
 
 첫 개발 요청:
 
 ```text
-AGENTS.md, docs/STATUS.md, docs/FIRST_TASK.md를 읽고 첫 구현 작업을 수행해.
-기준선 검증 후 Android에서 명령·결과·재접속을 확인할 코어 연결과 앱을 구현해.
-실제로 실행한 검사와 빌드 결과를 보고하고, 막힌 부분은 정확히 구분해.
+AGENTS.md와 docs/STATUS.md, docs/ANDROID_BUILD.md를 읽고 현재 작업을 이어가.
+기존 구현을 보존하고 검사·실제 APK 빌드 결과를 확인해.
+수동 빌드가 실패했다면 최초 실패 원인을 수정하고 아직 미검증인 부분을 구분해.
 ```
 
 ## 로컬 검증
 
-Node 24 이상에서 실행합니다. 현재 기준선에는 외부 패키지 설치나 모델 API 키가 필요하지 않습니다.
+Node 24 이상에서 실행합니다. 코어·명령 회귀 검사에는 외부 패키지나 모델 API 키가 필요하지 않습니다. 앱 화면 빌드에는 아래 의존성 설치가 필요합니다.
 
 ```bash
-npm run verify:baseline
 npm test
+npm ci --prefix apps/controller --ignore-scripts --no-audit --no-fund
+npm run build:controller
 npm start -- --no-open
 ```
 
@@ -32,10 +33,13 @@ npm start -- --no-open
 
 - [개발 지침](AGENTS.md)
 - [실제 상태](docs/STATUS.md)
+- [상주 서버 실제 사용 검사](docs/LIVE_ACCEPTANCE.md)
+- [기존 구독 재사용·비용 감사](docs/HOSTING_REUSE_AUDIT.md)
+- [Koyeb 첫 연결 후보](docs/KOYEB_SETUP.md)
 - [첫 구현 작업](docs/FIRST_TASK.md)
 - [YENO 성격과 행동 기준](identity/YENO.md)
 - [기능 발견과 개선 기준](docs/DISCOVERY.md)
 - [설계 결정 기록](docs/BUILD_DECISIONS.md)
 - [변경 기록](CHANGELOG.md)
 
-Codex Cloud는 개발 환경입니다. 노트북과 앱이 꺼져 있어도 일을 이어갈 YENO 본체는 별도 상주 서버에 배포해야 합니다.
+Codex Cloud는 개발 환경입니다. YENO 본체는 별도 Koyeb 서비스에서 상주합니다. 노트북이 꺼져 있어도 서버의 기억·문서 기능은 사용할 수 있으며, 꺼진 노트북의 파일·화면을 조작하는 기능은 제공하지 않습니다.

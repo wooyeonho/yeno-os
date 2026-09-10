@@ -13,9 +13,9 @@ const runtimeRoot = fileURLToPath(new URL('../', import.meta.url));
 const TEST_TOKEN = 'integration-test-token-only-9f371a';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function rawGet(url, headers) {
+function rawGet(url, headers, requestPath) {
   return new Promise((resolve, reject) => {
-    const request = httpRequest(url, { headers }, (response) => {
+    const request = httpRequest(url, { headers, ...(requestPath === undefined ? {} : { path: requestPath }) }, (response) => {
       response.resume();
       response.once('end', () => resolve(response.statusCode));
     });
@@ -52,7 +52,7 @@ async function fixture(t, environment = {}) {
     clearTimeout(timer);
   }
 
-  async function start() {
+  async function start({ token = TEST_TOKEN } = {}) {
     logs = '';
     child = spawn(process.execPath, ['server.mjs'], {
       cwd: runtimeRoot,
@@ -65,7 +65,7 @@ async function fixture(t, environment = {}) {
         YENO_PORT: String(port),
         YENO_HOST: '127.0.0.1',
         YENO_DATA_DIR: dir,
-        YENO_TOKEN: TEST_TOKEN,
+        YENO_TOKEN: token,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -147,6 +147,239 @@ test('the runtime requires its token and rejects untrusted browser origins and h
   // Fetch rewrites Host to match its URL, so use an actual HTTP request for this check.
   assert.equal(await rawGet(`${f.base}/api/state`, { host: 'attacker.invalid', authorization: `Bearer ${TEST_TOKEN}` }), 403);
   assert.equal((await f.api('/api/state', { headers: { origin: f.base } })).status, 200);
+});
+
+test('the bundled Android origin reaches only the versioned API and still requires credentials', async (t) => {
+  const f = await fixture(t);
+  const headers = { origin: 'http://tauri.localhost' };
+  const health = await f.api('/api/v1/health', { token: null, headers });
+  assert.equal(health.status, 200, JSON.stringify(health.body));
+  assert.equal(health.headers.get('access-control-allow-origin'), null, 'native transport needs no browser CORS exception');
+  for (const token of [null, 'wrong-token', TEST_TOKEN]) {
+    assert.equal((await f.api('/api/v1/state', { token, headers })).status, 401);
+  }
+  for (const token of [null, 'wrong-token']) {
+    assert.equal((await f.api('/api/v1/devices/enroll', {
+      method: 'POST', token, headers,
+      body: { name: 'Android', platform: 'android', requestId: randomUUID() },
+    })).status, 401);
+  }
+  for (const route of ['/', '/api/health', '/api/state', '/api/state?next=/api/v1/', '/api/v10/health', '/api/v1%2fhealth', '/api/v1/../state']) {
+    assert.equal((await f.api(route, { headers })).status, 403, `${route} must retain the legacy origin boundary`);
+  }
+  for (const requestPath of ['/api/v1', '/api/v1/%2e%2e/state', '/api/v1/../state', '//attacker.invalid/api/v1/health', 'http://attacker.invalid/api/v1/health']) {
+    assert.equal(await rawGet(f.base, { authorization: `Bearer ${TEST_TOKEN}`, ...headers }, requestPath), 403, requestPath);
+  }
+  for (const host of ['attacker.invalid', 'tauri.localhost', '127.0.0.1@attacker.invalid']) {
+    assert.equal(await rawGet(`${f.base}/api/v1/health`, { host, ...headers }), 403, `native Origin cannot authorize Host ${host}`);
+  }
+});
+
+test('native API rejects opaque, malformed, and lookalike origins', async (t) => {
+  const f = await fixture(t);
+  for (const origin of [
+    'null', 'not an origin', 'https://attacker.invalid', 'https://tauri.localhost',
+    'http://tauri.localhost/', 'http://tauri.localhost:80', 'http://tauri.localhost:3000',
+    'http://tauri.localhost.evil.invalid', 'http://tauri.localhost@attacker.invalid',
+    'http://attacker.invalid@tauri.localhost', 'http://tauri.localhost?query=1',
+    'http://tauri.localhost#fragment', 'tauri://localhost',
+  ]) {
+    assert.equal((await f.api('/api/v1/health', { token: null, headers: { origin } })).status, 403, origin);
+  }
+});
+
+test('configured HTTPS proxy origins retain legacy browser and versioned health access', async (t) => {
+  const f = await fixture(t, { YENO_ALLOWED_HOSTS: 'core.example.test' });
+  const headers = { origin: 'https://core.example.test' };
+  assert.equal((await f.api('/api/state', { headers })).status, 200);
+  assert.equal((await f.api('/api/v1/health', { token: null, headers })).status, 200);
+  assert.equal((await f.api('/api/state', { headers: { origin: 'http://core.example.test' } })).status, 403);
+  assert.equal(await rawGet(`${f.base}/api/state`, { host: 'attacker.invalid', authorization: `Bearer ${TEST_TOKEN}`, ...headers }), 403);
+});
+
+test('versioned native API enrolls, persists, and revokes a device-scoped credential', async (t) => {
+  const f = await fixture(t);
+  // The pinned native HTTP plugin sends the bundled WebView Origin on every
+  // request. Omitting it here hid the real APK enrollment regression.
+  const api = (route, options = {}) => f.api(route, { ...options, headers: { origin: 'http://tauri.localhost', ...options.headers } });
+  const requestId = randomUUID();
+  const enrollmentBody = { name: 'Owner Android', platform: 'android', requestId };
+  const enrolled = await api('/api/v1/devices/enroll', {
+    method: 'POST', body: enrollmentBody,
+  });
+  assert.equal(enrolled.status, 201);
+  assert.equal(enrolled.body.device.name, 'Owner Android');
+  const deviceToken = enrolled.body.device.deviceToken;
+  assert.equal(typeof deviceToken, 'string');
+  assert.equal((await api('/api/v1/state')).status, 401, 'pairing token is not an API v1 session token');
+  assert.equal((await api('/api/v1/state', { token: deviceToken })).status, 200);
+  assert.equal((await f.api('/api/v1/state', { token: deviceToken })).status, 200, 'origin-less native clients remain compatible');
+  const command = await api('/api/v1/commands', {
+    method: 'POST', token: deviceToken,
+    body: { text: '문서 만들어: Android 명령 결과 재접속 확인', requestId: randomUUID() },
+  });
+  assert.equal(command.status, 201);
+  const completed = await f.eventually(
+    () => api('/api/v1/state', { token: deviceToken }),
+    (response) => response.body.jobs.find((job) => job.id === command.body.job.id)?.status === 'completed',
+    'native command should produce a durable result',
+  );
+  const artifact = completed.body.jobs.find((job) => job.id === command.body.job.id).artifacts[0];
+
+  for (const filename of ['state.json', 'state.json.bak']) {
+    const saved = await readFile(path.join(f.dir, filename), 'utf8');
+    assert.ok(!saved.includes(deviceToken), `${filename} must not persist the issued device credential`);
+    const data = JSON.parse(JSON.parse(saved).payload);
+    assert.ok(!Object.hasOwn(data.requests[requestId].payload.device, 'deviceToken'));
+    assert.equal(data.devices[enrolled.body.device.id].tokenHash, createHash('sha256').update(deviceToken).digest('hex'));
+  }
+
+  await f.stop();
+  await f.start();
+  const enrollmentRetry = await api('/api/v1/devices/enroll', { method: 'POST', body: enrollmentBody });
+  assert.equal(enrollmentRetry.status, 201);
+  assert.deepEqual(enrollmentRetry.body, enrolled.body, 'a lost enrollment response is recoverable after restart');
+  const afterRestart = await api('/api/v1/state', { token: deviceToken });
+  assert.equal(afterRestart.status, 200);
+  assert.equal(afterRestart.body.apiVersion, '1');
+  assert.equal(afterRestart.body.jobs.find((job) => job.id === command.body.job.id).status, 'completed');
+  const result = await api(`/api/v1/artifacts/${artifact.id}`, { token: deviceToken });
+  assert.equal(result.status, 200);
+  assert.match(result.body, /Android 명령 결과 재접속 확인/);
+
+  const revoked = await api('/api/v1/devices/revoke', {
+    method: 'POST', token: deviceToken, body: { requestId: randomUUID() },
+  });
+  assert.equal(revoked.status, 200);
+  assert.equal((await api('/api/v1/state', { token: deviceToken })).status, 401);
+  const revokedReplay = await api('/api/v1/devices/enroll', { method: 'POST', body: enrollmentBody });
+  assert.equal(revokedReplay.status, 409, 'an enrollment retry cannot reissue a revoked credential');
+  assert.ok(!JSON.stringify(revokedReplay.body).includes(deviceToken));
+  assert.equal((await api('/api/v1/state', { token: deviceToken })).status, 401);
+  await f.stop();
+  await f.start();
+  assert.equal((await api('/api/v1/devices/enroll', { method: 'POST', body: enrollmentBody })).status, 409);
+  const saved = JSON.parse(JSON.parse(await readFile(path.join(f.dir, 'state.json'), 'utf8')).payload);
+  assert.equal(Object.keys(saved.devices).length, 1, 'retries cannot silently enroll another device');
+  for (const filename of ['state.json', 'state.json.bak']) {
+    assert.ok(!(await readFile(path.join(f.dir, filename), 'utf8')).includes(deviceToken));
+  }
+});
+
+test('operating briefing is a durable native command snapshot, not autonomous execution', async (t) => {
+  const f = await fixture(t);
+  const created = await f.api('/api/projects', { method: 'POST', body: {
+    name: 'YENO focus', summary: 'PRIVATE_SUMMARY_NOT_IN_BRIEF', nextAction: '첫 작업자 연결 조건 확인', status: 'active', requestId: randomUUID(),
+  } });
+  assert.equal(created.status, 201);
+  const project = created.body.project;
+  assert.equal((await f.api('/api/memory', { method: 'POST', body: { text: 'PRIVATE_MEMORY_NOT_IN_BRIEF', requestId: randomUUID() } })).status, 201);
+  const headers = { origin: 'http://tauri.localhost' };
+  const enrolled = await f.api('/api/v1/devices/enroll', { method: 'POST', headers, body: { name: 'Operating Android', platform: 'android', requestId: randomUUID() } });
+  assert.equal(enrolled.status, 201);
+  const token = enrolled.body.device.deviceToken;
+  const request = { text: '운영 브리핑', requestId: randomUUID() };
+  const submit = () => f.api('/api/v1/commands', { method: 'POST', token, headers, body: request });
+  const response = await submit();
+  assert.equal(response.status, 201);
+  assert.equal(response.body.kind, 'job');
+  const id = response.body.job.id;
+  assert.equal(response.body.job.type, 'document');
+  assert.equal(response.body.job.operatingReport, true);
+  const completed = await f.eventually(() => f.job(id), job => job.status === 'completed', 'brief should produce a file');
+  const route = `/api/v1/artifacts/${completed.artifacts[0].id}`;
+  const artifact = await f.api(route, { token, headers });
+  assert.equal(artifact.status, 200);
+  assert.match(artifact.body, /YENO focus/);
+  assert.match(artifact.body, /첫 작업자 연결 조건 확인/);
+  assert.doesNotMatch(artifact.body, /PRIVATE_SUMMARY_NOT_IN_BRIEF|PRIVATE_MEMORY_NOT_IN_BRIEF/);
+  assert.equal(artifact.headers.get('x-content-sha256'), createHash('sha256').update(artifact.body).digest('hex'));
+  assert.equal((await f.state()).capabilities.developerWorker, false);
+  assert.equal((await f.api(`/api/projects/${project.id}/update`, { method: 'POST', body: { nextAction: '다음 단계로 변경됨', revision: project.version, requestId: randomUUID() } })).status, 200);
+  assert.equal((await submit()).body.job.id, id, 'retry must not regenerate a fresh-state report');
+  await f.stop();
+  await f.start();
+  assert.equal((await submit()).body.job.id, id);
+  assert.equal((await f.api(route, { token, headers })).body, artifact.body, 'saved report remains the same point-in-time evidence after restart');
+  const refreshed = await f.api('/api/v1/commands', { method: 'POST', token, headers, body: { text: '운영 현황', requestId: randomUUID() } });
+  assert.equal(refreshed.status, 201);
+  assert.notEqual(refreshed.body.job.id, id);
+  const refreshedJob = await f.eventually(() => f.job(refreshed.body.job.id), job => job.status === 'completed', 'new request creates a fresh report');
+  const refreshedArtifact = await f.api(`/api/v1/artifacts/${refreshedJob.artifacts[0].id}`, { token, headers });
+  assert.match(refreshedArtifact.body, /다음 단계로 변경됨/);
+  await f.api('/api/control', { method: 'POST', body: { action: 'stop', requestId: randomUUID() } });
+  const stopped = await f.api('/api/v1/commands', { method: 'POST', token, headers, body: { text: '운영 브리핑', requestId: randomUUID() } });
+  assert.equal(stopped.status, 409, 'brief commands respect the global new-job stop');
+  assert.equal((await f.state()).emergencyStop, true);
+});
+
+test('pairing-secret rotation rejects credential recovery without invalidating issued device tokens', async (t) => {
+  const f = await fixture(t);
+  const body = { name: 'Owner Android', platform: 'android', requestId: randomUUID() };
+  const enrolled = await f.api('/api/v1/devices/enroll', { method: 'POST', body });
+  assert.equal(enrolled.status, 201);
+  const deviceToken = enrolled.body.device.deviceToken;
+  const rotatedToken = 'rotated-integration-pairing-token-9f371a';
+  await f.stop();
+  await f.start({ token: rotatedToken });
+
+  const retry = await f.api('/api/v1/devices/enroll', { method: 'POST', body, token: rotatedToken });
+  assert.equal(retry.status, 409, 'rotation must never return a successful but unusable reconstructed token');
+  assert.ok(!Object.hasOwn(retry.body, 'device'));
+  assert.equal((await f.api('/api/v1/state', { token: deviceToken })).status, 200);
+  assert.equal((await f.api('/api/v1/devices/enroll', { method: 'POST', body })).status, 401);
+
+  const fresh = await f.api('/api/v1/devices/enroll', {
+    method: 'POST', token: rotatedToken, body: { ...body, requestId: randomUUID() },
+  });
+  assert.equal(fresh.status, 201);
+  assert.notEqual(fresh.body.device.id, enrolled.body.device.id);
+  assert.equal((await f.api('/api/v1/state', { token: fresh.body.device.deviceToken })).status, 200);
+});
+
+test('legacy enrollment receipts lose raw credentials while issued random tokens and owner state survive', async (t) => {
+  const f = await fixture(t);
+  const body = { name: 'Legacy Android', platform: 'android', requestId: randomUUID() };
+  const enrolled = await f.api('/api/v1/devices/enroll', { method: 'POST', body });
+  assert.equal(enrolled.status, 201);
+  const memory = await f.api('/api/memory', {
+    method: 'POST', body: { text: '마이그레이션 이후에도 남을 기억', requestId: randomUUID() },
+  });
+  assert.equal(memory.status, 201);
+  const job = await f.createJob();
+  await f.eventually(() => f.job(job.id), (item) => item.status === 'completed', 'legacy migration fixture needs a real result');
+  await f.stop();
+
+  // Reproduce the earlier candidate's random token and leaked cached response.
+  const filename = path.join(f.dir, 'state.json');
+  const before = JSON.parse(JSON.parse(await readFile(filename, 'utf8')).payload);
+  const legacyToken = `legacy-random-device-token-${randomUUID()}`;
+  before.devices[enrolled.body.device.id].tokenHash = createHash('sha256').update(legacyToken).digest('hex');
+  before.requests[body.requestId].payload.device.deviceToken = legacyToken;
+  const payload = JSON.stringify(before);
+  const envelope = JSON.stringify({ format: 1, sha256: createHash('sha256').update(payload).digest('hex'), payload });
+  await writeFile(filename, envelope);
+  await writeFile(`${filename}.bak`, envelope);
+  await f.start();
+
+  assert.equal((await f.api('/api/v1/state', { token: legacyToken })).status, 200);
+  assert.equal((await f.api('/api/v1/devices/enroll', { method: 'POST', body })).status, 409, 'legacy receipts must not mint a different credential');
+  for (const file of [filename, `${filename}.bak`]) {
+    const serialized = await readFile(file, 'utf8');
+    assert.ok(!serialized.includes(legacyToken), `${path.basename(file)} must be scrubbed on load/save`);
+    const savedEnvelope = JSON.parse(serialized);
+    assert.equal(savedEnvelope.sha256, createHash('sha256').update(savedEnvelope.payload).digest('hex'));
+    const after = JSON.parse(savedEnvelope.payload);
+    assert.deepEqual(after.jobs, before.jobs);
+    assert.deepEqual(after.memories, before.memories);
+    assert.deepEqual(after.snapshots, before.snapshots);
+    assert.deepEqual(after.artifacts, before.artifacts);
+    assert.deepEqual(Object.keys(after.requests), Object.keys(before.requests));
+    assert.equal(after.requests[body.requestId].hash, before.requests[body.requestId].hash);
+    assert.ok(!Object.hasOwn(after.requests[body.requestId].payload.device, 'deviceToken'));
+  }
+  const retained = await f.job(job.id);
+  assert.equal((await f.api(`/api/v1/artifacts/${retained.artifacts[0].id}`, { token: legacyToken })).status, 200);
 });
 
 test('unsupported commands are rejected instead of claiming successful work', async (t) => {

@@ -1,6 +1,6 @@
 {
   "name": "yeno-os-runtime",
-  "version": "0.1.1",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "description": "YENO personal runtime: mobile control, durable jobs, memory and recovery",
@@ -9,6 +9,6 @@
   },
   "scripts": {
     "start": "node launch.mjs",
-    "test": "node --test test/command-request.test.mjs test/runtime.test.mjs"
+    "test": "node --test test/*.test.mjs"
   }
 }
