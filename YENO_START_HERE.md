@@ -53,7 +53,7 @@
 
 ## 앱과 개발 기록
 
-2026-09-10부터 `codex`의 앱 관련 코드 변경에 자동 APK 빌드를 연결했다. 이제 매번 Run workflow를 누를 필요가 없다. 검사→APK 컴파일→결과 업로드를 수행하고 성공한 실행의 요약에서 **APK 다운로드**를 연다. 첫 자동 실행은 [34428212320](https://github.com/wooyeonho/yeno-os/actions/runs/34428212320)이며 현재 대기다. 실제 APK 생성·설치와 코어 배포를 구분한다. 특정 버전 재빌드만 필요할 때 수동 실행의 브랜치/source_ref를 `codex`로 선택한다.
+2026-09-10부터 `codex`의 앱 관련 코드 변경에 자동 APK 빌드를 연결했다. 이제 매번 Run workflow를 누를 필요가 없다. 검사→APK 컴파일→결과 업로드를 수행하고 성공한 실행의 요약에서 **APK 다운로드**를 연다. 첫 자동 실행은 [34428212320](https://github.com/wooyeonho/yeno-os/actions/runs/34428212320)이며 실제 실행 중이다. 앞서 시작한 [새 APK 빌드](https://github.com/wooyeonho/yeno-os/actions/runs/34427573228)는 성공했고 [APK 묶음](https://github.com/wooyeonho/yeno-os/actions/runs/34427573228/artifacts/10133464868)을 2026-09-17까지 받을 수 있다. 폰 설치·서명 호환성은 아직 확인 전이다. 실제 APK 생성·설치와 코어 배포를 구분한다. 특정 버전 재빌드만 필요할 때 수동 실행의 브랜치/source_ref를 `codex`로 선택한다.
 
 [실제 Android 빌드](https://github.com/wooyeonho/yeno-os/actions/runs/34309339030/attempts/3)의 앱 소스는 `11a0e1f7f1cb09449a1a2f82b54f948fff416690`이다. 시험 APK 약 202 MB, ZIP 약 53.5 MB이며 개발용 디버그 빌드다. [GitHub APK 묶음](https://github.com/wooyeonho/yeno-os/actions/runs/34309339030/artifacts/10088424404)은 2026-09-16 보관 만료다.
 
