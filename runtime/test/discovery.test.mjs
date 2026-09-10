@@ -45,7 +45,8 @@ test('release intake excludes hostile URLs, future/old dates and prereleases; te
 
 test('network/HTTP/JSON/size failures stay bounded and are recorded without credentials', async () => {
   let calls = 0;
-  const f = fixture({ fetchImpl: async () => {
+  const f = fixture({ fetchImpl: async url => {
+    if (url.endsWith('/latest')) return new Response('x'.repeat(2 * 1024 * 1024 + 1), { headers: { 'content-type': 'application/json' } });
     calls++;
     if (calls === 1) return new Response('rate limited', { status: 429 });
     if (calls === 2) return new Response('not json', { headers: { 'content-type': 'application/json' } });
@@ -59,6 +60,23 @@ test('network/HTTP/JSON/size failures stay bounded and are recorded without cred
   assert.equal(JSON.stringify(f.state).includes('private network'), false);
   await f.worker.tick(); assert.equal(calls, 5);
   await assert.rejects(readReleaseFeed('evil/repo'), /invalid/);
+});
+
+test('oversized release list falls back once to the latest official release with the same deadline', async () => {
+  const requests = [];
+  const f = fixture({ fetchImpl: async (url, options) => {
+    requests.push({ url, signal: options.signal });
+    if (url.includes('/openai/codex/')) {
+      if (url.endsWith('/latest')) return json(release('openai/codex'));
+      return new Response('x'.repeat(2 * 1024 * 1024 + 1), { headers: { 'content-type': 'application/json' } });
+    }
+    return json([]);
+  } });
+  f.worker.setEnabled(true); await f.worker.tick();
+  assert.equal(requests.length, 6); assert.equal(requests[0].signal, requests[1].signal);
+  assert.equal(requests[1].url, 'https://api.github.com/repos/openai/codex/releases/latest');
+  assert.equal(f.state.sources.length, 1); assert.equal(f.state.discovery.lastRun.status, 'completed');
+  assert.equal(f.state.sources[0].decision, 'pending');
 });
 
 test('stop aborts an in-flight read and discards late results; releasing global stop does not restart', async () => {

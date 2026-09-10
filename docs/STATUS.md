@@ -1,3 +1,17 @@
+# 2026-09-10 상주 자료 확인 실제 가동
+
+소스 `668ad18b77cb4dbafc81ab7cc23b1fa5517c0ae8`, Koyeb 배포 `1e70e955-7e65-4a75-9c91-09be3be9cc05`가 Healthy/1개 인스턴스로 전환됐다. 이전 배포는 Stopped다. 이미지 manifest `1d94d50faedc79e2896edf85197e0e517d7270c038533a120e5902456eb7ce59`.
+
+2026-09-10 02:37:07.182Z, 인증된 설정 활성화 후 코어의 스케줄러가 직접 실행했다. 02:37:09.996Z 완료, **partial**: Claude Code 2개·Gemini CLI 1개를 unread/pending으로 접수했다. Tauri·xAI 목록 조회는 성공/신규 0개, Codex 목록은 2MiB 제한 초과로 미접수다. 5개 전부 수집 성공이라고 해석하지 않는다. 다음 확인 2026-09-11 02:37:07.182Z(한국 시각 11:37:07).
+
+실제 입력: [Claude v2.1.267](https://github.com/anthropics/claude-code/releases/tag/v2.1.267), [Claude v2.1.266](https://github.com/anthropics/claude-code/releases/tag/v2.1.266), [Gemini CLI v0.59.0](https://github.com/google-gemini/gemini-cli/releases/tag/v0.59.0). 원문 읽음/후보 채택/코드 변경으로 표시하지 않았다. 기존 20개 프로젝트·76개 자료·10개 작업·기억·스냅샷 원본 행의 보존을 비교 확인했다.
+
+02:40:03Z 실제 상태 revision 123, 자료 79개, 작업 11개. 기존 APK가 쓸 수 있는 `자율 점검` 명령으로 작업 `4794a1ac-f5f8-4269-b846-bf83ac570ff4`와 결과 `527c3aba-68a5-4e9f-8931-5fe6024732b9`를 생성·다운로드했다. 결과 1,507 bytes / SHA-256 `690591e116d11b796e5d1fa41e650d446c0466bb4155c0299d091242635ef08d`, 서버 해시와 일치했다. 이는 실제 HTTPS API 검사이며 폰의 화면 조작 시험은 아니다.
+
+실제 발견한 Codex 큰 목록 문제를 보완했다. 같은 시간/바이트 제한을 유지하면서 latest endpoint를 한 번만 조회한다. 원자료 API의 최신 정식 릴리스 응답은 292,406자였으며 이 조회 자체는 연결된 GitHub를 통한 확인이다. 보완 코드의 로컬 전체 검사 **115/115 통과**, 0 실패/취소/생략, Node 24, 16.976초. 실제 상주 코어의 fallback 경로 성공은 후속 예약 실행에서 확인할 항목이며 지금 성공으로 표시하지 않는다.
+
+ChatGPT 예약과 독립적인 **공식 자료 메타데이터 접수**만 자율 가동한다. 실제 AI 호출은 configured=false, 개발 실행자 false. 일반 웹 검색·원문 판단·코드 수정·시험·배포의 자율 개선 고리는 미연결이다. [범위와 제어](SOURCE_WATCH.md).
+
 # 2026-09-10 자율 자료 확인 구현
 
 상주 코어의 고정 공식 릴리스 수집·중복 방지·24시간 일정 보존·정지/복원 연동을 구현했다. [SOURCE_WATCH](SOURCE_WATCH.md). 새 코드의 실제 배포/활성화/수집 결과는 아래 추가 기록 전까지 미검증이다. GPT 없이 코드 수정·시험·배포하는 자기 개선은 아직 미연결이다.

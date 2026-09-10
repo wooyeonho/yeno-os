@@ -28,9 +28,9 @@ export function validateDiscovery(value) {
 }
 
 class FeedError extends Error { constructor(code) { super(code); this.code = code; } }
-export async function readReleaseFeed(repo, { fetchImpl = fetch, signal } = {}) {
+export async function readReleaseFeed(repo, { fetchImpl = fetch, signal, latestOnly = false } = {}) {
   if (!DISCOVERY_REPOS.includes(repo)) throw new FeedError('invalid');
-  const response = await fetchImpl(`https://api.github.com/repos/${repo}/releases?per_page=20`, {
+  const response = await fetchImpl(`https://api.github.com/repos/${repo}/releases${latestOnly ? '/latest' : '?per_page=20'}`, {
     method: 'GET', redirect: 'error', signal,
     headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'YENO-source-watch', 'X-GitHub-Api-Version': '2022-11-28' },
   });
@@ -49,6 +49,7 @@ export async function readReleaseFeed(repo, { fetchImpl = fetch, signal } = {}) 
   } catch (error) { await reader.cancel().catch(() => {}); throw error; }
   let data;
   try { data = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new FeedError('invalid'); }
+  if (latestOnly) { if (!record(data)) throw new FeedError('invalid'); return [data]; }
   if (!Array.isArray(data) || data.length > 20) throw new FeedError('invalid');
   return data;
 }
@@ -108,7 +109,14 @@ export function createDiscovery({ state, save, event, fetchImpl = fetch, clock =
         try {
           if (state.sources.length >= MAX_SOURCES) throw new FeedError('capacity');
           const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]);
-          const releases = await readReleaseFeed(repo, { fetchImpl, signal });
+          let releases;
+          try { releases = await readReleaseFeed(repo, { fetchImpl, signal }); }
+          catch (error) {
+            if (!(error instanceof FeedError) || error.code !== 'oversize') throw error;
+            // Some release lists embed hundreds of binary asset descriptions.
+            // One bounded fallback, sharing the original deadline and byte cap.
+            releases = await readReleaseFeed(repo, { fetchImpl, signal, latestOnly: true });
+          }
           if (closed || controller.signal.aborted || !d.enabled || state.emergencyStop) break;
           const known = new Set(state.sources.map(source => source.canonicalUrl));
           for (const fields of releaseSources(repo, releases, at)) {
