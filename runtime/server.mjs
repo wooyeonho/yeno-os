@@ -14,7 +14,7 @@ import {DeviceAdminError,publicDevices,revokeDevice} from './lib/device-admin.mj
 import {RequestLedgerError,validateRequestId,fingerprintRequest,findReceipt,checkCapacity,rememberReceipt,lookupRequest,REQUEST_LEDGER_MAX_ENTRIES,REQUEST_CACHE_MAX_BYTES} from './lib/request-ledger.mjs';
 import {createDiscovery,discoveryDocument,DISCOVERY_REPOS} from './lib/discovery.mjs';
 import {createEcosystem,publicEcosystem,ecosystemDocument} from './lib/ecosystem.mjs';
-import {AGENT_TOOLS,agentConfig,agentUsage,runAgent,recoverAgentJournals,automaticMission,AgentError} from './lib/agent.mjs';
+import {AGENT_TOOLS,agentProfiles,agentUsage,runAgent,recoverAgentJournals,automaticMission,AgentError} from './lib/agent.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const VERSION='0.2.2';
@@ -22,13 +22,15 @@ const API_VERSION='1';
 const MAX_BODY=256*1024;
 class HttpError extends Error {constructor(status,message,extra={}){super(message);this.status=status;this.extra=extra;}}
 function requiredText(value,maximum=80000){if(typeof value!=='string'||!value.trim())throw new HttpError(400,'text must be a non-empty string');if(value.length>maximum)throw new HttpError(400,`text is limited to ${maximum} characters`);return value.trim();}
-function publicJob(job){const {input,normalized,draft,agentJournal,...out}=job;return {...out,...(agentJournal?{agent:{provider:agentJournal.provider,model:agentJournal.model,calls:agentJournal.calls.length,unknownCalls:agentJournal.calls.filter(call=>call.status!=='settled').length,toolResults:agentJournal.history.filter(message=>message.role==='tool').length}}:{})};}
+import {publicJob} from './lib/job-view.mjs';
+import {BotError,planProjectBots,botBlockReason,botCanStart,botStatus,botDocument} from './lib/project-bots.mjs';
 function publicSnapshot(snapshot){const {data,...out}=snapshot;return out;}
 const examples=['흡수 현황','자율 점검','자율 임무: 공식 자료를 읽고 다음 개선 초안을 만들어줘','운영 브리핑','운영 현황','기억해: 이번 주에는 YENO 한 프로젝트에 집중한다','찾아줘: YENO','문서 만들어: YENO의 첫 목표는 기억과 실행이다','프로젝트 목록','프로젝트 브리핑: 프로젝트 이름','프로젝트 작업: 프로젝트 이름 | 준비할 작업','자료 목록','자료 브리핑: 자료 ID','개선 후보: 자료 ID','진단해','개선점 찾아줘'];
 
 export function createYenoServer(options={}) {
  const env=options.env??process.env;
- const agentSettings=agentConfig(env);
+ const profiles=agentProfiles(env), agentSettings=profiles.primary;
+ const configFor=job=>job.botAssignment?profiles[job.botAssignment.profile]:agentSettings;
  const dataDir=path.resolve(options.dataDir??env.YENO_DATA_DIR??path.join(ROOT,'data'));
  const releaseLock=options.containerLease===true?acquireContainerLease(dataDir):acquireRuntimeLock(dataDir);
  let store;try{store=openStore(dataDir);}catch(error){releaseLock();throw error;}
@@ -50,10 +52,10 @@ export function createYenoServer(options={}) {
  for(const job of s.jobs)if(['running','queued'].includes(job.status)){job.status='paused';job.pauseReason='restart';job.updatedAt=now();job.version++;restarted++;}
  if(restarted)event(`${restarted} unfinished job(s) paused after restart; owner resume required.`);
  if(store.recovered)event('State recovered from the verified previous backup.');
- if(store.recovered||(!aiEndpoint&&!agentSettings.ready))s.modules.ai=false;
+ if(store.recovered||(!aiEndpoint&&!agentSettings.ready&&!profiles.grok.ready))s.modules.ai=false;
  recoverAgentJournals(s.jobs);
  event('YENO runtime started.');store.save();
- function state(){return {name:'YENO OS',version:VERSION,apiVersion:API_VERSION,requestTracking:{retained:Object.keys(s.requestLedger).length,capacity:REQUEST_LEDGER_MAX_ENTRIES,cached:Object.keys(s.requests).length,cacheMaxBytes:REQUEST_CACHE_MAX_BYTES},revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint||agentSettings.ready,draftConfigured:!!aiEndpoint,model:aiEndpoint?aiModel:agentSettings.ready?agentSettings.model:null},agent:{configured:agentSettings.ready,provider:agentSettings.provider,model:agentSettings.model||null,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs),automaticReviews:agentSettings.ready&&agentSettings.auto&&s.modules.ai&&(s.discovery.enabled||s.ecosystem.enabled)&&!s.emergencyStop,tools:AGENT_TOOLS.map(tool=>tool.name),developmentExecution:false},discovery:{...s.discovery,repositories:DISCOVERY_REPOS},ecosystem:publicEcosystem(s.ecosystem),jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,capabilities:{localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,scheduledSourceDiscovery:true,boundedAgentLoop:true,ecosystemDiscovery:true,skillEvidenceIntake:true,developerWorker:false,diagnostics:true,evolution:'proposals-only',ai:!!aiEndpoint||agentSettings.ready,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
+ function state(){return {bots:botStatus(s,profiles),name:'YENO OS',version:VERSION,apiVersion:API_VERSION,requestTracking:{retained:Object.keys(s.requestLedger).length,capacity:REQUEST_LEDGER_MAX_ENTRIES,cached:Object.keys(s.requests).length,cacheMaxBytes:REQUEST_CACHE_MAX_BYTES},revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,draftConfigured:!!aiEndpoint,model:aiEndpoint?aiModel:agentSettings.ready?agentSettings.model:null},agent:{configured:agentSettings.ready,provider:agentSettings.provider,model:agentSettings.model||null,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs),automaticReviews:agentSettings.ready&&agentSettings.auto&&s.modules.ai&&(s.discovery.enabled||s.ecosystem.enabled)&&!s.emergencyStop,tools:AGENT_TOOLS.map(tool=>tool.name),developmentExecution:false},discovery:{...s.discovery,repositories:DISCOVERY_REPOS},ecosystem:publicEcosystem(s.ecosystem),jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,capabilities:{projectBots:true,localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,scheduledSourceDiscovery:true,boundedAgentLoop:true,ecosystemDiscovery:true,skillEvidenceIntake:true,developerWorker:false,diagnostics:true,evolution:'proposals-only',ai:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
  // A failed filesystem write leaves its outcome uncertain. Retain its request
  // identity in memory, but never acknowledge a cached receipt or expose that
  // state through the API until the complete state has been persisted again.
@@ -84,10 +86,36 @@ export function createYenoServer(options={}) {
    if(project)job.projectId=project.id;
    s.jobs.unshift(job);event(`Job queued: ${title}`);return job;
  }
+ function startBots(body){
+   if(Object.keys(body).some(k=>!['profile','projectIds','includePaused','requestId','action'].includes(k)))throw new BotError(400,'Unknown bot assignment field');
+   const plan=planProjectBots(s,profiles,body),profile=body.profile??'primary';
+   if(profiles[profile].ready)s.modules.ai=true;
+   for(const job of [...plan.created,...plan.reused])if(job.status==='paused'&&['providerMissing','moduleDisabled'].includes(job.pauseReason)&&!botBlockReason(job,s,profiles)){job.status='queued';delete job.pauseReason;touch(job);}
+   s.jobs.unshift(...plan.created);s.concurrency=Math.max(s.concurrency,2);
+   event(`Project bots assigned: ${plan.created.length} new, ${plan.reused.length} reused; scope project-draft, profile ${profile}.`);
+   return {status:200,payload:{kind:'botBatch',batchId:plan.batchId,jobs:[...plan.created,...plan.reused].map(publicJob),createdCount:plan.created.length,reusedCount:plan.reused.length,bots:botStatus(s,profiles)}};
+ }
+ function controlBots(action){
+   if(!['stop','resume'].includes(action))throw new BotError(400,'Unsupported bot action');
+   if(action==='resume'&&s.emergencyStop)throw new BotError(409,'Release emergency stop before resuming bots');
+   if(action==='resume'&&(profiles.primary.ready||profiles.grok.ready))s.modules.ai=true;
+   for(const job of s.jobs.filter(j=>j.botAssignment)){
+     if(action==='stop'&&['queued','running'].includes(job.status)){job.status='paused';job.pauseReason='owner';touch(job);invalidate(job);}
+     else if(action==='resume'&&job.status==='paused'){
+       const reason=botBlockReason(job,s,profiles);
+       if(reason){if(job.pauseReason!==reason){job.pauseReason=reason;touch(job);}continue;}
+       job.status='queued';delete job.pauseReason;touch(job);
+     }
+     // A budget hold is resumable by the timer; explicit stop must remove it.
+     else if(action==='stop'&&job.status==='paused'&&job.pauseReason==='dailyBudget'){job.pauseReason='owner';touch(job);}
+   }
+   event(`Project bots ${action}; no unattended shell, publish, payment or deployment.`);
+   return {status:200,payload:{kind:'bots',bots:botStatus(s,profiles),stoppingJobIds:[...controllers.keys()].filter(id=>s.jobs.some(j=>j.id===id&&j.botAssignment))}};
+ }
  function addMemory(body){requireModule('memory');const memory={id:uid(),text:requiredText(body.text,20000),createdAt:now()};s.memories.unshift(memory);event('Memory saved.');return memory;}
  function ensureUniqueProject(name,exceptId){if(s.projects.some(project=>project.id!==exceptId&&projectNameKey(project.name)===projectNameKey(name)))throw new ProjectError(409,'A project with this name already exists.');}
  function addProject(body){const fields=validateProjectFields(body,{creating:true});ensureUniqueProject(fields.name);const at=now(),project={id:uid(),...fields,version:1,createdAt:at,updatedAt:at};s.projects.push(project);event(`Project registered: ${project.name}`);return project;}
- function updateProject(id,body){const fields=validateProjectFields(body);const index=s.projects.findIndex(project=>project.id===id);if(index<0)throw new ProjectError(404,'Project not found.');const current=s.projects[index];if(body.revision!==current.version)throw new ProjectError(409,'Project changed; refresh before updating.',{project:current});if(fields.name)ensureUniqueProject(fields.name,id);const project={...current,...fields,version:current.version+1,updatedAt:now()};s.projects[index]=project;event(`Project updated: ${project.name} (${project.status})`);return project;}
+ function updateProject(id,body){const fields=validateProjectFields(body);const index=s.projects.findIndex(project=>project.id===id);if(index<0)throw new ProjectError(404,'Project not found.');const current=s.projects[index];if(body.revision!==current.version)throw new ProjectError(409,'Project changed; refresh before updating.',{project:current});if(fields.name)ensureUniqueProject(fields.name,id);const project={...current,...fields,version:current.version+1,updatedAt:now()};s.projects[index]=project;for(const job of s.jobs)if(job.botAssignment&&job.projectId===id&&['queued','running'].includes(job.status)){job.status='paused';job.pauseReason='projectChanged';touch(job);invalidate(job);}event(`Project updated: ${project.name} (${project.status})`);return project;}
  function projectDocumentJob(project,content,title,report){const job=newJob({type:'document',text:content,title,...(project?{projectId:project.id}:{})});job.projectReport=report;return publicJob(job);}
  function sourceRecord(fields){const at=now();return {id:uid(),...fields,version:1,createdAt:at,updatedAt:at};}
  function addSource(body){const fields=validateSourceFields(body,{creating:true,projects:s.projects});const existing=s.sources.find(source=>source.canonicalUrl===fields.canonicalUrl);if(existing)throw new SourceError(409,'This canonical source URL is already registered.',{source:existing});const source=sourceRecord(fields);s.sources.push(source);event(`Source registered: ${source.title}`);return source;}
@@ -95,14 +123,23 @@ export function createYenoServer(options={}) {
  function importSources(body){const planned=planSourceImport(body,s.sources,s.projects);const sources=planned.map(item=>item.source??sourceRecord(item.fields));const created=sources.filter((source,index)=>!planned[index].source);s.sources.push(...created);event(`Source import: ${created.length} registered, ${sources.length-created.length} reused.`);return {sources,createdCount:created.length,reusedCount:sources.length-created.length};}
  function sourceDocumentJob(source,content,title){const job=newJob({type:'document',text:content,title:title.slice(0,160),...(source?.projectId?{projectId:source.projectId}:{})});job.sourceReport=true;if(source)job.sourceId=source.id;return publicJob(job);}
  function takeSnapshot(label){const snapshot={id:uid(),label:label?requiredText(label,160):'수동 저장',createdAt:now(),data:structuredClone({memories:s.memories,settings:{concurrency:s.concurrency,modules:s.modules}})};s.snapshots.unshift(snapshot);event(`Snapshot created: ${snapshot.label}`);return snapshot;}
- function active(){return s.jobs.filter(j=>j.status==='running').length;}
+ function active(){return new Set([...s.jobs.filter(j=>j.status==='running').map(j=>j.id),...controllers.keys()]).size;}
  function schedule(){if(closed||schedulerTimer)return;schedulerTimer=setTimeout(tick,150);schedulerTimer.unref();}
  function tick(){schedulerTimer=null;if(closed)return;
    void discovery.tick();
    void ecosystem.tick();
    const mission=automaticMission(s,agentSettings);
    if(mission){const job=newJob({type:'agent',title:'YENO 자동 자료 검토',text:mission.text});job.agentJournal.automaticKey=mission.key;job.agentJournal.automaticScope=mission.scope;save();}
-   if(!s.emergencyStop){for(const job of s.jobs.slice().reverse()){if(active()>=s.concurrency)break;if(job.status==='queued'){if(!s.modules[moduleFor(job.type)]){job.status='paused';job.pauseReason='moduleDisabled';touch(job);save();continue;}job.status='running';delete job.pauseReason;touch(job);save();const generation=(generations.get(job.id)??0)+1;generations.set(job.id,generation);runStep(job,generation);}}}
+   if(!s.emergencyStop){for(const job of s.jobs.slice().reverse()){
+     if(job.botAssignment&&job.status==='paused'&&job.pauseReason==='dailyBudget'&&!botBlockReason(job,s,profiles)&&agentUsage(s.jobs).attempts<configFor(job).dailyCallLimit){job.status='queued';delete job.pauseReason;touch(job);save();}
+     if(active()>=s.concurrency)break;
+     if(job.status!=='queued'||!botCanStart(job,s,controllers))continue;
+     const blocked=job.botAssignment?botBlockReason(job,s,profiles):null;
+     const lastAssistant=job.agentJournal?.history.findLast(m=>m.role==='assistant');
+     const budget=job.botAssignment&&job.step<2&&(!lastAssistant||lastAssistant.toolCalls.length>0)&&agentUsage(s.jobs).attempts>=configFor(job).dailyCallLimit;
+     if(blocked||budget||!s.modules[moduleFor(job.type)]){job.status='paused';job.pauseReason=blocked||(budget?'dailyBudget':'moduleDisabled');touch(job);save();continue;}
+     job.status='running';delete job.pauseReason;touch(job);save();const generation=(generations.get(job.id)??0)+1;generations.set(job.id,generation);runStep(job,generation);
+   }}
    schedule();
  }
  function writeArtifact(job,content,name){
@@ -154,14 +191,14 @@ export function createYenoServer(options={}) {
        else if(job.type==='agent'){
          const controller=new AbortController();controllers.set(job.id,controller);
          const timeout=setTimeout(()=>controller.abort(),90000);
-         try {const draft=await runAgent({job,state:s,config:agentSettings,save:()=>{if(closed)throw new AgentError('runtime_closed');save();},signal:controller.signal,fetchImpl:options.agentFetch});if(!valid())return;job.draft=draft;}
+         try {const draft=await runAgent({job,state:s,config:configFor(job),save:()=>{if(closed)throw new AgentError('runtime_closed');save();},signal:controller.signal,fetchImpl:options.agentFetch});if(!valid())return;job.draft=draft;}
          finally{clearTimeout(timeout);if(controllers.get(job.id)===controller)controllers.delete(job.id);}
        }
        else {const draft=await aiDraft(job);if(!valid())return;job.draft=`# ${job.title}\n\n${draft}\n\n---\nAI 생성 초안 · 모델: ${aiModel}\n외부 사실 검증이나 도구 실행은 하지 않았습니다.\n입력 SHA-256: ${job.inputSha256}\n`;}
        job.step=2;
      }else if(job.step===2){writeArtifact(job,job.draft,`${job.type}-${job.id.slice(0,8)}.md`);delete job.draft;job.step=3;job.status='completed';event(`Job completed and output verified: ${job.title}`);}
      touch(job);save();
-   }catch(error){if(!valid())return;job.status='failed';job.error=job.type==='agent'?(error instanceof AgentError?error.message:'Agent execution stopped or failed; inspect preserved checkpoints.'):job.type==='ai'?(String(error.message).startsWith('AI provider')?error.message:'AI request failed or timed out; no provider response details retained.'):String(error.message).slice(0,300);touch(job);event(`Job failed: ${job.title}`);save();}
+   }catch(error){if(!valid())return;const hold=job.botAssignment&&error instanceof AgentError&&({daily_call_limit:'dailyBudget',previous_call_outcome_unknown:'outcomeUnknown',project_scope_changed:'projectChanged'}[error.code]);job.status=hold?'paused':'failed';if(hold)job.pauseReason=hold;job.error=job.type==='agent'?(error instanceof AgentError?error.message:'Agent execution stopped or failed; inspect preserved checkpoints.'):job.type==='ai'?(String(error.message).startsWith('AI provider')?error.message:'AI request failed or timed out; no provider response details retained.'):String(error.message).slice(0,300);touch(job);event(`Job failed: ${job.title}`);save();}
    if(valid()){const timer=setTimeout(()=>runStep(job,generation),250);timer.unref();}
  }
  function bearer(req){const supplied=req.headers.authorization;if(typeof supplied!=='string'||!supplied.startsWith('Bearer '))return null;return supplied.slice(7);}
@@ -283,6 +320,7 @@ export function createYenoServer(options={}) {
      const requestMatch=url.pathname.match(/^\/api\/requests\/([^/]+)$/);
      if(req.method==='GET'&&requestMatch){let id;try{id=decodeURIComponent(requestMatch[1]);}catch{throw new HttpError(400,'Invalid encoded requestId');}return respond(res,200,{request:lookupRequest(s,id)});}
      if(req.method==='GET'&&url.pathname==='/api/state')return respond(res,200,state());
+     if(req.method==='GET'&&url.pathname==='/api/bots')return respond(res,200,botStatus(s,profiles));
      if(req.method==='GET'&&url.pathname==='/api/projects')return respond(res,200,{projects:s.projects});
      if(req.method==='GET'&&url.pathname==='/api/sources')return respond(res,200,{sources:s.sources});
      if(req.method==='GET'&&url.pathname==='/api/memory'){requireModule('memory');const q=(url.searchParams.get('q')??'').toLocaleLowerCase();return respond(res,200,{memories:s.memories.filter(m=>m.text.toLocaleLowerCase().includes(q))});}
@@ -291,6 +329,7 @@ export function createYenoServer(options={}) {
      if(req.method!=='POST')throw new HttpError(404,'Not found');
      const b=await body(req);
      const result=mutation(req,url,b,()=>{
+       if(url.pathname==='/api/bots'){if(!b.requestId)throw new BotError(400,'Persistent requestId required');if(b.action==='start')return startBots(b);if(Object.keys(b).some(k=>!['action','requestId'].includes(k)))throw new BotError(400,'Unknown bot control field');return controlBots(b.action);}
        if(url.pathname==='/api/ecosystem'){
          if(typeof b.enabled!=='boolean'||Object.keys(b).some(key=>!['enabled','requestId'].includes(key))||!b.requestId)throw new HttpError(400,'Provide enabled:boolean and persistent requestId');
          return controlEcosystem(b.enabled);
@@ -311,6 +350,11 @@ export function createYenoServer(options={}) {
        if(url.pathname==='/api/jobs')return {status:201,payload:{job:publicJob(newJob(b))}};
        if(url.pathname==='/api/commands'){
          const text=requiredText(b.text);let match;
+         if(/^봇\s*현황$/.test(text))return {status:201,payload:{kind:'job',job:sourceDocumentJob(null,botDocument(s,profiles),'YENO 봇 현황')}};
+         if(/^모든\s*프로젝트\s*봇\s*시작$/.test(text))return startBots({profile:'primary',includePaused:true});
+         if(/^프로젝트\s*봇\s*시작$/.test(text))return startBots({profile:'primary'});
+         if(/^그록\s*봇\s*시작$/.test(text))return startBots({profile:'grok'});
+         if((match=text.match(/^봇\s*운영\s*(중지|재개)$/)))return controlBots(match[1]==='중지'?'stop':'resume');
          if(/^흡수\s*현황$/.test(text))return {status:201,payload:{kind:'job',job:sourceDocumentJob(null,ecosystemDocument(s),'YENO 흡수 현황')}};
          if((match=text.match(/^흡수\s+(시작|중지)$/)))return controlEcosystem(match[1]==='시작');
          if((match=text.match(/^자율\s+임무\s*[:：]\s*(.+)$/is)))return {status:201,payload:{kind:'job',job:publicJob(newJob({type:'agent',text:match[1]}))}};
@@ -335,27 +379,27 @@ export function createYenoServer(options={}) {
          throw new HttpError(422,'This command is not supported. Use one of the explicit commands.',{examples});
        }
        const actionMatch=url.pathname.match(/^\/api\/jobs\/([a-f0-9-]+)\/action$/);
-       if(actionMatch){const job=s.jobs.find(j=>j.id===actionMatch[1]);if(!job)throw new HttpError(404,'Job not found');if(b.revision!==undefined&&b.revision!==job.version)throw new HttpError(409,'Job changed; refresh before retrying',{job:publicJob(job)});const action=b.action;if(!['pause','resume','cancel'].includes(action))throw new HttpError(400,'Unsupported action');if(['completed','cancelled','failed'].includes(job.status))throw new HttpError(409,'Terminal jobs cannot be changed');if(action==='pause'){if(!['queued','running'].includes(job.status))throw new HttpError(409,'Job is already paused');job.status='paused';job.pauseReason='owner';invalidate(job);}else if(action==='resume'){if(job.status!=='paused')throw new HttpError(409,'Only paused jobs can resume');if(s.emergencyStop)throw new HttpError(409,'Emergency stop is active');requireModule(moduleFor(job.type));job.status='queued';delete job.pauseReason;}else{job.status='cancelled';delete job.draft;invalidate(job);}touch(job);event(`Job ${action}: ${job.title}`);return {status:200,payload:{job:publicJob(job)}};}
+       if(actionMatch){const job=s.jobs.find(j=>j.id===actionMatch[1]);if(!job)throw new HttpError(404,'Job not found');if(b.revision!==undefined&&b.revision!==job.version)throw new HttpError(409,'Job changed; refresh before retrying',{job:publicJob(job)});const action=b.action;if(!['pause','resume','cancel'].includes(action))throw new HttpError(400,'Unsupported action');if(['completed','cancelled','failed'].includes(job.status))throw new HttpError(409,'Terminal jobs cannot be changed');if(action==='pause'){if(!['queued','running'].includes(job.status))throw new HttpError(409,'Job is already paused');job.status='paused';job.pauseReason='owner';invalidate(job);}else if(action==='resume'){if(job.status!=='paused')throw new HttpError(409,'Only paused jobs can resume');if(s.emergencyStop)throw new HttpError(409,'Emergency stop is active');requireModule(moduleFor(job.type));if(job.botAssignment&&botBlockReason(job,s,profiles))throw new BotError(409,'Bot cannot resume: '+botBlockReason(job,s,profiles));job.status='queued';delete job.pauseReason;}else{job.status='cancelled';delete job.draft;invalidate(job);}touch(job);event(`Job ${action}: ${job.title}`);return {status:200,payload:{job:publicJob(job)}};}
        if(url.pathname==='/api/control'){
          if(b.action==='resume'&&b.revision!==undefined&&b.revision!==s.revision)throw new HttpError(409,'Runtime changed; refresh before resuming',{revision:s.revision});
          if(!['stop','resume'].includes(b.action))throw new HttpError(400,'Unsupported control action');s.emergencyStop=b.action==='stop';
-         if(s.emergencyStop){discovery.stop();ecosystem.stop();for(const job of s.jobs)if(['running','queued'].includes(job.status)){job.status='paused';job.pauseReason='emergency';touch(job);invalidate(job);}}
+         if(s.emergencyStop){controlBots('stop');discovery.stop();ecosystem.stop();for(const job of s.jobs)if(['running','queued'].includes(job.status)){job.status='paused';job.pauseReason='emergency';touch(job);invalidate(job);}}
          event(s.emergencyStop?'Emergency stop activated.':'Emergency stop released by owner; paused jobs require individual resume.');return {status:200,payload:state()};
        }
        if(url.pathname==='/api/settings'){
          if(b.concurrency!==undefined&&(!Number.isInteger(b.concurrency)||b.concurrency<1||b.concurrency>3))throw new HttpError(400,'concurrency must be 1, 2, or 3');
-         if(b.modules!==undefined){if(!b.modules||typeof b.modules!=='object'||Array.isArray(b.modules))throw new HttpError(400,'modules must be an object');for(const [name,value]of Object.entries(b.modules)){if(!Object.hasOwn(s.modules,name)||typeof value!=='boolean')throw new HttpError(400,'Unknown module or non-boolean value');if(name==='ai'&&value&&!aiEndpoint&&!agentSettings.ready)throw new HttpError(409,'AI provider is not configured');}}
+         if(b.modules!==undefined){if(!b.modules||typeof b.modules!=='object'||Array.isArray(b.modules))throw new HttpError(400,'modules must be an object');for(const [name,value]of Object.entries(b.modules)){if(!Object.hasOwn(s.modules,name)||typeof value!=='boolean')throw new HttpError(400,'Unknown module or non-boolean value');if(name==='ai'&&value&&!aiEndpoint&&!agentSettings.ready&&!profiles.grok.ready)throw new HttpError(409,'AI provider is not configured');}}
          if(b.concurrency!==undefined)s.concurrency=b.concurrency;if(b.modules)Object.assign(s.modules,b.modules);
          for(const job of s.jobs)if(['running','queued'].includes(job.status)&&!s.modules[moduleFor(job.type)]){job.status='paused';job.pauseReason='moduleDisabled';touch(job);invalidate(job);}
          event('Runtime settings updated.');return {status:200,payload:state()};
        }
        if(url.pathname==='/api/snapshots')return {status:201,payload:{snapshot:publicSnapshot(takeSnapshot(b.label))}};
        const restoreMatch=url.pathname.match(/^\/api\/snapshots\/([a-f0-9-]+)\/restore$/);
-       if(restoreMatch){if(b.confirm!==true)throw new HttpError(400,'Explicit confirm:true is required');const snapshot=s.snapshots.find(x=>x.id===restoreMatch[1]);if(!snapshot)throw new HttpError(404,'Snapshot not found');if(s.jobs.some(j=>['running','queued'].includes(j.status)))throw new HttpError(409,'Pause or stop all active jobs before restoring');const pre=takeSnapshot(`복원 전 자동 저장 — ${snapshot.label}`);s.memories=structuredClone(snapshot.data.memories);s.concurrency=snapshot.data.settings.concurrency;s.modules=structuredClone(snapshot.data.settings.modules);if(!aiEndpoint&&!agentSettings.ready)s.modules.ai=false;event(`Memory/settings restored: ${snapshot.label}. Job and event history preserved.`);return {status:200,payload:{snapshot:publicSnapshot(snapshot),preRestoreSnapshot:publicSnapshot(pre),state:state()}};}
+       if(restoreMatch){if(b.confirm!==true)throw new HttpError(400,'Explicit confirm:true is required');const snapshot=s.snapshots.find(x=>x.id===restoreMatch[1]);if(!snapshot)throw new HttpError(404,'Snapshot not found');if(s.jobs.some(j=>['running','queued'].includes(j.status)))throw new HttpError(409,'Pause or stop all active jobs before restoring');const pre=takeSnapshot(`복원 전 자동 저장 — ${snapshot.label}`);s.memories=structuredClone(snapshot.data.memories);s.concurrency=snapshot.data.settings.concurrency;s.modules=structuredClone(snapshot.data.settings.modules);if(!aiEndpoint&&!agentSettings.ready&&!profiles.grok.ready)s.modules.ai=false;event(`Memory/settings restored: ${snapshot.label}. Job and event history preserved.`);return {status:200,payload:{snapshot:publicSnapshot(snapshot),preRestoreSnapshot:publicSnapshot(pre),state:state()}};}
        throw new HttpError(404,'Not found');
-     },{required:versioned,safetyAction:(url.pathname==='/api/control'&&b.action==='stop')||(['/api/discovery','/api/ecosystem'].includes(url.pathname)&&b.enabled===false)});
+     },{required:versioned,safetyAction:(url.pathname==='/api/bots'&&b.action==='stop')||(url.pathname==='/api/commands'&&/^봇\s*운영\s*중지$/.test(b.text??''))||(url.pathname==='/api/control'&&b.action==='stop')||(['/api/discovery','/api/ecosystem'].includes(url.pathname)&&b.enabled===false)});
      respond(res,result.status,result.payload);
-   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError||error instanceof RequestLedgerError;respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
+   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof BotError||error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError||error instanceof RequestLedgerError;respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
  });
  server.requestTimeout=15000;server.headersTimeout=10000;
  function shutdown(){if(closed)return;closed=true;discovery.close();ecosystem.close();clearTimeout(schedulerTimer);for(const job of s.jobs)if(['running','queued'].includes(job.status)){job.status='paused';job.pauseReason='shutdown';touch(job);}for(const controller of controllers.values())controller.abort();event('Runtime stopped; unfinished jobs paused.');try{save();}finally{releaseLock();server.close();}}

@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import {publicJob} from './job-view.mjs';
 
 export const REQUEST_LEDGER_MAX_ENTRIES = 20000;
 export const REQUEST_CACHE_MAX_ENTRIES = 2000;
@@ -130,8 +131,7 @@ function currentPayload(state, reference) {
   if (!item || item.id !== reference.id) return null;
   let value;
   if (reference.collection === 'jobs') {
-    const { input, normalized, draft, ...publicJob } = item;
-    value = publicJob;
+    value = publicJob(item);
   } else if (reference.collection === 'devices') {
     const { id, name, platform, createdAt } = item;
     value = { id, name, platform, createdAt };
@@ -145,7 +145,7 @@ export function findReceipt(state, id, hash) {
   const cached = record(state.requests) && own(state.requests, id) ? state.requests[id] : null;
   if (!entry && !cached) return null;
   if ((entry && entry.hash !== hash) || (cached && cached.hash !== hash)) throw new RequestLedgerError(409, 'requestId was already used for a different request');
-  if (cached) return structuredClone({ status: cached.status, payload: cached.payload });
+  if (cached) {const payload=structuredClone(cached.payload);if(payload.job)payload.job=publicJob(payload.job);if(Array.isArray(payload.jobs))payload.jobs=payload.jobs.map(publicJob);return {status:cached.status,payload};}
   const payload = currentPayload(state, entry.reference);
   if (payload) return { status: entry.status, payload };
   throw new RequestLedgerError(410, 'This request was already accepted, but its response is no longer available. Do not submit it under a new requestId without checking its outcome.', {
