@@ -1,3 +1,7 @@
+> 2026-09-10 최신: 봇 코어 배포 및 임무20개 접수 완료. 전부 키 연결 대기이며 실제 모델 호출0. 상세는 STATUS/LIVE_ACCEPTANCE와 PROJECT_BOTS_DEPLOYMENT_EVIDENCE_20260910.json을 따른다.
+>
+> NVIDIA 무료 시험은 현재 확인한 Technology Access Terms 6/7절과 계정별 Product Agreement/한도를 먼저 확인한다. 별도 허용이 없는 기밀·개인정보를 보내지 않으며 첫 호출은 공개/합성 자료로 제한한다. 키 연결 직후 모든 프로젝트를 일괄 재개하지 않는다. 약관 동의와 보안 로그인·키 발급·Secret 연결은 아직 미완료다.
+
 # 프로젝트 봇 — 2026-09-10
 
 ## 실제 구현 범위
