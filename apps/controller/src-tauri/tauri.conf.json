@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "YENO",
+  "productName": "BLACKHOLE",
   "version": "0.1.0",
   "identifier": "kr.yeno.controller",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "YENO",
+        "title": "BLACKHOLE",
         "width": 430,
         "height": 820,
         "resizable": true

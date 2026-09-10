@@ -1,3 +1,7 @@
+# 블랙홀(BLACKHOLE) — 새 제품명
+
+소유자가 YENO OS의 이름을 블랙홀로 변경했다. [정체성과 기존 프로젝트 계보](docs/BLACKHOLE_IDENTITY.md)를 기준으로 이어간다. 원본 49개 항목은 유지하며 스마트글래스 SNS는 A02 여기(Yeogie)에 속한다. 실제 배포·APK 확인은 [STATUS](docs/STATUS.md)를 따른다.
+
 # 새 명령: 프로젝트 봇과 봇 현황
 
 `프로젝트 봇 시작`, `봇 운영 중지`, `봇 운영 재개`, `봇 현황`을 추가했다. 키가 없으면 프로젝트별 배정은 연결 대기로 남는다. 실제 산출물 생성과 무인 코딩을 구분하며 [PROJECT_BOTS](docs/PROJECT_BOTS.md), [현재 운영 상태](docs/STATUS.md)를 따른다.

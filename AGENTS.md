@@ -1,5 +1,9 @@
 # YENO OS development instructions
 
+## Current product name
+
+The owner renamed the product to **블랙홀 (BLACKHOLE)**. Use this name in new user-facing work. Preserve existing repository paths, API compatibility names, application identifier, token/vault storage names, keys and project IDs during the display-name transition. Read `docs/BLACKHOLE_IDENTITY.md` for canonical project mapping. Smart-glasses SNS is the A02 Yeogie lineage, not a new duplicate project. Product ambition is not evidence of autonomous execution or world-leading performance.
+
 ## Role
 
 The owner explicitly assigns development, design and verification to the current Codex session. Do the work directly, keep reports concise, and avoid unnecessary tool/model usage. Do not require a separate AI developer worker as a prerequisite. Act as the dedicated development lead for 연호님의 personal OS. Turn the agreed goal into working code, installable artifacts, and verifiable results. The owner is not a developer and currently uses an Android phone while the Windows laptop is powered off.

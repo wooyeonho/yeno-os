@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#111719">
-  <title>YENO · 개인 조종석</title>
+  <title>블랙홀 · 개인 조종석</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
 </head>
 <body>
   <div class="shell">
     <aside class="sidebar">
-      <a class="brand" href="/" aria-label="YENO 조종석"><span class="brand-icon">Y</span><span>YENO<small>PERSONAL RUNTIME</small></span></a>
+      <a class="brand" href="/" aria-label="BLACKHOLE 조종석"><span class="brand-icon">●</span><span>BLACKHOLE<small>PERSONAL RUNTIME</small></span></a>
       <nav aria-label="주 메뉴">
         <button class="nav active" data-tab="control"><span>⌘</span> 조종석</button>
         <button class="nav" data-tab="projects"><span>▤</span> 프로젝트 <span id="project-count" class="count">—</span></button>
@@ -27,8 +27,8 @@
       <div id="offline-banner" class="banner" hidden>본체의 최신 상태를 확인하지 못했습니다. 명령 완료 여부를 확인해 주세요. <button id="reconnect" class="text-button">다시 연결</button></div>
       <section id="tab-control" class="tab-panel">
         <section class="core-panel">
-          <div class="core-heading"><div class="core-signal" id="core-signal" aria-hidden="true"><span></span></div><div><span class="eyebrow">YENO CORE</span><h2 id="core-title">연결을 기다리고 있어요.</h2><p id="core-subtitle">실행 본체의 개인 연결 키로 조종석을 열어주세요.</p></div></div>
-          <form id="command-form"><label for="command">무엇을 할까요?</label><textarea id="command" rows="3" placeholder="기억해: YENO는 내가 폰에서 조종하는 개인 도구다." maxlength="80000" required></textarea><div class="command-footer"><select id="command-type" aria-label="작업 종류"><option value="command">기본 명령</option><option value="document">입력 내용 문서화</option><option value="ai">AI 작성 · 연결 필요</option></select><span id="ai-label" class="muted">AI 연결 확인 전</span><button id="send-command" class="button primary" type="submit" disabled>실행 <span>↗</span></button></div></form>
+          <div class="core-heading"><div class="core-signal" id="core-signal" aria-hidden="true"><span></span></div><div><span class="eyebrow">BLACKHOLE CORE</span><h2 id="core-title">연결을 기다리고 있어요.</h2><p id="core-subtitle">실행 본체의 개인 연결 키로 조종석을 열어주세요.</p></div></div>
+          <form id="command-form"><label for="command">무엇을 할까요?</label><textarea id="command" rows="3" placeholder="기억해: BLACKHOLE는 내가 폰에서 조종하는 개인 도구다." maxlength="80000" required></textarea><div class="command-footer"><select id="command-type" aria-label="작업 종류"><option value="command">기본 명령</option><option value="document">입력 내용 문서화</option><option value="ai">AI 작성 · 연결 필요</option></select><span id="ai-label" class="muted">AI 연결 확인 전</span><button id="send-command" class="button primary" type="submit" disabled>실행 <span>↗</span></button></div></form>
           <div class="quick-actions"><button data-example="기억해: ">기억해</button><button data-example="찾아줘: ">기억 찾기</button><button data-example="문서 만들어: ">문서 만들기</button><button data-quick="diagnostics">본체 진단</button><button data-quick="evolution">개선점 찾기</button></div>
           <div id="command-result" class="command-result" aria-live="polite" hidden></div>
         </section>
@@ -54,7 +54,7 @@
       <section id="tab-settings" class="tab-panel" hidden><div class="section-heading"><h2>능력과 실행 규모</h2></div><div class="panel"><div class="setting-row"><div><h3>동시에 일하는 수</h3><p>처음에는 1개로 시작하세요. 줄이면 새 작업 배정부터 줄어듭니다.</p></div><select id="concurrency" aria-label="동시에 일하는 수"><option value="1">1개</option><option value="2">2개</option><option value="3">3개</option></select></div><div id="module-settings"></div></div><div class="panel"><h3>본체 연결</h3><p id="runtime-info" class="muted">연결 전</p><button id="disconnect-mobile" class="button subtle">이 기기 연결 해제</button><p class="muted">이 조종석을 제공하는 실행 본체에 연결합니다. 상주 서버를 사용하면 노트북이 꺼져 있어도 서버에 맡긴 작업을 확인할 수 있습니다.</p></div><div class="panel"><h3>현재 가능한 작업</h3><p>프로젝트 관리·브리핑·작업 준비 문서, 기억 저장·검색, 제공한 내용의 문서화, 본체 진단, 실행 이력 기반 개선 제안. 외부 AI를 설정하면 AI 작성 작업을 직접 실행할 수 있습니다.</p><p class="muted">자유로운 PC 앱 조작·음성·운영 코드 자동 개선은 아직 연결하지 않았습니다.</p></div></section>
     </main>
   </div>
-  <div id="pair-screen" class="pair-screen"><form id="pair-form" class="pair-card"><div class="brand"><span class="brand-icon">Y</span><span>YENO<small>YOUR PERSONAL RUNTIME</small></span></div><h2>본체와 연결하세요.</h2><p>이 YENO 실행 본체의 개인 연결 키를 입력하세요. 상주 서버에 연결할 때는 노트북을 켤 필요가 없습니다.</p><label for="pair-token">연결 키</label><input id="pair-token" type="password" autocomplete="off" required placeholder="전달받은 개인 연결 키"><p id="pair-error" class="form-error" role="alert"></p><button class="button primary" type="submit">조종석 열기</button><small>키는 현재 브라우저 탭에 보관됩니다.</small></form></div>
+  <div id="pair-screen" class="pair-screen"><form id="pair-form" class="pair-card"><div class="brand"><span class="brand-icon">●</span><span>BLACKHOLE<small>YOUR PERSONAL RUNTIME</small></span></div><h2>본체와 연결하세요.</h2><p>이 BLACKHOLE 실행 본체의 개인 연결 키를 입력하세요. 상주 서버에 연결할 때는 노트북을 켤 필요가 없습니다.</p><label for="pair-token">연결 키</label><input id="pair-token" type="password" autocomplete="off" required placeholder="전달받은 개인 연결 키"><p id="pair-error" class="form-error" role="alert"></p><button class="button primary" type="submit">조종석 열기</button><small>키는 현재 브라우저 탭에 보관됩니다.</small></form></div>
   <dialog id="project-dialog" aria-labelledby="project-form-title">
     <form id="project-form">
       <div class="dialog-top"><h2 id="project-form-title">프로젝트 추가</h2><button type="button" class="button subtle" data-close="project-dialog">닫기</button></div>
@@ -63,8 +63,8 @@
         <label for="project-repository">GitHub 저장소 주소 · 선택<input id="project-repository" type="url" maxlength="220" placeholder="https://github.com/계정/저장소"></label>
         <label for="project-summary">목표와 현재 상황<textarea id="project-summary" rows="3" maxlength="8000" placeholder="무엇을 만들고 있고, 어디까지 진행했나요?"></textarea></label>
         <label for="project-next-action">다음 작업<textarea id="project-next-action" rows="2" maxlength="4000" placeholder="다음에 이어서 할 구체적인 작업을 적어주세요."></textarea></label>
-        <label for="project-status">YENO에서 관리할 상태<select id="project-status" aria-describedby="project-status-note"><option value="active">진행</option><option value="paused">보류</option><option value="archived">보관</option></select></label>
-        <p id="project-status-note" class="muted">보류·보관은 YENO의 프로젝트 관리 상태입니다. 기존 서버·구독이나 실행 중인 작업을 중지하지 않습니다.</p>
+        <label for="project-status">BLACKHOLE에서 관리할 상태<select id="project-status" aria-describedby="project-status-note"><option value="active">진행</option><option value="paused">보류</option><option value="archived">보관</option></select></label>
+        <p id="project-status-note" class="muted">보류·보관은 BLACKHOLE의 프로젝트 관리 상태입니다. 기존 서버·구독이나 실행 중인 작업을 중지하지 않습니다.</p>
       </div>
       <p id="project-form-error" class="form-error" role="alert"></p>
       <div class="dialog-actions"><button id="reload-project" type="button" class="button subtle" hidden>입력 대신 최신 내용 불러오기</button><button id="save-project" type="submit" class="button primary">프로젝트 저장</button></div>
@@ -80,7 +80,7 @@
         <label for="source-project">연결할 프로젝트<select id="source-project"><option value="">연결하지 않음</option></select></label>
         <div class="source-status-fields"><label for="source-reading-status">실제로 읽은 범위<select id="source-reading-status"><option value="unread">아직 읽지 않음</option><option value="partial">일부 확인</option><option value="read">본문 확인</option><option value="unavailable">접근 불가</option></select></label><label for="source-decision">적용 판단<select id="source-decision" aria-describedby="source-candidate-note"><option value="pending">검토 대기</option><option value="candidate">개선 후보</option><option value="deferred">보류</option><option value="rejected">적용 제외</option></select></label></div>
         <label for="source-summary">확인한 내용과 범위<textarea id="source-summary" rows="3" maxlength="8000" placeholder="직접 확인한 내용, 일부만 읽었거나 접근하지 못한 이유를 기록해 주세요."></textarea></label>
-        <label for="source-application">YENO에 응용할 방법<textarea id="source-application" rows="3" maxlength="8000" placeholder="해결할 문제, 우리 프로젝트에 적용할 방법, 완료 여부를 확인할 기준"></textarea></label>
+        <label for="source-application">BLACKHOLE에 응용할 방법<textarea id="source-application" rows="3" maxlength="8000" placeholder="해결할 문제, 우리 프로젝트에 적용할 방법, 완료 여부를 확인할 기준"></textarea></label>
         <label for="source-risk-notes">권리·개인정보·이용조건 확인<textarea id="source-risk-notes" rows="2" maxlength="4000" placeholder="실제 확인한 조건이나 아직 확인해야 할 쟁점을 적어주세요."></textarea></label>
         <p id="source-candidate-note" class="muted">개선 후보로 저장하려면 본문을 확인하고 위 세 항목을 채워야 합니다. 이 기록은 기능 구현이나 법적 문제 없음의 인증이 아닙니다.</p>
       </div>
@@ -93,7 +93,7 @@
       <div class="dialog-top"><h2 id="source-import-title">자료 목록 가져오기</h2><button type="button" class="button subtle" data-close="source-import-dialog">닫기</button></div>
       <p>자료 목록 JSON 배열을 선택한 뒤 내용을 확인하고 등록하세요. 한 파일에 최대 100개·240 KiB까지 받습니다. 더 큰 목록은 파일을 나눠 주세요.</p>
       <label for="source-import-file" class="search-label">자료 목록 JSON<input id="source-import-file" type="file" accept=".json,application/json" required></label>
-      <p class="muted">각 항목에는 url과 title이 필요합니다. 선택 항목: projectId, readingStatus, decision, summary, application, riskNotes. 프로젝트 연결에는 YENO 프로젝트 ID를 사용합니다.</p>
+      <p class="muted">각 항목에는 url과 title이 필요합니다. 선택 항목: projectId, readingStatus, decision, summary, application, riskNotes. 프로젝트 연결에는 BLACKHOLE 프로젝트 ID를 사용합니다.</p>
       <div id="source-import-preview" class="source-import-preview" aria-live="polite" hidden></div>
       <p class="muted">등록은 목록 전체를 함께 처리합니다. 기존 주소와 내용이 모두 같은 항목은 재사용하고, 내용이 충돌하면 아무 항목도 추가하지 않습니다. 링크의 본문은 가져오지 않습니다.</p>
       <p id="source-import-error" class="form-error" role="alert"></p>
