@@ -5,6 +5,7 @@ import { acquireRuntimeLock, digest } from './store.mjs';
 import { validateProjectRegistry } from './projects.mjs';
 import { validateSourceRegistry } from './sources.mjs';
 import { validateRequestLedger } from './request-ledger.mjs';
+import { validateDiscovery } from './discovery.mjs';
 
 export const BACKUP_MAX_PLAINTEXT_BYTES = 16 * 1024 * 1024;
 export const BACKUP_MAX_ARCHIVE_BYTES = BACKUP_MAX_PLAINTEXT_BYTES + 36;
@@ -38,8 +39,9 @@ function memories(value) {
   }
 }
 function validateState(state) {
-  keys(state, [...STATE_KEYS, 'requestLedger'], STATE_KEYS);
+  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery'], STATE_KEYS);
   validateRequestLedger(state);
+  if (Object.hasOwn(state, 'discovery')) validateDiscovery(state.discovery);
   if (!integer(state.revision, 0, Number.MAX_SAFE_INTEGER - 1) || typeof state.emergencyStop !== 'boolean' || !integer(state.concurrency, 1, 3)) fail('invalid runtime settings');
   modules(state.modules); memories(state.memories);
   validateProjectRegistry(state.projects); validateSourceRegistry(state.sources, state.projects);
@@ -211,6 +213,10 @@ export function restoreBackup({ archive, key, targetDir }) {
   const state = payload.state, restoredAt = new Date().toISOString();
   let pausedJobCount = 0, revokedDeviceCount = 0;
   state.emergencyStop = true; state.modules.ai = false; state.revision++;
+  if (state.discovery) {
+    state.discovery.enabled = false;
+    if (state.discovery.lastRun?.status === 'running') { state.discovery.lastRun.status = 'interrupted'; state.discovery.lastRun.finishedAt = restoredAt; }
+  }
   for (const job of state.jobs) if (['queued', 'running'].includes(job.status)) {
     job.status = 'paused'; job.pauseReason = 'backupRestore'; job.updatedAt = restoredAt; job.version++; pausedJobCount++;
   }

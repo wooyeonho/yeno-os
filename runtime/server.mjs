@@ -12,6 +12,7 @@ import {operatingBriefDocument} from './lib/operations.mjs';
 import {exportBackup} from './lib/backup.mjs';
 import {DeviceAdminError,publicDevices,revokeDevice} from './lib/device-admin.mjs';
 import {RequestLedgerError,validateRequestId,fingerprintRequest,findReceipt,checkCapacity,rememberReceipt,lookupRequest,REQUEST_LEDGER_MAX_ENTRIES,REQUEST_CACHE_MAX_BYTES} from './lib/request-ledger.mjs';
+import {createDiscovery,discoveryDocument,DISCOVERY_REPOS} from './lib/discovery.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const VERSION='0.2.2';
@@ -48,7 +49,7 @@ export function createYenoServer(options={}) {
  if(store.recovered)event('State recovered from the verified previous backup.');
  if(!aiEndpoint)s.modules.ai=false;
  event('YENO runtime started.');store.save();
- function state(){return {name:'YENO OS',version:VERSION,apiVersion:API_VERSION,requestTracking:{retained:Object.keys(s.requestLedger).length,capacity:REQUEST_LEDGER_MAX_ENTRIES,cached:Object.keys(s.requests).length,cacheMaxBytes:REQUEST_CACHE_MAX_BYTES},revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint,model:aiEndpoint?aiModel:null},jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,capabilities:{localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,developerWorker:false,diagnostics:true,evolution:'proposals-only',ai:!!aiEndpoint,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
+ function state(){return {name:'YENO OS',version:VERSION,apiVersion:API_VERSION,requestTracking:{retained:Object.keys(s.requestLedger).length,capacity:REQUEST_LEDGER_MAX_ENTRIES,cached:Object.keys(s.requests).length,cacheMaxBytes:REQUEST_CACHE_MAX_BYTES},revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint,model:aiEndpoint?aiModel:null},discovery:{...s.discovery,repositories:DISCOVERY_REPOS},jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,capabilities:{localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,scheduledSourceDiscovery:true,developerWorker:false,diagnostics:true,evolution:'proposals-only',ai:!!aiEndpoint,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
  // A failed filesystem write leaves its outcome uncertain. Retain its request
  // identity in memory, but never acknowledge a cached receipt or expose that
  // state through the API until the complete state has been persisted again.
@@ -56,6 +57,8 @@ export function createYenoServer(options={}) {
  let persistencePending=false;
  const save=()=>{persistencePending=true;store.save();persistencePending=false;};
  const ensureDurable=()=>{if(persistencePending)save();};
+ const discovery=createDiscovery({state:s,save,event,ensureDurable,fetchImpl:options.discoveryFetch});
+ function controlDiscovery(enabled){if(enabled&&s.emergencyStop)throw new HttpError(409,'Release emergency stop before enabling source discovery');discovery.setEnabled(enabled);event(`Official source discovery ${enabled?'enabled':'disabled'}; no model or coding execution.`);return {status:200,payload:{discovery:structuredClone(s.discovery)}};}
  const touch=job=>{job.updatedAt=now();job.version++;};
  const moduleFor=type=>type==='document'?'documents':type==='ai'?'ai':'diagnostics';
  function requireModule(name){if(!s.modules[name])throw new HttpError(409,`${name} module is disabled`);}
@@ -86,6 +89,7 @@ export function createYenoServer(options={}) {
  function active(){return s.jobs.filter(j=>j.status==='running').length;}
  function schedule(){if(closed||schedulerTimer)return;schedulerTimer=setTimeout(tick,150);schedulerTimer.unref();}
  function tick(){schedulerTimer=null;if(closed)return;
+   void discovery.tick();
    if(!s.emergencyStop){for(const job of s.jobs.slice().reverse()){if(active()>=s.concurrency)break;if(job.status==='queued'){if(!s.modules[moduleFor(job.type)]){job.status='paused';job.pauseReason='moduleDisabled';touch(job);save();continue;}job.status='running';delete job.pauseReason;touch(job);save();const generation=(generations.get(job.id)??0)+1;generations.set(job.id,generation);runStep(job,generation);}}}
    schedule();
  }
@@ -265,6 +269,11 @@ export function createYenoServer(options={}) {
      if(req.method!=='POST')throw new HttpError(404,'Not found');
      const b=await body(req);
      const result=mutation(req,url,b,()=>{
+       if(url.pathname==='/api/discovery'){
+         if(typeof b.enabled!=='boolean'||Object.keys(b).some(key=>!['enabled','requestId'].includes(key)))throw new HttpError(400,'Provide enabled:boolean and requestId only');
+         if(!b.requestId)throw new HttpError(400,'Persistent requestId required');
+         return controlDiscovery(b.enabled);
+       }
        if(url.pathname==='/api/memory')return {status:201,payload:{memory:addMemory(b)}};
        if(url.pathname==='/api/projects')return {status:201,payload:{project:addProject(b)}};
        const projectUpdate=url.pathname.match(/^\/api\/projects\/([a-f0-9-]+)\/update$/);
@@ -276,6 +285,8 @@ export function createYenoServer(options={}) {
        if(url.pathname==='/api/jobs')return {status:201,payload:{job:publicJob(newJob(b))}};
        if(url.pathname==='/api/commands'){
          const text=requiredText(b.text);let match;
+         if(/^자율\s*점검$/i.test(text))return {status:201,payload:{kind:'job',job:sourceDocumentJob(null,discoveryDocument(s.discovery),'YENO 자율 점검')}};
+         if((match=text.match(/^자료\s+자동수집\s+(시작|중지)$/))){const result=controlDiscovery(match[1]==='시작');return {...result,payload:{kind:'discovery',...result.payload}};}
          if(/^운영\s+(?:브리핑|현황)$/i.test(text)){
            const report=operatingBriefDocument({projects:s.projects,jobs:s.jobs,sources:s.sources,memories:s.memories,emergencyStop:s.emergencyStop,aiConfigured:!!aiEndpoint,developerWorker:false,generatedAt:now()});
            const job=newJob({type:'document',text:report,title:'YENO 운영 브리핑'});job.operatingReport=true;
@@ -299,7 +310,7 @@ export function createYenoServer(options={}) {
        if(url.pathname==='/api/control'){
          if(b.action==='resume'&&b.revision!==undefined&&b.revision!==s.revision)throw new HttpError(409,'Runtime changed; refresh before resuming',{revision:s.revision});
          if(!['stop','resume'].includes(b.action))throw new HttpError(400,'Unsupported control action');s.emergencyStop=b.action==='stop';
-         if(s.emergencyStop){for(const job of s.jobs)if(['running','queued'].includes(job.status)){job.status='paused';job.pauseReason='emergency';touch(job);invalidate(job);}}
+         if(s.emergencyStop){discovery.stop();for(const job of s.jobs)if(['running','queued'].includes(job.status)){job.status='paused';job.pauseReason='emergency';touch(job);invalidate(job);}}
          event(s.emergencyStop?'Emergency stop activated.':'Emergency stop released by owner; paused jobs require individual resume.');return {status:200,payload:state()};
        }
        if(url.pathname==='/api/settings'){
@@ -313,12 +324,12 @@ export function createYenoServer(options={}) {
        const restoreMatch=url.pathname.match(/^\/api\/snapshots\/([a-f0-9-]+)\/restore$/);
        if(restoreMatch){if(b.confirm!==true)throw new HttpError(400,'Explicit confirm:true is required');const snapshot=s.snapshots.find(x=>x.id===restoreMatch[1]);if(!snapshot)throw new HttpError(404,'Snapshot not found');if(s.jobs.some(j=>['running','queued'].includes(j.status)))throw new HttpError(409,'Pause or stop all active jobs before restoring');const pre=takeSnapshot(`복원 전 자동 저장 — ${snapshot.label}`);s.memories=structuredClone(snapshot.data.memories);s.concurrency=snapshot.data.settings.concurrency;s.modules=structuredClone(snapshot.data.settings.modules);if(!aiEndpoint)s.modules.ai=false;event(`Memory/settings restored: ${snapshot.label}. Job and event history preserved.`);return {status:200,payload:{snapshot:publicSnapshot(snapshot),preRestoreSnapshot:publicSnapshot(pre),state:state()}};}
        throw new HttpError(404,'Not found');
-     },{required:versioned,safetyAction:url.pathname==='/api/control'&&b.action==='stop'});
+     },{required:versioned,safetyAction:(url.pathname==='/api/control'&&b.action==='stop')||(url.pathname==='/api/discovery'&&b.enabled===false)});
      respond(res,result.status,result.payload);
    }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError||error instanceof RequestLedgerError;respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
  });
  server.requestTimeout=15000;server.headersTimeout=10000;
- function shutdown(){if(closed)return;closed=true;clearTimeout(schedulerTimer);for(const job of s.jobs)if(['running','queued'].includes(job.status)){job.status='paused';job.pauseReason='shutdown';touch(job);}for(const controller of controllers.values())controller.abort();event('Runtime stopped; unfinished jobs paused.');try{save();}finally{releaseLock();server.close();}}
+ function shutdown(){if(closed)return;closed=true;discovery.close();clearTimeout(schedulerTimer);for(const job of s.jobs)if(['running','queued'].includes(job.status)){job.status='paused';job.pauseReason='shutdown';touch(job);}for(const controller of controllers.values())controller.abort();event('Runtime stopped; unfinished jobs paused.');try{save();}finally{releaseLock();server.close();}}
  schedule();
  return {server,state,token,dataDir,shutdown};
 }
