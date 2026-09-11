@@ -1,0 +1,66 @@
+{
+  "checkedAt": "2026-09-11T03:42:29.220530+00:00",
+  "implementationCommit": "4153fc1ebe4672f7a06775d4e99032fb9daf282e",
+  "tests": {
+    "runtime": "Node 24.19.0",
+    "total": 158,
+    "passed": 158,
+    "failed": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "durationMs": 18151.617681,
+    "worldFeedInTests": "controlled fixtures; not a live Koyeb USGS fetch"
+  },
+  "deployment": {
+    "status": "blocked_by_automatic_approval_review",
+    "action": "Existing Koyeb yeno-core Redeploy UI",
+    "reason": "Automatic review applied the earlier scheduled-research prohibition on public deployment and required new user approval. Same UI action remained rejected after checking subsequent direct development authorization. No alternate deployment path used.",
+    "activeSource": "5150b79f683e8c4f266a6109b85979d48d494cbe",
+    "activeDeployment": "4ca020ad-8adb-4d46-9261-4b22f2b21c3c",
+    "candidateBranches": [
+      "codex",
+      "yeno-koyeb-pilot"
+    ],
+    "autoDeploy": false
+  },
+  "liveReadback": {
+    "httpStatus": 200,
+    "revision": 207,
+    "counts": {
+      "sources": 101,
+      "projects": 69,
+      "jobs": 39,
+      "memories": 0,
+      "snapshots": 0
+    },
+    "unchangedAfterIntake": {
+      "sources": true,
+      "projects": true,
+      "jobs": true,
+      "memories": true,
+      "snapshots": true
+    },
+    "worldCapabilityPresent": false,
+    "newWorldOrAbsorptionCommandsSent": 0
+  },
+  "intake": {
+    "created": 5,
+    "sourcesBefore": 96,
+    "sourcesAfter": 101,
+    "sourceDestinationProposalCounts": {
+      "sharedFeature": 35,
+      "existingProject": 26,
+      "newProjectReview": 3,
+      "unclassified": 37
+    },
+    "newProjectsCreated": 0
+  },
+  "notVerified": [
+    "candidate deployment",
+    "live Koyeb USGS fetch and result",
+    "web UI interaction",
+    "Android physical command/result/reopen",
+    "new APK or EXE"
+  ],
+  "nextAction": "After owner approves the concrete existing-service deployment: same Koyeb Redeploy → Trigger build, then verify new source/health/assets, world and absorption command results, and preserved state."
+}
