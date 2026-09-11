@@ -1,0 +1,29 @@
+{
+  "verifiedAt": "2026-09-11T23:00:36.684543+00:00",
+  "implementationCommit": "2b14d03f53cd1d03234c789e2cedf895be9546e3",
+  "deploymentId": "ec5c4ece-51d1-4bb0-9c4d-7cd9ad5be272",
+  "scope": "authenticated HTTPS API, not Android device or real model",
+  "priorDataPreserved": true,
+  "projects": 70,
+  "sources": 108,
+  "revision": 260,
+  "sameRequestSameJob": true,
+  "jobId": "5073aac7-e385-47da-8df1-e7f22efcb428",
+  "artifactId": "84848996-d0e7-4c2f-8b7c-330edbd29af2",
+  "artifactSha256": "4a944675a4cb3199fb180ff4152546ca17b37331e91573445f2929a5f60b756b",
+  "providerConfigured": false,
+  "newModelCalls": 0,
+  "testsPassed": 172,
+  "testsFailed": 0,
+  "deploymentStatus": "Healthy / Active, prior deployment stopped",
+  "verificationCorrection": "Public job artifact references do not include sha256; verified downloaded bytes against server X-Content-SHA256 without creating a second job.",
+  "sourceReview": {
+    "revision": 262,
+    "sources": 110,
+    "updatedPonytail": 1,
+    "addedCavemanCandidate": 1,
+    "addedGrokBotDeferred": 1,
+    "otherRecordsPreserved": true,
+    "sameUpdateRequestRetriedAfterTimeout": true
+  }
+}
