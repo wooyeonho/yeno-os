@@ -1,0 +1,113 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'"><title>한끼안부 · BLACKHOLE</title><style>
+:root{font-family:system-ui,'Noto Sans KR',sans-serif;color:#183a32;background:#f4f3ed;line-height:1.6;color-scheme:light}*{box-sizing:border-box}body{margin:0}main{max-width:620px;margin:auto;padding:24px 20px 60px}header{display:flex;justify-content:space-between;align-items:center;font-size:12px;letter-spacing:.18em;font-weight:800}.badge{letter-spacing:0;background:#e2ece5;border-radius:20px;padding:5px 12px}h1{font-size:38px;letter-spacing:-.07em;line-height:1.25;margin:35px 0 12px}h2{font-size:20px;margin:0 0 14px}p{margin:10px 0}.muted{color:#59675f;font-size:15px}.card{padding:24px;border:1px solid #d8ded3;background:#fffef8;border-radius:24px;margin:22px 0;box-shadow:0 6px 25px #1a403209}button{font:inherit;font-weight:750;border:0;border-radius:15px;padding:16px 18px;cursor:pointer;min-height:56px;touch-action:manipulation;background:#e5ece2;color:#153e31}button.primary{background:#194d3c;color:white;width:100%;font-size:22px}button:disabled{opacity:.5;cursor:not-allowed}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #975e15;outline-offset:3px}.row{display:flex;gap:10px;flex-wrap:wrap}.row button{flex:1}.meal{font-size:64px;line-height:1;text-align:center;margin:14px}.state{text-align:center;font-size:25px;font-weight:800;margin:20px 0 8px}.time{text-align:center;margin-bottom:20px;font-size:14px;color:#5b695e}label{display:block;margin:12px 0}input,select{width:100%;padding:12px;border:1px solid #bdc8bd;border-radius:10px;font:inherit;background:white}input[type=checkbox]{width:auto;margin-right:9px}ul{list-style:none;padding:0}li{padding:14px 0;border-bottom:1px solid #e0e4dc}li p{font-size:14px;color:#59675f;margin:4px 0}details{margin:22px 0}summary{cursor:pointer;font-weight:700;padding:10px 0}.message{background:#fff0cf;padding:12px 16px;border-radius:12px;margin:16px 0;white-space:pre-wrap}.message:empty{display:none}.quiet{font-size:13px;color:#667268}footer{margin-top:36px;font-size:13px;color:#667268}#create{margin-top:12px}.hidden{display:none!important}@media(max-width:360px){main{padding:18px 14px}.card{padding:18px}h1{font-size:32px}.row{flex-direction:column}}
+</style></head><body><main><header><span>BLACKHOLE / A03</span><span class="badge" id="badge">내 기기 기록</span></header><h1>오늘, 한 끼<br>잘 챙기셨나요?</h1><p class="muted">짧은 대답 하나로 남기는 나의 안부.</p><p class="quiet">첫 실행본 · 이 브라우저에만 저장됩니다. 가족 공유·알림·AI는 아직 연결되지 않았습니다.</p><div id="message" role="status" aria-live="polite" class="message"></div><section class="card" aria-label="식사 확인"><div class="meal" aria-hidden="true">🍚</div><div class="state" id="state">아직 요청이 없어요</div><div class="time" id="due">내 기록으로 먼저 사용해 보세요.</div><div class="row hidden" id="answers"><button class="primary" id="ate">먹었어요</button><button id="notYet">아직이에요</button></div><button class="hidden" id="cancel" style="width:100%;margin-top:12px">요청 취소</button><label id="consentLabel"><input type="checkbox" id="consent">내 식사 응답을 이 브라우저에 저장합니다.</label><button class="primary" id="create">새 식사 확인</button><p class="quiet">새 요청의 응답 기한은 4시간입니다. 미응답은 건강 이상을 뜻하지 않습니다.</p></section><div class="row"><button id="stop">전체 일시정지</button><button id="resume">다시 시작</button></div><section class="card"><h2>남겨 둔 안부</h2><ul id="history"></ul></section><details><summary>시간 표시와 기록 백업</summary><label for="zone">시간대</label><select id="zone"><option value="Asia/Seoul">서울</option><option value="America/New_York">뉴욕</option><option value="America/Los_Angeles">미국 서부</option><option value="UTC">UTC</option></select><p class="quiet">표시만 바뀝니다. 응답 기한은 같은 시각입니다.</p><label for="password">백업 암호 (12자 이상)</label><input id="password" type="password" minlength="12" maxlength="256" autocomplete="new-password"><p class="quiet">백업 파일은 암호화합니다. 브라우저 내부 기록은 암호화하지 않으므로 공유 기기에서는 사용하지 마세요. 암호를 잃으면 백업을 복원할 수 없습니다.</p><button id="backup" style="width:100%">암호화 백업 받기</button><label for="restoreFile">복원할 백업 파일</label><input id="restoreFile" type="file" accept=".json,application/json"><label><input type="checkbox" id="replaceConsent">현재 기록을 선택한 백업으로 교체합니다.</label><button id="restore" style="width:100%">백업 복원 · 일시정지로 시작</button><p class="quiet">복원은 전체 기록을 교체합니다. 먼저 현재 기록의 백업을 받아 두세요. 복원 후 자동 응답이나 발송은 없습니다.</p></details><footer>연호님의 기존 프로젝트 A03 한끼안부.<br>연락처·위치 수집과 외부 전송 없이 동작합니다.</footer></main><script>
+// A03 한끼안부: local prototype; no messages, location, contacts, or medical inference.
+function initialState(){return {schema:1,revision:0,stopped:false,requests:[],receipts:[]};}
+const instant=v=>typeof v==='string'&&/^\d{4}-\d\d-\d\dT/.test(v)&&Number.isFinite(Date.parse(v))&&new Date(v).toISOString()===v;
+const id=v=>typeof v==='string'&&/^[a-zA-Z0-9_-]{1,80}$/.test(v);
+const fail=message=>{throw new Error(message);};
+function validateState(s){
+ if(!s||s.schema!==1||!Number.isSafeInteger(s.revision)||s.revision<0||typeof s.stopped!=='boolean'||!Array.isArray(s.requests)||s.requests.length>1000||!Array.isArray(s.receipts)||s.receipts.length>2000)fail('기록 형식을 확인할 수 없습니다.');
+ const seen=new Set();
+ for(const r of s.requests){
+  if(!r||!id(r.id)||seen.has(r.id)||!instant(r.createdAt)||!instant(r.dueAt)||Date.parse(r.dueAt)<=Date.parse(r.createdAt)||!['pending','answered','cancelled'].includes(r.status))fail('요청 기록이 손상되었습니다.');
+  seen.add(r.id);
+  if(r.status==='answered'&&(!['ate','not_yet'].includes(r.answer)||!instant(r.answeredAt)||Date.parse(r.answeredAt)<Date.parse(r.createdAt)||Date.parse(r.answeredAt)>Date.parse(r.dueAt)))fail('응답 기록이 손상되었습니다.');
+  if(r.status==='cancelled'&&(!instant(r.cancelledAt)||Date.parse(r.cancelledAt)<Date.parse(r.createdAt)))fail('취소 기록이 손상되었습니다.');
+ }
+ const commands=new Set();for(const r of s.receipts){if(!r||!id(r.id)||commands.has(r.id)||typeof r.payload!=='string'||r.payload.length>600)fail('중복 방지 기록이 손상되었습니다.');commands.add(r.id);}
+ return s;
+}
+function statusAt(r,at){if(!instant(at))fail('시각이 올바르지 않습니다.');return r.status==='pending'&&Date.parse(at)>Date.parse(r.dueAt)?'unanswered':r.status;}
+function transition(state,command,at){
+ validateState(state);
+ if(!instant(at)||!command||!id(command.requestId)||!['create','answer','cancel','stop','resume'].includes(command.type))fail('요청 형식이 올바르지 않습니다.');
+ const allowed={create:['requestId','type','id','dueAt'],answer:['requestId','type','id','answer'],cancel:['requestId','type','id'],stop:['requestId','type'],resume:['requestId','type']}[command.type];
+ if(Object.keys(command).some(k=>!allowed.includes(k)))fail('알 수 없는 요청 필드입니다.');
+ const payload=JSON.stringify(allowed.map(k=>[k,command[k]??null]));
+ const receipt=state.receipts.find(r=>r.id===command.requestId);
+ if(receipt){if(receipt.payload!==payload)fail('같은 요청 번호의 내용이 달라 실행하지 않았습니다.');return structuredClone(state);}
+ if(state.receipts.length===2000)fail('기록 한도입니다. 새 요청을 받지 않습니다. 먼저 백업하세요.');
+ const s=structuredClone(state);
+ if(command.type==='stop')s.stopped=true;
+ else if(command.type==='resume')s.stopped=false;
+ else{
+  if(s.stopped)fail('일시정지 상태입니다. 재개 후 기록하세요.');
+  if(!id(command.id))fail('요청 번호가 올바르지 않습니다.');
+  if(command.type==='create'){
+   if(s.requests.length===1000)fail('요청 보관 한도입니다.');
+   if(s.requests.some(r=>r.id===command.id))fail('이미 있는 요청입니다.');
+   if(!instant(command.dueAt)||Date.parse(command.dueAt)<=Date.parse(at)||Date.parse(command.dueAt)-Date.parse(at)>86400000)fail('응답 기한은 지금부터 24시간 이내여야 합니다.');
+   s.requests.push({id:command.id,createdAt:at,dueAt:command.dueAt,status:'pending'});
+  }else{
+   const r=s.requests.find(r=>r.id===command.id);if(!r)fail('요청을 찾을 수 없습니다.');
+   if(Date.parse(at)<Date.parse(r.createdAt))fail('기기 시각이 이전으로 변경되었습니다.');
+   if(r.status!=='pending')fail('이미 응답하거나 취소한 요청입니다.');
+   if(command.type==='cancel'){r.status='cancelled';r.cancelledAt=at;}
+   else{
+    if(statusAt(r,at)==='unanswered')fail('응답 기한이 지났습니다. 새 요청을 만들어 주세요.');
+    if(!['ate','not_yet'].includes(command.answer))fail('응답을 확인해 주세요.');
+    r.status='answered';r.answer=command.answer;r.answeredAt=at;
+   }
+  }
+ }
+ s.revision++;s.receipts.push({id:command.requestId,payload});return validateState(s);
+}
+function encodeState(s){return JSON.stringify(validateState(s));}
+function decodeState(text){if(typeof text!=='string'||text.length>1500000)fail('기록 크기가 올바르지 않습니다.');return validateState(JSON.parse(text));}
+
+const b64=bytes=>btoa(String.fromCharCode(...bytes));
+const unb64=text=>Uint8Array.from(atob(text),c=>c.charCodeAt(0));
+async function keyFor(password,salt){
+ if(typeof password!=='string'||password.length<12||password.length>256)throw new Error('백업 암호는 12~256자로 입력하세요.');
+ if(!globalThis.crypto?.subtle)throw new Error('이 브라우저에서는 암호화 백업을 지원하지 않습니다. HTTPS 또는 지원 브라우저에서 열어 주세요.');
+ const material=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveKey']);
+ return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:210000,hash:'SHA-256'},material,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+}
+async function encryptBackup(state,password){
+ const salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12));
+ const ciphertext=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:new TextEncoder().encode('BLACKHOLE-A03-v1')},await keyFor(password,salt),new TextEncoder().encode(encodeState(state))));
+ // Chunk-safe conversion: bounded state may exceed the JS spread argument limit.
+ let binary='';for(let i=0;i<ciphertext.length;i++)binary+=String.fromCharCode(ciphertext[i]);
+ return JSON.stringify({format:'BLACKHOLE-A03-encrypted',version:1,salt:b64(salt),iv:b64(iv),data:btoa(binary)});
+}
+async function decryptBackup(text,password){
+ if(typeof text!=='string'||text.length>2100000)throw new Error('백업 크기를 확인하세요.');
+ const b=JSON.parse(text);
+ if(b.format!=='BLACKHOLE-A03-encrypted'||b.version!==1||typeof b.salt!=='string'||typeof b.iv!=='string'||typeof b.data!=='string')throw new Error('한끼안부 암호화 백업이 아닙니다.');
+ const salt=unb64(b.salt),iv=unb64(b.iv);if(salt.length!==16||iv.length!==12)throw new Error('백업 형식이 손상되었습니다.');
+ let plaintext;try{plaintext=await crypto.subtle.decrypt({name:'AES-GCM',iv,additionalData:new TextEncoder().encode('BLACKHOLE-A03-v1')},await keyFor(password,salt),unb64(b.data));}catch{throw new Error('암호가 다르거나 백업 파일이 손상되었습니다. 기존 기록은 유지됩니다.');}
+ const state=decodeState(new TextDecoder('utf-8',{fatal:true}).decode(plaintext));state.stopped=true;return state;
+}
+
+const STORAGE_KEY='blackhole.a03.hankki.v1';
+const $=id=>document.getElementById(id);let current=initialState(),storageReady=true;
+function message(text){$('message').textContent=text;}
+function read(){const raw=localStorage.getItem(STORAGE_KEY);return raw===null?initialState():decodeState(raw);}
+function date(at){return new Intl.DateTimeFormat('ko-KR',{timeZone:$('zone').value,month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(at));}
+function persist(s){const text=encodeState(s);localStorage.setItem(STORAGE_KEY,text);if(localStorage.getItem(STORAGE_KEY)!==text)throw new Error('저장 확인에 실패했습니다. 완료로 처리하지 않았습니다.');current=s;}
+function render(){
+ const now=new Date().toISOString(),latest=current.requests.at(-1),status=latest?statusAt(latest,now):'empty';
+ $('badge').textContent=!storageReady?'기록 확인 필요':current.stopped?'일시정지':'내 기기 기록';
+ const titles={empty:'아직 요청이 없어요',pending:'한 끼, 챙기셨나요?',unanswered:'응답 없이 시간이 지났어요',cancelled:'요청을 취소했어요',answered:latest?.answer==='ate'?'한 끼 잘 챙기셨네요':'아직 식사 전이에요'};
+ $('state').textContent=titles[status];$('due').textContent=latest?'응답 기한 · '+date(latest.dueAt):'내 기록으로 먼저 사용해 보세요.';
+ $('answers').classList.toggle('hidden',status!=='pending');$('cancel').classList.toggle('hidden',!['pending','unanswered'].includes(status));
+ $('create').disabled=!storageReady||current.stopped||status==='pending'||!$('consent').checked;
+ for(const id of ['ate','notYet','cancel'])$(id).disabled=!storageReady||current.stopped;
+ $('stop').disabled=!storageReady||current.stopped;$('resume').disabled=!storageReady||!current.stopped;$('backup').disabled=!storageReady;
+ $('history').replaceChildren();
+ if(!current.requests.length){const li=document.createElement('li');li.textContent='아직 남긴 안부가 없습니다.';$('history').append(li);}
+ for(const r of current.requests.slice(-20).reverse()){const li=document.createElement('li'),p=document.createElement('p');const st=statusAt(r,now);li.textContent=st==='answered'?(r.answer==='ate'?'먹었어요':'아직이에요'):{pending:'응답 기다리는 중',unanswered:'미응답',cancelled:'취소'}[st];p.textContent=date(r.createdAt)+' · '+r.id.slice(0,8);li.append(p);$('history').append(li);}
+}
+async function locked(fn){if(!navigator.locks)throw new Error('이 브라우저에서는 안전한 기록 잠금을 지원하지 않습니다. 최신 Chrome에서 열어 주세요.');return navigator.locks.request(STORAGE_KEY,fn);}
+async function act(type,extra={}){try{await locked(()=>{current=read();persist(transition(current,{type,requestId:crypto.randomUUID(),...extra},new Date().toISOString()));});message(type==='stop'?'일시정지했습니다. 새 기록과 응답을 받지 않습니다.':type==='resume'?'재개했습니다. 기존 요청은 자동으로 응답되지 않습니다.':'이 기기에 저장했습니다.');}catch(e){message(e.message);}render();}
+$('create').onclick=()=>act('create',{id:crypto.randomUUID(),dueAt:new Date(Date.now()+4*3600000).toISOString()});
+$('ate').onclick=()=>act('answer',{id:current.requests.at(-1)?.id,answer:'ate'});
+$('notYet').onclick=()=>act('answer',{id:current.requests.at(-1)?.id,answer:'not_yet'});
+$('cancel').onclick=()=>act('cancel',{id:current.requests.at(-1)?.id});$('stop').onclick=()=>act('stop');$('resume').onclick=()=>act('resume');$('consent').onchange=render;$('zone').onchange=render;
+$('backup').onclick=async()=>{try{const state=await locked(()=>read());const encrypted=await encryptBackup(state,$('password').value);const url=URL.createObjectURL(new Blob([encrypted],{type:'application/json'})),link=document.createElement('a');link.href=url;link.download='BLACKHOLE_A03_BACKUP_'+new Date().toISOString().slice(0,10)+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);$('password').value='';message('암호화 백업 다운로드를 요청했습니다. 파일이 저장됐는지 확인하세요.');}catch(e){message(e.message);}};
+$('restore').onclick=async()=>{try{const file=$('restoreFile').files[0];if(!file||file.size>2100000||!$('replaceConsent').checked)throw new Error('백업 파일과 기록 교체 동의를 확인하세요.');const starting=localStorage.getItem(STORAGE_KEY);const restored=await decryptBackup(await file.text(),$('password').value);await locked(()=>{if(localStorage.getItem(STORAGE_KEY)!==starting)throw new Error('다른 화면에서 기록이 바뀌었습니다. 다시 확인하세요.');persist(restored);storageReady=true;});$('password').value='';$('replaceConsent').checked=false;message('백업을 복원했습니다. 일시정지 상태에서 기록을 확인한 뒤 다시 시작하세요.');}catch(e){message(e.message);}render();};
+try{current=read();const probe=STORAGE_KEY+'.probe';localStorage.setItem(probe,'ok');localStorage.removeItem(probe);}catch(e){storageReady=false;message('저장된 기록을 열 수 없습니다. 기존 기록을 덮어쓰지 않았습니다. '+e.message);}
+window.addEventListener('storage',event=>{if(event.key===STORAGE_KEY){try{current=read();storageReady=true;}catch{storageReady=false;message('다른 화면에서 변경된 기록을 읽을 수 없습니다.');}render();}});
+setInterval(render,30000);render();
+</script></body></html>

@@ -1,0 +1,27 @@
+{
+  "title": "한끼안부 · A03 개발 미리보기",
+  "sourceUrl": "https://github.com/wooyeonho/yeno-os",
+  "rights": "original-text-and-graphics",
+  "scenes": [
+    {
+      "heading": "오늘, 한 끼\n챙기셨나요?",
+      "body": "바쁜 하루에도\n짧은 안부 하나를 남겨요.",
+      "seconds": 5
+    },
+    {
+      "heading": "먹었어요.\n아직이에요.",
+      "body": "두 가지 대답으로 남기는\n나의 식사 기록.",
+      "seconds": 5
+    },
+    {
+      "heading": "잠시 멈추고,\n다시 시작해요.",
+      "body": "기록은 그대로.\n암호화 백업으로 복원을 준비해요.",
+      "seconds": 5
+    },
+    {
+      "heading": "한끼안부\n첫 실행본",
+      "body": "현재는 내 브라우저 기록만.\n가족 공유·알림·AI는 미연결.",
+      "seconds": 5
+    }
+  ]
+}

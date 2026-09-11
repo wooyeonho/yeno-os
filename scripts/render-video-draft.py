@@ -108,7 +108,7 @@ def render(manifest_path, output, font_path):
                 draw.rounded_rectangle((32, 210, 688, 1040), radius=36, fill='#102820', outline='#28483c', width=2)
                 draw.ellipse((545, 275, 645, 375), outline='#315a49', width=2)
                 draw.ellipse((565, 295, 625, 355), fill='#64d3a6')
-                draw_text(draw, 'YENO / CONTENT LAB', (52, 82, 620, 70), font_path, 25, '#77dfb5')
+                draw_text(draw, 'BLACKHOLE / CONTENT LAB', (52, 82, 620, 70), font_path, 25, '#77dfb5')
                 draw_text(draw, data['title'], (52, 145, 620, 60), font_path, 23, '#b1c8bc')
                 draw_text(draw, f'{index+1:02d} / {len(data["scenes"]):02d}', (64, 280, 360, 60), font_path, 30, '#77dfb5')
                 draw_text(draw, scene['heading'], (64, 425, 584, 280), font_path, 55, '#eff8f3')

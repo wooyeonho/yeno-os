@@ -1,0 +1,361 @@
+{
+  "checkedDate": "2026-09-11",
+  "scope": "original49; V11 remains separate",
+  "providerConnectionsVerified": [],
+  "autonomousParallelExecution": false,
+  "desiredParallelScope": "all49 with actual provider and resource limits",
+  "providerBlocker": "NVIDIA consent/login required; no model Secret observed in Koyeb",
+  "projects": [
+    {
+      "code": "C00",
+      "projectId": "1e17ec43-834e-45a5-8223-8a8e215cef96",
+      "name": "C00 — PortfolioOps — Master Control",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "C01",
+      "projectId": "0de968e5-07f3-4673-8ec6-faaef27b4798",
+      "name": "C01 — Buzz HQ — Opportunity Intelligence",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "E01",
+      "projectId": "bfb7d3b8-8716-42dc-8428-cb2cf06a8261",
+      "name": "E01 — EUREKA — AMR / EARS-Net",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "E02",
+      "projectId": "7b482868-48ee-407d-aca5-e6232236e4b0",
+      "name": "E02 — EUREKA — Long COVID",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "E03",
+      "projectId": "f03d930a-f970-4cad-b3f8-449c7d39f750",
+      "name": "E03 — EUREKA — AGING",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "E04",
+      "projectId": "800cfca9-332e-4bd2-8952-a4820a1a11f0",
+      "name": "E04 — EUREKA — CDR",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "E05",
+      "projectId": "dbc92e0b-068e-4164-918b-02f85c55d4f2",
+      "name": "E05 — EUREKA — Battery Safety",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "E06",
+      "projectId": "b8dec37b-6c83-4eee-8f40-48aa2f36ccd5",
+      "name": "E06 — EUREKA — Climate Migration Health",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "E07",
+      "projectId": "380f0c60-7649-4261-a34f-405153a8d2a2",
+      "name": "E07 — EUREKA — Pandemic Intelligence",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "E08",
+      "projectId": "94d1d724-2c7a-49ea-a2d7-8e871ba2af4b",
+      "name": "E08 — EUREKA — Materials Generalization",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "E09",
+      "projectId": "015299c2-97c0-44b6-8d36-85f87ce29d8d",
+      "name": "E09 — EUREKA — Global Health Data Gaps",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "V01",
+      "projectId": "b6482a4d-b928-46e2-936f-12b9e6df847d",
+      "name": "V01 — Venture — Shopify Payout Exception Resolver",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "V02",
+      "projectId": "10675994-d0ba-4c77-9786-948504903d1f",
+      "name": "V02 — Venture — AccountShift Audit",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "V03",
+      "projectId": "57d1719e-8c55-427e-94d2-393148878b9d",
+      "name": "V03 — Venture — Prediction Market Shadow / Bonereaper",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "V04",
+      "projectId": "e152423b-cdec-4032-8197-bee2dd71d2de",
+      "name": "V04 — Venture — Roleplay → Orbiter → orbiter2 → 존재의 구조적 해부",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "V05",
+      "projectId": "46ae3e5b-9927-48a4-84b9-758c03d7649d",
+      "name": "V05 — Venture — PangPang Diffuser",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "V06",
+      "projectId": "24443a5f-de4e-4a12-8846-d58bc7932c0a",
+      "name": "V06 — Venture — Makgeolli App",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "V07",
+      "projectId": "36a11d32-1fb6-4a35-a30e-4ebb2d9386b6",
+      "name": "V07 — Venture — KBO Fandom Platform",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "V08",
+      "projectId": "fe7ab58a-119a-4588-903b-e77f0a53bb13",
+      "name": "V08 — Venture — S-grade Niche Discovery",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "V09",
+      "projectId": "3419290d-af61-419b-872c-f49c39ada718",
+      "name": "V09 — Venture — 역사 바꾸는 게임",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "V10",
+      "projectId": "8adefad6-1fd7-47e8-847c-f1a18b5c6018",
+      "name": "V10 — Venture — Re:Memoir",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "A01",
+      "projectId": "909c3180-eb2b-4d30-aba3-f5d26222cb01",
+      "name": "A01 — For-Ai",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "A02",
+      "projectId": "2b999c34-a240-42cc-8154-99d66cebb32b",
+      "name": "A02 — Yeogie — Physical Web / Place Memory Network",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "A03",
+      "projectId": "327a7cca-59b3-4a43-a536-41330d7a2246",
+      "name": "A03 — 한끼안부",
+      "status": "local-prototype-tested",
+      "evidence": [
+        "projects/hankki/BLACKHOLE_HANKKI.html",
+        "projects/hankki/engine.test.mjs",
+        "projects/hankki/README.md"
+      ]
+    },
+    {
+      "code": "A04",
+      "projectId": "8113ad35-6f7d-421d-b300-977badaa4826",
+      "name": "A04 — 계절·24절기(+사주)",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "A05",
+      "projectId": "c6e48483-4d0b-4b5f-89b1-f9d138550817",
+      "name": "A05 — GYEOL — Self-Growing AI Companion",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B01",
+      "projectId": "173c89fb-1e78-4135-9c36-7024da627cd9",
+      "name": "B01 — PRAY FOR ME",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B02",
+      "projectId": "bfdc03ea-328e-4b52-90c1-5df04ecfe6f9",
+      "name": "B02 — ShoppingShorts — HQ",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B02-1",
+      "projectId": "c3298a15-da12-4b4f-9b96-8649a5794289",
+      "name": "B02-1 — ShoppingShorts — Toss Shopping Sharelink",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B02-2",
+      "projectId": "8e1fc755-3ddd-456a-8dbc-7887f88a82cc",
+      "name": "B02-2 — ShoppingShorts — Toss 맛집 크리에이터",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B02-3",
+      "projectId": "941a2a18-5967-4d66-bf83-ca06bf6a2fda",
+      "name": "B02-3 — ShoppingShorts — Daum Channel Studio",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B02-4",
+      "projectId": "61be3ace-df35-47c3-996c-de3715a94cd0",
+      "name": "B02-4 — ShoppingShorts — AI Shorts Production Engine",
+      "status": "local-video-rendered-verified",
+      "evidence": [
+        "projects/shorts/hankki-preview.json",
+        "projects/shorts/README.md"
+      ]
+    },
+    {
+      "code": "B02-5",
+      "projectId": "56309058-fc6e-43b1-8d08-cba4cf2e407f",
+      "name": "B02-5 — ShoppingShorts — Product Discovery / Validation",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B02-6",
+      "projectId": "b36bc4d4-9be6-4acd-8d43-bbcf6634c7c7",
+      "name": "B02-6 — ShoppingShorts — Multichannel Distribution",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B03",
+      "projectId": "e2ed19cb-b880-4124-89bc-3a83afffc3c0",
+      "name": "B03 — Sports3D — Original 55mm Motion Collectible",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B04",
+      "projectId": "da912ff8-8a25-4011-8346-203ca2c50aeb",
+      "name": "B04 — Fiction / Character / Story IP Studio — HQ",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B04-01",
+      "projectId": "b92c69f1-ed73-4665-9128-79afdc8eac02",
+      "name": "B04-01 — F-01 천하제일 야구검객",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B04-02",
+      "projectId": "ebec1136-0aaf-4df4-a64e-6ce64837efbc",
+      "name": "B04-02 — F-02 중국통일 / 대만통일",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B04-03",
+      "projectId": "d7c5fe5b-dca0-4edb-a140-96a7cb6964e1",
+      "name": "B04-03 — F-03 조상님이 보고계셔",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B04-04",
+      "projectId": "c69e6825-1283-41ef-b053-329f78676111",
+      "name": "B04-04 — F-04 태어나보니 북한사람",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B04-05",
+      "projectId": "f5196c72-61e6-421c-9fe1-4264243b428a",
+      "name": "B04-05 — F-05 태어나보니 친일 / 대한독립",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B04-06",
+      "projectId": "877fbac2-27f0-4e61-83be-1b586bd0be7a",
+      "name": "B04-06 — F-06 전생에 암행어사, 현생엔 감사팀",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B04-07",
+      "projectId": "a3973e39-361b-4b38-b10f-5985f60dcf98",
+      "name": "B04-07 — F-07 나라를 잃어본 왕세자",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B04-08",
+      "projectId": "eecc15eb-a0da-4f93-9718-3c7e19de3b2c",
+      "name": "B04-08 — F-08 귀신들이 사는 아파트",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B04-09",
+      "projectId": "c0530ef0-1bf0-4445-938e-da2b7ea8e260",
+      "name": "B04-09 — F-09 조선 최고의 의원, 응급실에 떨어지다",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B04-10",
+      "projectId": "14b8bc1e-be11-494b-9308-395e6f8dabae",
+      "name": "B04-10 — F-10 미래의 후손들이 나를 구독했다",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B04-11",
+      "projectId": "fe16a1c8-c0d0-47d0-a37e-8987d4227061",
+      "name": "B04-11 — 꽁몽이",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B04-12",
+      "projectId": "e8db762a-6493-471a-b233-b1614cc01858",
+      "name": "B04-12 — 배불배불 배불이",
+      "status": "pending",
+      "evidence": []
+    },
+    {
+      "code": "B04-13",
+      "projectId": "dbfb2b47-b78e-41a1-9435-483212f2de59",
+      "name": "B04-13 — 만화덕후 이세계",
+      "status": "pending",
+      "evidence": []
+    }
+  ],
+  "note": "Statuses describe this delivery only. They do not erase historical work. Pending means no new executable delivery verified here. No API spending or global batch started."
+}
