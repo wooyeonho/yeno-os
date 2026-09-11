@@ -1,3 +1,17 @@
+# 最新: BLACKHOLE 운영 배포·실제 결과·아키텍처 — 2026-09-11
+
+기존 Koyeb `yeno-core`에 소스 `5c361fe808be8c7a71b0fbebd10ce6990e049ec2`를 실제 빌드·배포했다. 배포 `0d50ad8f-87e9-4cac-9fa8-0daf74015428`는 Healthy / Active / 1 of 1 running으로 확인했다. 기존 자료·프로젝트·기억·스냅샷과 이전 결과를 보존했다.
+
+운영 HTTPS API에서 `세계 현황` 명령으로 USGS 사건28개를 담은 결과를 실제 생성·다운로드했고 SHA-256이 일치했다. 같은 requestId 재전송은 같은 작업을 반환했다. 전체 멈춤 적용 후 신규 명령 HTTP409를 확인했고, 시험 후 멈춤을 해제했다. 해제 후 unfinished=0이다. [실행 증거](APPROVED_DEPLOYMENT_LIVE_20260911.json). Android 실기기 결과 열기·재접속 및 이 결과 생성 후 운영 서버 재시작은 아직 미검증이다.
+
+추가 소스 `6762a62708dd496c7da5816117c695383d29eb2b`는 기본 agent가 준비됐을 때 AI 작성과 자유 명령을 같은 제한형 agent로 연결한다. 명시적 기억·문서·세계 명령과 기존 legacy AI 설정은 유지한다. Node24 전체 `npm test` **164/164 통과**, 실패·생략0. 실제 모델이 아닌 모의 공급자 검사다. 이 수정본의 두 번째 배포는 관리 화면의 브라우저 입력 시간 초과로 확인되지 않았으며, 운영 적용 완료로 표시하지 않는다.
+
+NVIDIA 가입/약관 진행과 기존 서버 배포는 소유자가 승인했다. 보안 로그인은 `submission_failed`를 반환했고 화면에 구체적인 사이트 오류는 없었다. 키 발급·Koyeb Secret 연결·실제 공급자 요청은 미완료이며, 수동 로그인 연결이 필요하다. 같은 승인에 대해 재승인을 요구하지 않는다.
+
+[BLACKHOLE_ARCHITECTURE.md](BLACKHOLE_ARCHITECTURE.md)에 요청한 다섯 독립 서비스, 데이터·이벤트 흐름, 스택, 목표 생성/흡수 의사코드, 권리·비용·중단·복구 통제와 3단계 완료 기준을 정리했다. 설계 문서이며 Postgres 이전·MicroVM 작업자·복수 모델·자동 코드 개선·FCM 알림 구현 완료 증거가 아니다.
+
+아래는 이전 시점의 이력이다.
+
 # 자료 누락 확인·원 제작자 후보 등록 — 2026-09-11
 
 기존 자료103개와 프로젝트를 보존한 채 God’s Eye View·Google ARTEMIS·Agents API 후보3개를 운영 코어에 등록하고 재조회했다. 자료는106개다. [저장 검증](SOURCE_COVERAGE_LIVE_20260911.json), [검토 내용](../examples/reviewed-primary-sources-20260911.json). 후보 등록이며 설치·API 연결·실행·배포 완료가 아니다. 실제 AI 설정은 여전히 configured=false다.
