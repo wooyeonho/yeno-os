@@ -1,0 +1,24 @@
+{
+  "verifiedAt": "2026-09-11T21:28:52.327983+00:00",
+  "implementationCommit": "f53aaa823280669bafc8fa47979d92abecb843db",
+  "deploymentId": "f4714cab-e9ce-4540-b550-9104020a141d",
+  "deploymentStatus": "Healthy / Active, previous stopped",
+  "scope": "Authenticated HTTPS API; not Android device",
+  "revision": 252,
+  "jobId": "a03d37ca-52bd-49fd-a4a1-8f8fcfe92669",
+  "artifactId": "e0380a7a-77c6-495a-b9df-343918b029b7",
+  "artifactSha256": "77feab0f17b6490762dffa0d9ef20f30d58f6b1eddc7116ccd8d68b7bc8b06d6",
+  "allSixProviderReadinessShown": true,
+  "sameRequestSameJob": true,
+  "previousRowsPreserved": true,
+  "newModelCalls": 0,
+  "providerConfigured": false,
+  "androidVerified": false,
+  "tests": {
+    "baselinePassed": 164,
+    "finalPassed": 168,
+    "failed": 0,
+    "skipped": 0,
+    "provider": "synthetic"
+  }
+}
