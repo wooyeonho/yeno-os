@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { digest, initialState, openStore } from '../lib/store.mjs';
-import { sourceUrl, sourceRegistryDocument, sourceBriefDocument } from '../lib/sources.mjs';
+import { sourceUrl, sourceRegistryDocument, sourceBriefDocument, resolveSource } from '../lib/sources.mjs';
+import { sourceMatches } from '../public/source-reference-labels.mjs';
 import fs from 'node:fs';
 import { start as startServer } from '../server.mjs';
 
@@ -372,10 +373,54 @@ test('source lists stay under document input bounds and briefs retain full revie
   assert.ok(list.length < 80000, 'valid large registries must be accepted by the document job input limit');
   assert.match(list, /표시 50개 \/ 전체 61개/);
   assert.ok(!list.includes(sources[50].id));
+  assert.match(list, /다음: 자료 목록 2/);
+  const second = sourceRegistryDocument(sources, { page: 2 });
+  assert.ok(second.includes(sources[60].id));
+  assert.ok(!second.includes(sources[0].id));
+  assert.ok(second.length < 80000);
+  assert.throws(() => sourceRegistryDocument(sources, { page: 3 }), /2페이지/);
+  assert.throws(() => sourceRegistryDocument(sources, { page: 0 }), /정수/);
   assert.ok(!list.includes(source.summary));
   const brief = sourceBriefDocument(source, true);
   for (const field of ['url', 'summary', 'application', 'riskNotes']) assert.ok(brief.includes(source[field]), field);
   assert.ok(brief.length < 80000);
+});
+
+test('historical names locate God Eye beyond the first page without changing source reviews', async t => {
+  const f = await fixture(t);
+  const inputs = Array.from({ length: 60 }, (_, i) => sourceInput({ url: `https://example.com/reference-${i}`, title: `기존 참고자료 ${i}` }));
+  inputs.push(sourceInput({ url: 'https://www.instagram.com/reel/DcjMGA9vHxU/', title: '공개 데이터를 모은 세계 상황판' }));
+  const imported = await f.post('/api/sources/import', { sources: inputs, requestId: randomUUID() });
+  assert.equal(imported.status, 201);
+  const before = (await f.state()).sources;
+  const god = before.at(-1);
+  for (const query of ['God Eye', 'Godeye', '갓아이', 'God’s Eye View']) {
+    assert.ok(sourceMatches(god, query));
+    assert.equal(resolveSource(before, query).id, god.id);
+  }
+  assert.throws(() => resolveSource(before, '기존 참고자료'), /여러 자료/);
+  assert.throws(() => resolveSource(before, '???'), /이름이나 ID/);
+  const second = await f.post('/api/commands', { text: '자료 목록 2', requestId: randomUUID() });
+  const search = await f.post('/api/commands', { text: '자료 목록: God Eye', requestId: randomUUID() });
+  const brief = await f.post('/api/commands', { text: '자료 브리핑: Godeye', requestId: randomUUID() });
+  for (const response of [second, search, brief]) {
+    assert.equal(response.status, 201);
+    const job = await f.completed(response.body.job.id);
+    const artifact = await f.api(`/api/artifacts/${job.artifacts[0].id}`);
+    assert.equal(artifact.status, 200);
+    assert.ok(artifact.body.includes(god.id));
+    assert.match(artifact.body, /God Eye/);
+    assert.match(artifact.body, /미확인/);
+    assert.match(artifact.body, /검토 대기/);
+  }
+  const filteredPage = sourceRegistryDocument(before, { page: 2, query: '기존 참고자료' });
+  assert.ok(filteredPage.includes(before[59].id));
+  assert.ok(!filteredPage.includes(god.id));
+  assert.match(filteredPage, /이전: 자료 목록 1: 기존 참고자료/);
+  const module = await f.api('/source-reference-labels.mjs', { token: '' });
+  assert.equal(module.status, 200);
+  assert.match(module.body, /export function sourceMatches/);
+  assert.deepEqual((await f.state()).sources, before);
 });
 
 test('global stop freezes source jobs while reviews and memory restoration preserve the source registry', async t => {

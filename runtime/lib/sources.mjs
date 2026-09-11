@@ -1,4 +1,5 @@
 import { isIP } from 'node:net';
+import { sourceMatches, sourceReferenceNames, sourceSearchKey } from '../public/source-reference-labels.mjs';
 
 export class SourceError extends Error {
   constructor(status, message, extra = {}) { super(message); this.status = status; this.extra = extra; }
@@ -142,17 +143,30 @@ export function planSourceImport(body, existing, projects) {
 
 export function resolveSource(sources, id) {
   const source = sources.find(item => item.id === id.trim());
-  if (!source) throw new SourceError(404, 'Source not found. Use its registered ID.');
-  return source;
+  if (source) return source;
+  const key = sourceSearchKey(id);
+  if (!key) throw new SourceError(404, '자료 이름이나 ID를 입력하세요.');
+  const exact = sources.filter(item => [item.title, ...sourceReferenceNames(item)].some(name => sourceSearchKey(name) === key));
+  const matches = exact.length ? exact : sources.filter(item => sourceMatches(item, id));
+  if (matches.length > 1) throw new SourceError(409, '여러 자료가 일치합니다. 자료 목록: 검색어로 확인한 뒤 자료 ID를 사용하세요.');
+  if (!matches.length) throw new SourceError(404, '자료를 찾지 못했습니다. 자료 목록: 검색어로 확인하세요.');
+  return matches[0];
 }
 const readingLabel = value => ({ unread: '미확인', partial: '일부 확인', read: '내용 확인', unavailable: '접근 불가' })[value];
 const decisionLabel = value => ({ pending: '검토 대기', candidate: '개선 후보', deferred: '보류', rejected: '미채택' })[value];
-export function sourceRegistryDocument(sources) {
-  const shown = sources.slice(0, 50);
+export function sourceRegistryDocument(sources, { page = 1, query = '' } = {}) {
+  if (!Number.isSafeInteger(page) || page < 1) throw new SourceError(400, '자료 목록 페이지는 1 이상의 정수여야 합니다.');
+  if (typeof query !== 'string' || query.length > 160) throw new SourceError(400, '자료 검색어는 160자 이내로 입력하세요.');
+  const filtered = sources.filter(source => sourceMatches(source, query));
+  const pages = Math.max(1, Math.ceil(filtered.length / 50));
+  if (page > pages) throw new SourceError(400, `자료 목록은 ${pages}페이지까지 있습니다.`);
+  const shown = filtered.slice((page - 1) * 50, page * 50);
+  const command = number => `자료 목록 ${number}${query ? `: ${query}` : ''}`;
+  const navigation = [page > 1 ? `이전: ${command(page - 1)}` : '', page < pages ? `다음: ${command(page + 1)}` : ''].filter(Boolean).join('\n');
   const urlLabel = value => value.length > 1000 ? `${value.slice(0, 1000)}… (긴 주소는 브리핑에서 확인)` : value;
-  return `# YENO 개선 자료 목록\n\n등록 자료: ${sources.length}개\n표시 ${shown.length}개 / 전체 ${sources.length}개. 목록은 최대 50개이며 긴 주소는 1000자까지 표시합니다.\n전체 주소와 검토 내용은 “자료 브리핑: ID”로 확인하세요.\n\n${shown.length ? shown.map(source => `## ${source.title}\n- ID: ${source.id}\n- 내용 확인: ${readingLabel(source.readingStatus)}\n- 적용 판단: ${decisionLabel(source.decision)}\n- 출처: ${urlLabel(source.canonicalUrl)}`).join('\n\n') : '등록된 자료가 없습니다.'}\n\n이 문서는 저장한 자료 정보로 작성했습니다. 이 작업에서 외부 링크 조회·AI 호출·코드 작성·검사·배포를 수행하지 않았습니다.`;
+  return `# BLACKHOLE 개선 자료 목록\n\n등록 자료: ${sources.length}개\n표시 ${shown.length}개 / 전체 ${sources.length}개. 검색 결과 ${filtered.length}개 · ${page}/${pages}페이지. 한 페이지 50개이며 긴 주소는 1000자까지 표시합니다.\n${navigation}\n검색: 자료 목록: 검색어\n전체 주소와 검토 내용: 자료 브리핑: 이름 또는 ID\n\n${shown.length ? shown.map(source => `## ${source.title}\n${sourceReferenceNames(source).length ? `- 원본 자료명(검증 전 이름): ${sourceReferenceNames(source).join(' · ')}\n` : ''}- ID: ${source.id}\n- 내용 확인: ${readingLabel(source.readingStatus)}\n- 적용 판단: ${decisionLabel(source.decision)}\n- 출처: ${urlLabel(source.canonicalUrl)}`).join('\n\n') : '조건에 맞는 자료가 없습니다.'}\n\n자료 등록·후보 검토는 기능 구현 완료가 아닙니다. 이 문서는 저장한 자료 정보로 작성했습니다. 이 작업에서 외부 링크 조회·AI 호출·코드 작성·검사·배포를 수행하지 않았습니다.`;
 }
 export function sourceBriefDocument(source, candidate = false) {
   if (candidate && source.decision !== 'candidate') throw new SourceError(409, 'This source is not an improvement candidate. Complete its reading and application review first.');
-  return `# ${source.title} — ${candidate ? '개선 후보 준비서' : '자료 브리핑'}\n\n- 자료 ID: ${source.id}\n- 자료 버전: ${source.version}\n- 원래 URL: ${source.url}\n- 정규 URL: ${source.canonicalUrl}\n- 프로젝트 ID: ${source.projectId ?? '미연결'}\n- 내용 확인: ${readingLabel(source.readingStatus)}\n- 적용 판단: ${decisionLabel(source.decision)}\n\n## 확인한 내용\n${source.summary || '아직 검토 내용을 기록하지 않았습니다.'}\n\n## YENO에 적용할 방법\n${source.application || '아직 적용 방법을 기록하지 않았습니다.'}\n\n## 권리·개인정보·이용조건과 남은 쟁점\n${source.riskNotes || '아직 확인한 내용이나 남은 쟁점을 기록하지 않았습니다.'}\n\n## 현재 실행 범위\n이 문서는 저장된 검토 기록을 정리한 ${candidate ? '개선 후보 준비서' : '브리핑'}입니다. 내용 확인 상태는 등록된 검토 기록이며 이 코어가 원문을 직접 조회했다는 뜻이 아닙니다. 외부 링크 조회·AI 호출·코드 작성·검사·배포를 수행하지 않았습니다. 개발 작업자는 미연결입니다. 개선 후보 등록은 구현·검사 통과·운영 적용 또는 법적 무문제를 보장하지 않습니다.`;
+  return `# ${source.title} — ${candidate ? '개선 후보 준비서' : '자료 브리핑'}\n\n- 원본 자료명(검증 전 이름): ${sourceReferenceNames(source).join(" · ") || "별도 기록 없음"}\n- 자료 ID: ${source.id}\n- 자료 버전: ${source.version}\n- 원래 URL: ${source.url}\n- 정규 URL: ${source.canonicalUrl}\n- 프로젝트 ID: ${source.projectId ?? '미연결'}\n- 내용 확인: ${readingLabel(source.readingStatus)}\n- 적용 판단: ${decisionLabel(source.decision)}\n\n## 확인한 내용\n${source.summary || '아직 검토 내용을 기록하지 않았습니다.'}\n\n## YENO에 적용할 방법\n${source.application || '아직 적용 방법을 기록하지 않았습니다.'}\n\n## 권리·개인정보·이용조건과 남은 쟁점\n${source.riskNotes || '아직 확인한 내용이나 남은 쟁점을 기록하지 않았습니다.'}\n\n## 현재 실행 범위\n이 문서는 저장된 검토 기록을 정리한 ${candidate ? '개선 후보 준비서' : '브리핑'}입니다. 내용 확인 상태는 등록된 검토 기록이며 이 코어가 원문을 직접 조회했다는 뜻이 아닙니다. 외부 링크 조회·AI 호출·코드 작성·검사·배포를 수행하지 않았습니다. 개발 작업자는 미연결입니다. 개선 후보 등록은 구현·검사 통과·운영 적용 또는 법적 무문제를 보장하지 않습니다.`;
 }

@@ -267,7 +267,7 @@ export function createYenoServer(options={}) {
      if(req.method==='GET'&&(url.pathname==='/api/health'||url.pathname==='/api/v1/health'))return respond(res,200,{name:'YENO OS',version:VERSION,apiVersion:API_VERSION,authRequired:true,authentication:'device-bearer'});
      if(!url.pathname.startsWith('/api/')){
        if(req.method!=='GET'&&req.method!=='HEAD')throw new HttpError(405,'Method not allowed');
-       const allowed={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/command-request.mjs':'command-request.mjs','/style.css':'style.css','/manifest.webmanifest':'manifest.webmanifest','/icon.svg':'icon.svg'};
+       const allowed={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/command-request.mjs':'command-request.mjs','/source-reference-labels.mjs':'source-reference-labels.mjs','/style.css':'style.css','/manifest.webmanifest':'manifest.webmanifest','/icon.svg':'icon.svg'};
        const filename=allowed[url.pathname];if(!filename)throw new HttpError(404,'Not found');const file=path.join(ROOT,'public',filename);if(!fs.existsSync(file))throw new HttpError(404,'UI not available');const contentTypes={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.webmanifest':'application/manifest+json','.svg':'image/svg+xml'};res.writeHead(200,{'Content-Type':contentTypes[path.extname(file)]??'application/octet-stream'});if(req.method==='HEAD')return res.end();return fs.createReadStream(file).pipe(res);
      }
      const versioned=url.pathname.startsWith('/api/v1/');
@@ -374,7 +374,7 @@ export function createYenoServer(options={}) {
            const job=newJob({type:'document',text:report,title:'YENO 운영 브리핑'});job.operatingReport=true;
            return {status:201,payload:{kind:'job',job:publicJob(job)}};
          }
-         if(/^자료\s+목록$/i.test(text))return {status:201,payload:{kind:'job',job:sourceDocumentJob(null,sourceRegistryDocument(s.sources),'개선 자료 목록')}};
+         if((match=text.match(/^자료\s+목록(?:\s+(\d+))?(?:\s*[:：]\s*(.*))?$/i)))return {status:201,payload:{kind:'job',job:sourceDocumentJob(null,sourceRegistryDocument(s.sources,{page:match[1]===undefined?1:Number(match[1]),query:match[2]??''}),'개선 자료 목록')}};
          if((match=text.match(/^자료\s+브리핑\s*[:：]\s*(.+)$/is))){const source=resolveSource(s.sources,match[1]);return {status:201,payload:{kind:'job',job:sourceDocumentJob(source,sourceBriefDocument(source),`${source.title} 자료 브리핑`)}};}
          if((match=text.match(/^개선\s+후보\s*[:：]\s*(.+)$/is))){const source=resolveSource(s.sources,match[1]);return {status:201,payload:{kind:'job',job:sourceDocumentJob(source,sourceBriefDocument(source,true),`${source.title} 개선 후보 준비서`)}};}
          if(/^프로젝트\s+목록$/i.test(text))return {status:201,payload:{kind:'job',job:projectDocumentJob(null,projectRegistryDocument(s.projects),'프로젝트 목록','registry')}};

@@ -1,0 +1,22 @@
+{
+  "verifiedAt": "2026-09-11T02:48:17.353767+00:00",
+  "revision": 189,
+  "archivePublicReferences": 61,
+  "registeredBefore": 53,
+  "created": 8,
+  "registeredAfter": 61,
+  "coreSourceCount": 96,
+  "original88SourcesPreserved": true,
+  "existingProjectsJobsMemoriesSnapshotsPreserved": true,
+  "readingAndDecisionCounts": {
+    "partial/pending": 17,
+    "unavailable/pending": 11,
+    "read/candidate": 8,
+    "unread/pending": 59,
+    "read/deferred": 1
+  },
+  "providerConfigured": false,
+  "godEyeSourceId": "6f2c9c1b-4da1-41b7-b2fb-593d32f011ad",
+  "implementedReferenceFeatures": 0,
+  "phoneVerified": false
+}
