@@ -1,0 +1,1446 @@
+{
+  "basis": "Stored title/project routing proposals, not original content verification",
+  "counts": {
+    "feature": 35,
+    "unclassified": 37,
+    "project": 26,
+    "project-review": 3
+  },
+  "rows": [
+    {
+      "sourceId": "80c71c2e-0383-47c3-b3aa-aa03b9b51f85",
+      "title": "MegaMemory: 프로젝트 지속 기억 소개",
+      "url": "https://instagram.com/reel/Dc8XNsYjl9_",
+      "readingStatus": "partial",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "memory",
+        "name": "지속 기억·관련 내용 검색",
+        "stage": "기본 기억 사용 가능 / 외부 도구 통합 대기",
+        "command": "찾아줘: 검색어",
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "b9db9385-dd18-4e7f-a52d-cfb5eaf63298",
+      "title": "OSIRIS: 공개 정보 변화 감지 소개",
+      "url": "https://instagram.com/reel/Dc3Hhvpymko",
+      "readingStatus": "partial",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "memory",
+        "name": "지속 기억·관련 내용 검색",
+        "stage": "기본 기억 사용 가능 / 외부 도구 통합 대기",
+        "command": "찾아줘: 검색어",
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "bdda03bb-699b-4ccd-8f37-1ed1a2e495ff",
+      "title": "AI 경영진 역할 분담 소개",
+      "url": "https://threads.com/share/BAVMtPZVaZ",
+      "readingStatus": "unavailable",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "2782d3fa-3307-4970-a28c-261d35e67d09",
+      "title": "Grok Bot: 상시 AI 팀 운영 소개",
+      "url": "https://x.com/angeldot_/status/2095849798209286198",
+      "readingStatus": "partial",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "execution",
+        "name": "작업 배정·실행·검증",
+        "stage": "일부 읽기 도구 구현 / 무인 개발 미연결",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "9137a06e-e9ee-461a-bec4-4b2dbc33ba06",
+      "title": "NotebookLM 연결 소개",
+      "url": "https://x.com/alextalksai/status/2095623058023153836",
+      "readingStatus": "unavailable",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "456dceb0-5fc4-4952-b213-d979943e6b8c",
+      "title": "릴스 수익화 사례: Daja_FmTCln",
+      "url": "https://instagram.com/reel/Daja_FmTCln",
+      "readingStatus": "unavailable",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "B02",
+        "name": "B02 · ShoppingShorts",
+        "projectId": "bfdc03ea-328e-4b52-90c1-5df04ecfe6f9",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "1ecf0a33-80c1-4e4a-9a64-38057652c46f",
+      "title": "릴스 판매 자동화 홍보: DcCyCg_uU73",
+      "url": "https://instagram.com/reel/DcCyCg_uU73",
+      "readingStatus": "partial",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "B02",
+        "name": "B02 · ShoppingShorts",
+        "projectId": "bfdc03ea-328e-4b52-90c1-5df04ecfe6f9",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "b7f4790f-5881-417e-a9c4-c62ed9ed241d",
+      "title": "블로그 키워드 조사 소개",
+      "url": "https://instagram.com/p/DcxPVD7IwlX?img_index=4",
+      "readingStatus": "partial",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "a625e927-2150-4feb-8d9b-d71f618c7919",
+      "title": "AI 안경 입력 장치 소개",
+      "url": "https://instagram.com/reel/Dcv0BgZP-5T",
+      "readingStatus": "unavailable",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "44890229-d0ac-41c5-84c5-5a4cd6ef26be",
+      "title": "TikTok Shop·K뷰티 마케팅 소개",
+      "url": "https://instagram.com/p/Dcxsh_wE62Q?img_index=10",
+      "readingStatus": "partial",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "36069427-51c3-42ca-a287-53c0b66c60f9",
+      "title": "해외 유튜브 창작 참고",
+      "url": "https://instagram.com/reel/Dc5HgdPSm-B",
+      "readingStatus": "unavailable",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "d0e272ce-1fe1-47fe-a589-c31c396894b6",
+      "title": "AI 프롬프트 7개 소개",
+      "url": "https://instagram.com/p/DcqEtcsmQMH?img_index=5",
+      "readingStatus": "unavailable",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "8275adf0-8ca0-4852-a8da-bd903fb402aa",
+      "title": "개인정보 삭제 자동화 소개",
+      "url": "https://instagram.com/p/Dc-nN8WjyWt?img_index=5",
+      "readingStatus": "unavailable",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "27bc75cd-60de-43bb-b7d7-25e36422d673",
+      "title": "개인정보 유출 후 점검 소개",
+      "url": "https://instagram.com/reel/DZm_y9xyZkw",
+      "readingStatus": "partial",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "d7d2fb10-6c23-41b4-ad0d-83980b8568f8",
+      "title": "비공식 Grok Bot·AI 라우터 소개",
+      "url": "https://instagram.com/reel/Dck62Csjn8E",
+      "readingStatus": "partial",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "execution",
+        "name": "작업 배정·실행·검증",
+        "stage": "일부 읽기 도구 구현 / 무인 개발 미연결",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "4fabf201-4df3-45e9-9f3c-5c6953b56d00",
+      "title": "Infinite Private Tutor 학습 홍보",
+      "url": "https://x.com/DehumanoaDeus/status/2089996989660537327",
+      "readingStatus": "partial",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "bfd55e31-484c-4a34-ace2-61bfb7c8d33f",
+      "title": "웹 앱 제작·배포 데모 소개",
+      "url": "https://instagram.com/reel/DcdmKFeMkGv",
+      "readingStatus": "partial",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "B02-6",
+        "name": "B02-6 · 콘텐츠 배포",
+        "projectId": "b36bc4d4-9be6-4acd-8d43-bbcf6634c7c7",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "1d760aa9-ffe6-43ba-8acb-444204b102db",
+      "title": "2D 픽셀 스프라이트 생성 소개",
+      "url": "https://instagram.com/reel/DbUJiTmiIRA",
+      "readingStatus": "partial",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "5412914b-a853-4005-b3fe-56c87f17aca0",
+      "title": "자비스 같은 제작 기능 참고: DdAEC00t--6",
+      "url": "https://instagram.com/reel/DdAEC00t--6",
+      "readingStatus": "unavailable",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "066f2466-21cb-4a6c-98cf-59ccb440350e",
+      "title": "Astra·Higgsfield 생성 작업 소개",
+      "url": "https://instagram.com/p/DdBxV7-mvwr?img_index=4",
+      "readingStatus": "partial",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "content-render",
+        "name": "글·영상 제작",
+        "stage": "영상 CLI 준비 / 폰 실행 연결 대기",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "9adbdde0-df80-4795-8beb-fa5877bba615",
+      "title": "주도적인 자료 발굴 참고: DdBgyy7TCrB",
+      "url": "https://instagram.com/reel/DdBgyy7TCrB",
+      "readingStatus": "unavailable",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "f4c7aff2-b860-4ed3-bb9d-d4f1de2dd2f3",
+      "title": "마케팅 레퍼런스 조사 소개",
+      "url": "https://instagram.com/p/Dc5KXFYoNWv?img_index=3",
+      "readingStatus": "partial",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "b682507d-b795-4168-98bb-10a348a772ac",
+      "title": "사진을 빈티지 스케치로 바꾸는 프롬프트 소개",
+      "url": "https://instagram.com/p/DckJfiMD83G",
+      "readingStatus": "partial",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "ce20ea37-fb58-40a2-ae72-9a5eecb7d775",
+      "title": "W3C PROV: 출처와 파생 관계 기록",
+      "url": "https://www.w3.org/TR/prov-overview/",
+      "readingStatus": "read",
+      "decision": "candidate",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "98cd2217-4ab1-4990-8862-ff4dea74c57c",
+      "title": "LangGraph: 작업 상태와 장기 기억 분리",
+      "url": "https://docs.langchain.com/oss/javascript/langgraph/persistence",
+      "readingStatus": "read",
+      "decision": "candidate",
+      "destination": {
+        "kind": "feature",
+        "key": "memory",
+        "name": "지속 기억·관련 내용 검색",
+        "stage": "기본 기억 사용 가능 / 외부 도구 통합 대기",
+        "command": "찾아줘: 검색어",
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "3492f9d9-bdff-4149-a183-4b6b7f3cb8cb",
+      "title": "Claude Code: 제한된 개발 실행자 계약",
+      "url": "https://code.claude.com/docs/en/cli-reference",
+      "readingStatus": "read",
+      "decision": "candidate",
+      "destination": {
+        "kind": "feature",
+        "key": "execution",
+        "name": "작업 배정·실행·검증",
+        "stage": "일부 읽기 도구 구현 / 무인 개발 미연결",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "3215b334-a6ee-4270-9b00-7787c6c3158c",
+      "title": "GitHub: 검사와 배포 환경 권한 분리",
+      "url": "https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments",
+      "readingStatus": "read",
+      "decision": "candidate",
+      "destination": {
+        "kind": "project",
+        "code": "B02-6",
+        "name": "B02-6 · 콘텐츠 배포",
+        "projectId": "b36bc4d4-9be6-4acd-8d43-bbcf6634c7c7",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "636aaffa-93e1-4b34-bfb2-f2b86dce1f88",
+      "title": "YouTube: 원본 기여와 콘텐츠 수익화 검토",
+      "url": "https://support.google.com/youtube/answer/1311392?hl=en",
+      "readingStatus": "read",
+      "decision": "candidate",
+      "destination": {
+        "kind": "project",
+        "code": "B02",
+        "name": "B02 · ShoppingShorts",
+        "projectId": "bfdc03ea-328e-4b52-90c1-5df04ecfe6f9",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "db404aee-0ec2-4b54-9a91-99fe0ad5f900",
+      "title": "Buzz 오픈소스 협업 플랫폼",
+      "url": "https://x.com/Nozelcode/status/2090823539158839718",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "C01",
+        "name": "C01 · Buzz 기회 조사",
+        "projectId": "0de968e5-07f3-4673-8ec6-faaef27b4798",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "6334e21b-6ca6-4840-a6cd-15fa7b45efb1",
+      "title": "르네상스풍 인터랙티브 웹사이트",
+      "url": "https://instagram.com/reel/DcBsBwcJzV7",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "d984516c-bb64-4573-80dc-e6d8a60876bd",
+      "title": "사이버보안 에이전트 스킬 모음",
+      "url": "https://instagram.com/reel/DcRoHxliWn-",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "execution",
+        "name": "작업 배정·실행·검증",
+        "stage": "일부 읽기 도구 구현 / 무인 개발 미연결",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "40ce8b90-f562-41c6-9947-fe0915838524",
+      "title": "Claude Blog 콘텐츠·SEO 제작 절차",
+      "url": "https://instagram.com/reel/Dcb02HuCEXj",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "A01",
+        "name": "A01 · For-Ai",
+        "projectId": "909c3180-eb2b-4d30-aba3-f5d26222cb01",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "33c38787-0577-4d0b-b274-e5fb532f88ea",
+      "title": "개인용 자비스 4단계 구조",
+      "url": "https://instagram.com/p/Db2yPmqE68_?img_index=6",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "3928ed1a-6f78-47dc-aa72-eb4247a72894",
+      "title": "전문 에이전트 조직과 독립 검증",
+      "url": "https://x.com/dravenip/status/2091688351942508876",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "execution",
+        "name": "작업 배정·실행·검증",
+        "stage": "일부 읽기 도구 구현 / 무인 개발 미연결",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "ad888964-d3ee-468b-8003-3cda0ee2b0e8",
+      "title": "대규모 에이전트 병렬 조사와 검증",
+      "url": "https://x.com/chesny/status/2091886816089546963",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "execution",
+        "name": "작업 배정·실행·검증",
+        "stage": "일부 읽기 도구 구현 / 무인 개발 미연결",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "4fb5737c-20d1-4375-928c-6899de75f94f",
+      "title": "OmniRoute 모델 라우팅",
+      "url": "https://instagram.com/reel/DcapnJpgapu",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "model-routing",
+        "name": "모델 선택·비용 관리",
+        "stage": "연결부 구현 / 실제 모델 인증 대기",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "274d3436-053c-45ea-88d5-3b6e175435d3",
+      "title": "AI 코딩 에이전트 스킬 구성",
+      "url": "https://instagram.com/p/DbhtjN9EVhT?img_index=4",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "execution",
+        "name": "작업 배정·실행·검증",
+        "stage": "일부 읽기 도구 구현 / 무인 개발 미연결",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "e009f5af-8b1b-4322-be90-32f65bccd279",
+      "title": "Photon Matrix 레이저 방어 장치",
+      "url": "https://youtube.com/shorts/MrQufcs-BY8?si=QMBfQeO8kztGuIFU",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project-review",
+        "name": "독립 프로젝트 여부 검토",
+        "stage": "고객·결과물·기존 프로젝트 중복 확인 전",
+        "basis": "독립 결과물이 있는 원본 아이디어; 신규 프로젝트는 아직 만들지 않음"
+      }
+    },
+    {
+      "sourceId": "2181a12b-faf2-448b-83b7-65734600110a",
+      "title": "배틀그라운드 게임 설계 사례",
+      "url": "https://instagram.com/p/DcVY35dicdG?img_index=19",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "c3e18fb5-447d-46fc-8f6a-3cf309a6e5a5",
+      "title": "당근스토리 콘텐츠 보상 주장",
+      "url": "https://x.com/bibae151968/status/2091658491664470321",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "B02",
+        "name": "B02 · ShoppingShorts",
+        "projectId": "bfdc03ea-328e-4b52-90c1-5df04ecfe6f9",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "efa76c06-1aad-4a3e-a7b7-385b4262d402",
+      "title": "Life Clock 감성 웹서비스",
+      "url": "https://instagram.com/p/DcaJ7L_IOEG?img_index=3",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project-review",
+        "name": "독립 프로젝트 여부 검토",
+        "stage": "고객·결과물·기존 프로젝트 중복 확인 전",
+        "basis": "독립 결과물이 있는 원본 아이디어; 신규 프로젝트는 아직 만들지 않음"
+      }
+    },
+    {
+      "sourceId": "571872a2-aff0-4a39-b900-f5eb061d0015",
+      "title": "Claude Code 터미널 시작 영상 추정",
+      "url": "https://instagram.com/reel/DazL4y7TT-u",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "execution",
+        "name": "작업 배정·실행·검증",
+        "stage": "일부 읽기 도구 구현 / 무인 개발 미연결",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "38fa52b9-eda4-4249-ae67-56df47ddc497",
+      "title": "Serenity Stock Tracker 투자 발언 추적",
+      "url": "https://instagram.com/p/DblJhDDkj2O?img_index=4",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "V03",
+        "name": "V03 · 예측시장 모의 연구 (실거래 제외)",
+        "projectId": "57d1719e-8c55-427e-94d2-393148878b9d",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "7259247c-c49f-4139-8ca0-da94feb9a83a",
+      "title": "GEO 검색 노출용 콘텐츠 구조",
+      "url": "https://instagram.com/p/Db8JsuFkgPh?img_index=6",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "A01",
+        "name": "A01 · For-Ai",
+        "projectId": "909c3180-eb2b-4d30-aba3-f5d26222cb01",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "df85416a-52d8-4d69-81d7-97758e65da98",
+      "title": "AI 서비스 수익화 프롬프트 주장",
+      "url": "https://x.com/Nozelcode/status/2091578512662462916",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "C01",
+        "name": "C01 · Buzz 기회 조사",
+        "projectId": "0de968e5-07f3-4673-8ec6-faaef27b4798",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "dc8e0754-2c1a-40ac-83ef-ec1e0a97f3f5",
+      "title": "비전공자 바이브코딩 수익화 주장",
+      "url": "https://instagram.com/reel/Db7ndGJBWbp",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "C01",
+        "name": "C01 · Buzz 기회 조사",
+        "projectId": "0de968e5-07f3-4673-8ec6-faaef27b4798",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "8773be3a-297a-446f-bfc4-9969ed0c827c",
+      "title": "Pollo AI 장면 일관성·스토리보드",
+      "url": "https://instagram.com/reel/Dbk9thdy2l_",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "content-render",
+        "name": "글·영상 제작",
+        "stage": "영상 CLI 준비 / 폰 실행 연결 대기",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "bfb2a102-603a-4d6b-84b4-7f6690a4e568",
+      "title": "숏폼 저장·공유 유도 전략",
+      "url": "https://instagram.com/reel/DY133CVTebb",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "B02",
+        "name": "B02 · ShoppingShorts",
+        "projectId": "bfdc03ea-328e-4b52-90c1-5df04ecfe6f9",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "3263a4eb-d3e1-48fa-8d95-4dfd33dd826c",
+      "title": "Higgsfield 영상 생성·편집 사례",
+      "url": "https://instagram.com/reel/DaXkSdrMXPo",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "content-render",
+        "name": "글·영상 제작",
+        "stage": "영상 CLI 준비 / 폰 실행 연결 대기",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "f8016805-5200-4d83-8e63-83e14b44e0d0",
+      "title": "캐릭터 변신 영상 연출",
+      "url": "https://instagram.com/reel/Dbx-mKtvYj3",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "B04",
+        "name": "B04 · 소설·캐릭터 IP",
+        "projectId": "da912ff8-8a25-4011-8346-203ca2c50aeb",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "5294be89-6df7-4c7b-a383-48faa5a4407c",
+      "title": "TouchDesigner 실시간 입자 그래픽",
+      "url": "https://instagram.com/reel/DaxgD2kIUt1",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "content-render",
+        "name": "글·영상 제작",
+        "stage": "영상 CLI 준비 / 폰 실행 연결 대기",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "2b4bce28-3378-48ee-b458-f4852cdec0fa",
+      "title": "숏폼 첫 문장·후킹 구조",
+      "url": "https://instagram.com/p/DcTkK5xE2_P?img_index=2",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "B02",
+        "name": "B02 · ShoppingShorts",
+        "projectId": "bfdc03ea-328e-4b52-90c1-5df04ecfe6f9",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "b3a3e919-b7dc-4b7c-a3be-5dd0d1c1712c",
+      "title": "ComfyUI 제작 워크플로",
+      "url": "https://instagram.com/p/DcI1QGkmdPy?img_index=6",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "content-render",
+        "name": "글·영상 제작",
+        "stage": "영상 CLI 준비 / 폰 실행 연결 대기",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "8c82db2d-20a2-49e2-a12e-e3df649e5fdd",
+      "title": "이미지 생성 프롬프트 모음",
+      "url": "https://instagram.com/p/DcOg6x0mOsR",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "d9cf8515-5317-4fe5-b47f-3a85ee719865",
+      "title": "SNS 콘텐츠 재가공·제작 흐름",
+      "url": "https://instagram.com/p/DcL6E-RFBBr?img_index=4",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "B02-6",
+        "name": "B02-6 · 콘텐츠 배포",
+        "projectId": "b36bc4d4-9be6-4acd-8d43-bbcf6634c7c7",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "6e568f3a-c58b-45ef-bbca-d76e5fb6a956",
+      "title": "당근스토리 인플루언서 활동",
+      "url": "https://x.com/bibae151968/status/2092005780291457287",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "B02",
+        "name": "B02 · ShoppingShorts",
+        "projectId": "bfdc03ea-328e-4b52-90c1-5df04ecfe6f9",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "ecf79c9f-986f-40da-a935-0f3f34b21182",
+      "title": "제품·브랜드 기반 광고소재 제작",
+      "url": "https://instagram.com/p/Dbup2SXmEz2",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "execution",
+        "name": "작업 배정·실행·검증",
+        "stage": "일부 읽기 도구 구현 / 무인 개발 미연결",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "e4c46260-0dbd-46b6-b02e-141409c12a6b",
+      "title": "n8n 시각적 워크플로",
+      "url": "https://instagram.com/p/DcQwBpXDSXs?img_index=4",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "execution",
+        "name": "작업 배정·실행·검증",
+        "stage": "일부 읽기 도구 구현 / 무인 개발 미연결",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "98e0df03-20a5-43ec-a5b8-6825515854c9",
+      "title": "AI 영상·라이브 월페이퍼 연출",
+      "url": "https://instagram.com/reel/DaFvQWnPUVN",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "eb0ee601-8bb9-408a-b9ec-0f0a1f752334",
+      "title": "Claude Code와 Codex 구현·검토 분담",
+      "url": "https://instagram.com/p/DbaFRNliQdK",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "execution",
+        "name": "작업 배정·실행·검증",
+        "stage": "일부 읽기 도구 구현 / 무인 개발 미연결",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "59a6d091-67ac-4b22-b122-4b4c098f8ed4",
+      "title": "Fish Audio 본인 음성 활용",
+      "url": "https://instagram.com/reel/Dci_3wSOlSl",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "voice",
+        "name": "음성 입력·응답",
+        "stage": "구현 대기",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "05fe5976-2f96-429e-822b-d962adbb4bbd",
+      "title": "AI 캐릭터 대량 제작 수익 주장",
+      "url": "https://instagram.com/reel/DcdH1x0psto",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "B04",
+        "name": "B04 · 소설·캐릭터 IP",
+        "projectId": "da912ff8-8a25-4011-8346-203ca2c50aeb",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "5877b07e-85c3-4ae2-a2db-84c885a81dfc",
+      "title": "AI 동물 힐링 숏폼",
+      "url": "https://youtube.com/shorts/UAyKH5U7mnc?si=iJB6vtDIK9y1xWG3",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "B04",
+        "name": "B04 · 소설·캐릭터 IP",
+        "projectId": "da912ff8-8a25-4011-8346-203ca2c50aeb",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "070f8292-903f-49ec-9e76-4032bf3ce31d",
+      "title": "주가 데이터를 표시하는 소형 디스플레이",
+      "url": "https://instagram.com/reel/DckLaSrSOnL",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "58553a84-518f-4f4c-9b5e-effc9d1332ae",
+      "title": "Qwen 무료 모델 성능 주장",
+      "url": "https://instagram.com/reel/Dci2J_SiE2L",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "model-routing",
+        "name": "모델 선택·비용 관리",
+        "stage": "연결부 구현 / 실제 모델 인증 대기",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "6f2c9c1b-4da1-41b7-b2fb-593d32f011ad",
+      "title": "공개 데이터를 모은 세계 상황판",
+      "url": "https://instagram.com/reel/DcjMGA9vHxU",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "world",
+        "name": "세계 상황판",
+        "stage": "지진 조회 사용 가능",
+        "command": "세계 현황",
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "19a8c56d-9d8f-4723-8cc1-2be707e01c40",
+      "title": "SideShift UGC 포트폴리오·계약 흐름",
+      "url": "https://instagram.com/reel/DXLScdDCL3T",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "B02",
+        "name": "B02 · ShoppingShorts",
+        "projectId": "bfdc03ea-328e-4b52-90c1-5df04ecfe6f9",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "458afe33-097a-44f7-a198-f0e2acfcba51",
+      "title": "Jarvis 다운로드·설치 흐름",
+      "url": "https://instagram.com/reel/Db443jZI-X1",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "execution",
+        "name": "작업 배정·실행·검증",
+        "stage": "일부 읽기 도구 구현 / 무인 개발 미연결",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "eb0801cf-f582-488e-93ec-0d29bb522a75",
+      "title": "모션 추적 AI 아바타",
+      "url": "https://instagram.com/reel/Dcjw9HJOicn",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "36bd161e-a386-4c51-99df-b5bb5be5962d",
+      "title": "에이전트·기억·작업 상태 시각화",
+      "url": "https://instagram.com/reel/DXE09FJkizR",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "memory",
+        "name": "지속 기억·관련 내용 검색",
+        "stage": "기본 기억 사용 가능 / 외부 도구 통합 대기",
+        "command": "찾아줘: 검색어",
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "f9903bc0-b5f4-47f3-ac01-b026c8795c1b",
+      "title": "Token Use·Token Saver 비용 관찰",
+      "url": "https://instagram.com/reel/DccSbX_j6qo",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "model-routing",
+        "name": "모델 선택·비용 관리",
+        "stage": "연결부 구현 / 실제 모델 인증 대기",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "166547ef-2837-4c14-9b8c-f46c7e0dc9e5",
+      "title": "social-media-skills 공개 스킬",
+      "url": "https://x.com/S0N_IA/status/2093362960617861158",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "B02-6",
+        "name": "B02-6 · 콘텐츠 배포",
+        "projectId": "b36bc4d4-9be6-4acd-8d43-bbcf6634c7c7",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "276be08c-3198-43b2-a728-643fe461a702",
+      "title": "No Results Found 조사형 게임",
+      "url": "https://instagram.com/p/Dca4iUQCbrN?img_index=9",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project-review",
+        "name": "독립 프로젝트 여부 검토",
+        "stage": "고객·결과물·기존 프로젝트 중복 확인 전",
+        "basis": "독립 결과물이 있는 원본 아이디어; 신규 프로젝트는 아직 만들지 않음"
+      }
+    },
+    {
+      "sourceId": "f62637e2-2ce2-433e-83e5-03827d333861",
+      "title": "기존 마켓플레이스의 1인 제품 사업",
+      "url": "https://threads.com/share/BAjsX8Qv4f",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "C01",
+        "name": "C01 · Buzz 기회 조사",
+        "projectId": "0de968e5-07f3-4673-8ec6-faaef27b4798",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "c17bcc52-2fc4-48c4-a72a-08845bc77a02",
+      "title": "작은 불편을 해결하는 사업 사례",
+      "url": "https://instagram.com/reel/DbcLpWvPLmb",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "C01",
+        "name": "C01 · Buzz 기회 조사",
+        "projectId": "0de968e5-07f3-4673-8ec6-faaef27b4798",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "442fcc22-2577-4e82-8244-8c2942412fe5",
+      "title": "이미지·영상 모델을 조합한 광고 제작",
+      "url": "https://instagram.com/reel/DYD_tPZRwy3",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "content-render",
+        "name": "글·영상 제작",
+        "stage": "영상 CLI 준비 / 폰 실행 연결 대기",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "4cb9d745-3cd8-44e2-b7b6-445666e324ff",
+      "title": "anthropics/claude-code · v2.1.267",
+      "url": "https://github.com/anthropics/claude-code/releases/tag/v2.1.267",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "8f61a78d-cf59-4d63-91b9-a540c74964e9",
+      "title": "anthropics/claude-code · v2.1.266",
+      "url": "https://github.com/anthropics/claude-code/releases/tag/v2.1.266",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "d5b131fc-35a5-4fb5-85f2-0f47e2f4a4c0",
+      "title": "google-gemini/gemini-cli · Release v0.59.0",
+      "url": "https://github.com/google-gemini/gemini-cli/releases/tag/v0.59.0",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "dfc4156c-1f70-41a4-9342-56a949a1e328",
+      "title": "NVIDIA/skills · 재사용 스킬",
+      "url": "https://github.com/NVIDIA/skills",
+      "readingStatus": "partial",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "execution",
+        "name": "작업 배정·실행·검증",
+        "stage": "일부 읽기 도구 구현 / 무인 개발 미연결",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "e38ccac9-eee1-4f6a-9a75-0ea0d75deec6",
+      "title": "anthropics/skills · 재사용 스킬",
+      "url": "https://github.com/anthropics/skills",
+      "readingStatus": "partial",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "execution",
+        "name": "작업 배정·실행·검증",
+        "stage": "일부 읽기 도구 구현 / 무인 개발 미연결",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "11d3e2e3-735c-40c8-bc43-04984fb3d810",
+      "title": "DietrichGebert/ponytail · 재사용 스킬",
+      "url": "https://github.com/DietrichGebert/ponytail",
+      "readingStatus": "partial",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "execution",
+        "name": "작업 배정·실행·검증",
+        "stage": "일부 읽기 도구 구현 / 무인 개발 미연결",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "e04ae534-b1b0-4fe2-a9a1-2b2204809cb3",
+      "title": "Hermes Agent — 검증된 경험을 재사용 절차로",
+      "url": "https://github.com/NousResearch/hermes-agent",
+      "readingStatus": "read",
+      "decision": "candidate",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "903fa88b-ecda-40b9-91be-0737a9637d19",
+      "title": "OpenHands SDK — 격리된 코드 실행 작업자 후보",
+      "url": "https://github.com/OpenHands/software-agent-sdk",
+      "readingStatus": "read",
+      "decision": "candidate",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "2258bc53-907b-4def-9e3a-df35ad2751fb",
+      "title": "MoneyPrinterTurbo — 기존 영상 자동화 계보 복구",
+      "url": "https://github.com/harry0703/MoneyPrinterTurbo",
+      "readingStatus": "read",
+      "decision": "candidate",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "9fa1d3b9-13d3-47c1-891e-b67f3e400403",
+      "title": "Block Buzz — 기존 Buzz HQ 참조 복구",
+      "url": "https://github.com/block/buzz",
+      "readingStatus": "read",
+      "decision": "deferred",
+      "destination": {
+        "kind": "project",
+        "code": "C01",
+        "name": "C01 · Buzz 기회 조사",
+        "projectId": "0de968e5-07f3-4673-8ec6-faaef27b4798",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "909c103a-883a-4b3a-bef8-c591926c0e44",
+      "title": "사용자 Threads 자료 BAVbqbnjbv — 내용 확인 대기",
+      "url": "https://threads.com/share/BAVbqbnjbv",
+      "readingStatus": "unavailable",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "a748a68c-04b0-4bac-8e0c-0e98ae6f2056",
+      "title": "기존 링크 기반 영상 제작 참조 — 원문 미확인",
+      "url": "https://instagram.com/reel/DbFm9uWz5hF",
+      "readingStatus": "unavailable",
+      "decision": "pending",
+      "destination": {
+        "kind": "feature",
+        "key": "content-render",
+        "name": "글·영상 제작",
+        "stage": "영상 CLI 준비 / 폰 실행 연결 대기",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "45aa650d-f6fd-4a8b-bed2-7e356e0e8f72",
+      "title": "이전 참고 링크 YST-0414 — 내용 확인 대기",
+      "url": "https://instagram.com/p/DcI8nNSkoVY?img_index=3",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "70dbd9e8-0012-42f3-b47c-2f63f48a046c",
+      "title": "이전 참고 링크 YST-0415 — 내용 확인 대기",
+      "url": "https://instagram.com/reel/Dcd_jcPj9An",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "bfd96ad0-4ab0-40d2-a560-f2f1facc8c04",
+      "title": "이전 참고 링크 YST-0449 — 내용 확인 대기",
+      "url": "https://x.com/nicos_ai/status/2091549660884213782",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "a982431c-06c4-40dc-aea4-829bb44245a0",
+      "title": "이전 참고 링크 YST-0455 — 내용 확인 대기",
+      "url": "https://instagram.com/reel/DcSiV60BJiw",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "7e1fbd5f-c13b-445a-9359-df60f9420a29",
+      "title": "Claude로만든 Polymarket 퀀트봇",
+      "url": "https://instagram.com/reel/DaS7aH1M2TY",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "project",
+        "code": "V03",
+        "name": "V03 · 예측시장 모의 연구 (실거래 제외)",
+        "projectId": "57d1719e-8c55-427e-94d2-393148878b9d",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "cde4dc29-9d91-4cb1-8104-e94c603187a9",
+      "title": "이전 참고 링크 YST-0542 — 내용 확인 대기",
+      "url": "https://instagram.com/reel/DcZpxwhR7zG",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "c66f251b-4ca5-416b-890c-fb96baabb27c",
+      "title": "이전 참고 링크 YST-0568 — 내용 확인 대기",
+      "url": "https://instagram.com/reel/DcazWpbyaY7",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "36085204-9395-48cd-8890-da0690012463",
+      "title": "이전 참고 링크 YST-0653 — 내용 확인 대기",
+      "url": "https://instagram.com/reel/DcmFHGiG2Eq",
+      "readingStatus": "unread",
+      "decision": "pending",
+      "destination": {
+        "kind": "unclassified",
+        "name": "원문 확인 후 분류",
+        "stage": "대기",
+        "basis": "이름만으로 기능이나 프로젝트를 확정할 근거 부족"
+      }
+    },
+    {
+      "sourceId": "3f45c876-467a-40ea-a00d-0ed218dd50ed",
+      "title": "USGS 공개 지진 피드 — 세계 현황 기능",
+      "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php",
+      "readingStatus": "read",
+      "decision": "candidate",
+      "destination": {
+        "kind": "feature",
+        "key": "world",
+        "name": "세계 상황판",
+        "stage": "지진 조회 사용 가능",
+        "command": "세계 현황",
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "0437dde9-15d4-40f5-b164-b312f17a1e50",
+      "title": "Natural Earth 공개 지도 — 세계 현황 배경",
+      "url": "https://www.naturalearthdata.com/about/terms-of-use/",
+      "readingStatus": "read",
+      "decision": "candidate",
+      "destination": {
+        "kind": "feature",
+        "key": "world",
+        "name": "세계 상황판",
+        "stage": "지진 조회 사용 가능",
+        "command": "세계 현황",
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "89fdcfe9-5f81-461c-bfca-45ddcffc8d4b",
+      "title": "Screenpipe — 화면 기억 기능 검토",
+      "url": "https://github.com/screenpipe/screenpipe",
+      "readingStatus": "partial",
+      "decision": "deferred",
+      "destination": {
+        "kind": "feature",
+        "key": "screen-memory",
+        "name": "선택한 화면의 기억",
+        "stage": "권한·라이선스 검토",
+        "command": null,
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    },
+    {
+      "sourceId": "36585715-531c-41fb-abdf-fbb84148268c",
+      "title": "Postiz — 콘텐츠 배포 기능 / B02-6",
+      "url": "https://github.com/gitroomhq/postiz-app",
+      "readingStatus": "read",
+      "decision": "candidate",
+      "destination": {
+        "kind": "project",
+        "code": "B02-6",
+        "name": "B02-6 · 콘텐츠 배포",
+        "projectId": "b36bc4d4-9be6-4acd-8d43-bbcf6634c7c7",
+        "stage": "적용 검토",
+        "basis": "기존 프로젝트 목표와 원본 자료명 대조"
+      }
+    },
+    {
+      "sourceId": "727d8d7c-80ef-4cd6-9463-119bc53286c6",
+      "title": "ArcRift — 지속 기억 연결 검토",
+      "url": "https://github.com/Eshaan-Nair/ArcRift",
+      "readingStatus": "partial",
+      "decision": "deferred",
+      "destination": {
+        "kind": "feature",
+        "key": "memory",
+        "name": "지속 기억·관련 내용 검색",
+        "stage": "기본 기억 사용 가능 / 외부 도구 통합 대기",
+        "command": "찾아줘: 검색어",
+        "basis": "원본 자료명에 따른 기능 분류 제안"
+      }
+    }
+  ]
+}

@@ -1,6 +1,8 @@
 (async () => {
 const {createCommandRequest} = await import('/command-request.mjs');
 const {sourceMatches,sourceReferenceNames} = await import('/source-reference-labels.mjs');
+const {sourceDestination} = await import('/absorption-routing.mjs');
+const {createWorldView} = await import('/world-view.mjs');
 const $ = (id) => document.getElementById(id);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const date = (value) => value ? new Date(value).toLocaleString('ko-KR', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
@@ -27,9 +29,10 @@ async function api(path, data, options={}) {
   if(options.raw && response.ok)return response;
   let result;
   try {result=await response.json();} catch(error) {if(response.ok)throw new Error('본체의 접수 응답을 읽지 못했습니다.');result={};}
-  if(!response.ok){if(response.status===401){token='';sessionStorage.removeItem('yeno-token');$('pair-screen').hidden=false;$('project-dialog').close();$('source-dialog').close();$('source-import-dialog').close();connection(false);}const error=new Error(friendly(result.error?.message || result.error || result.message || `응답 ${response.status}`));error.status=response.status;error.project=result.project;error.source=result.source;throw error;}
+  if(!response.ok){if(response.status===401){worldView.reset();token='';sessionStorage.removeItem('yeno-token');$('pair-screen').hidden=false;$('project-dialog').close();$('source-dialog').close();$('source-import-dialog').close();connection(false);}const error=new Error(friendly(result.error?.message || result.error || result.message || `응답 ${response.status}`));error.status=response.status;error.project=result.project;error.source=result.source;throw error;}
   return result;
 }
+const worldView=createWorldView({load:()=>api('/api/world'),submit:()=>submitCommand('/api/commands',{text:'세계 현황'})});
 const requestId=()=>crypto.randomUUID();
 try {commandRequests=createCommandRequest({storage:sessionStorage,transport:(path,body)=>api(path,body)});}
 catch(error) {commandStorageError=error;}
@@ -98,14 +101,14 @@ function connection(ok) {
 async function refresh(force=false) {
   if(!token || loading)return;
   loading=true;
-  try {const s=await api('/api/state'); const wasOnline=online;current=s;connection(true);$('pair-screen').hidden=true;if(force || !wasOnline || lastRevision!==s.revision){render(s);lastRevision=s.revision;}}
+  try {const s=await api('/api/state'); const wasOnline=online;current=s;connection(true);void worldView.update(s.world, !s.emergencyStop && s.modules.documents && !commandRequests?.pending && !commandRequests?.sending);$('pair-screen').hidden=true;if(force || !wasOnline || lastRevision!==s.revision){render(s);lastRevision=s.revision;}}
   catch(e){connection(false);if(force)notify(e.message);}
   finally{loading=false;}
 }
 function showTab(tab) {
   activeTab=tab;for(const el of document.querySelectorAll('.tab-panel'))el.hidden=el.id!==`tab-${tab}`;
   for(const el of document.querySelectorAll('.nav')){el.classList.toggle('active',el.dataset.tab===tab);el.setAttribute('aria-current',el.dataset.tab===tab?'page':'false');}
-  $('page-title').textContent={control:'조종석',projects:'프로젝트',sources:'자료',memory:'기억',recovery:'복구',settings:'능력·설정'}[tab];
+  $('page-title').textContent={control:'조종석',world:'세계 현황',projects:'프로젝트',sources:'자료',memory:'기억',recovery:'복구',settings:'능력·설정'}[tab];
 }
 function render(s) {
   const jobs=s.jobs || [], running=jobs.filter(j=>j.status==='running').length;
@@ -223,14 +226,15 @@ function canPrepareSource(source) {
 }
 function renderSources() {
   const all=current?.sources||[], available=current?.capabilities?.sourceIntake===true;
-  const query=$('source-search').value.trim().toLocaleLowerCase(), filter=$('source-filter').value;
-  const sources=all.filter(source=>(filter==='all'||source.readingStatus===filter) && sourceMatches(source,query));
+  const query=$('source-search').value.trim().toLocaleLowerCase(), filter=$('source-filter').value, destination=$('source-destination-filter').value;
+  const sources=all.filter(source=>(destination==='all'||sourceDestination(source,current.projects).kind===destination) && (filter==='all'||source.readingStatus===filter) && sourceMatches(source,query));
   $('source-count').textContent=all.length;
   $('source-capability-status').textContent=available?`자료 ${all.length}개 · 확인한 근거로 개선 준비`:'자료 기능 연결 필요';
   $('sources-list').innerHTML=sources.map(source=>{
+    const route=sourceDestination(source,current.projects);
     const url=sourceURL(source.url), project=(current?.projects||[]).find(project=>project.id===source.projectId);
     const reading=readingNames[source.readingStatus]||'범위 확인 필요', decision=decisionNames[source.decision]||'판단 확인 필요';
-    return `<article class="source-card"><div class="job-top"><h3>${esc(source.title)}</h3><span class="status ${source.readingStatus==='read'?'completed':''}">${esc(reading)}</span></div>${sourceReferenceNames(source).length?`<p class="muted">원본 자료명 · ${esc(sourceReferenceNames(source).join(" · "))}</p>`:""}<div class="source-meta"><span class="source-decision">${esc(decision)}</span>${project?`<button class="text-button" data-source-project="${esc(project.id)}">${esc(project.name)} ↗</button>`:'<small>프로젝트 미연결</small>'}</div>${url?`<a class="text-button source-url" href="${esc(url.href)}" target="_blank" rel="noopener noreferrer">${esc(source.url)} ↗</a>`:`<span class="muted source-url">${esc(source.url)}</span>`}${source.readingStatus==='unavailable'?'<p class="source-unavailable">원문에 접근하지 못했습니다. 내용 확인 전에는 개선 후보로 준비하지 않습니다.</p>':''}<div class="source-note"><small>확인한 내용과 범위</small><p>${esc(source.summary||'아직 확인한 내용이 기록되지 않았습니다.')}</p></div><details class="source-review"><summary>응용 방법과 확인 사항</summary><div class="source-note"><small>YENO에 응용할 방법</small><p>${esc(source.application||'아직 정하지 않았습니다.')}</p></div><div class="source-note"><small>권리·개인정보·이용조건</small><p>${esc(source.riskNotes||'확인 기록이 없습니다.')}</p></div><small class="source-id">자료 ID · ${esc(source.id)}</small></details><div class="project-meta"><small>수정 ${esc(date(source.updatedAt||source.createdAt))}</small></div><div class="project-actions"><button class="button subtle" data-source-brief="${esc(source.id)}">브리핑 만들기</button><button class="button subtle" data-source-candidate="${esc(source.id)}" ${canPrepareSource(source)?'':'disabled'}>후보 검토서 준비</button><button class="text-button" data-source-edit="${esc(source.id)}">내용 수정</button></div></article>`;
+    return `<article class="source-card"><div class="job-top"><h3>${esc(source.title)}</h3><span class="status ${source.readingStatus==='read'?'completed':''}">${esc(reading)}</span></div>${sourceReferenceNames(source).length?`<p class="muted">원본 자료명 · ${esc(sourceReferenceNames(source).join(" · "))}</p>`:""}<p class="muted">${esc(({feature:"공통 기능",project:"기존 프로젝트",'project-review':"새 프로젝트 검토",unclassified:"분류 대기"})[route.kind])} · ${esc(route.name)} · ${esc(route.stage)}</p><div class="source-meta"><span class="source-decision">${esc(decision)}</span>${project?`<button class="text-button" data-source-project="${esc(project.id)}">${esc(project.name)} ↗</button>`:'<small>프로젝트 미연결</small>'}</div>${url?`<a class="text-button source-url" href="${esc(url.href)}" target="_blank" rel="noopener noreferrer">${esc(source.url)} ↗</a>`:`<span class="muted source-url">${esc(source.url)}</span>`}${source.readingStatus==='unavailable'?'<p class="source-unavailable">원문에 접근하지 못했습니다. 내용 확인 전에는 개선 후보로 준비하지 않습니다.</p>':''}<div class="source-note"><small>확인한 내용과 범위</small><p>${esc(source.summary||'아직 확인한 내용이 기록되지 않았습니다.')}</p></div><details class="source-review"><summary>응용 방법과 확인 사항</summary><div class="source-note"><small>YENO에 응용할 방법</small><p>${esc(source.application||'아직 정하지 않았습니다.')}</p></div><div class="source-note"><small>권리·개인정보·이용조건</small><p>${esc(source.riskNotes||'확인 기록이 없습니다.')}</p></div><small class="source-id">자료 ID · ${esc(source.id)}</small></details><div class="project-meta"><small>수정 ${esc(date(source.updatedAt||source.createdAt))}</small></div><div class="project-actions"><button class="button subtle" data-source-brief="${esc(source.id)}">브리핑 만들기</button><button class="button subtle" data-source-candidate="${esc(source.id)}" ${canPrepareSource(source)?'':'disabled'}>후보 검토서 준비</button><button class="text-button" data-source-edit="${esc(source.id)}">내용 수정</button></div></article>`;
   }).join('') || `<div class="empty">${!available?'연결한 본체의 자료 기능을 확인할 수 없습니다.':query||filter!=='all'?'이 조건에 맞는 자료가 없습니다.':'참고할 자료를 추가해 주세요.\n출처와 검토 내용을 다음 작업에 이어갑니다.'}</div>`;
   renderSourceRequest();renderCommandRequest();
 }
@@ -368,6 +372,8 @@ $('reload-source').addEventListener('click',async()=>{
 });
 $('source-search').addEventListener('input',renderSources);
 $('source-filter').addEventListener('change',renderSources);
+$('source-destination-filter').addEventListener('change',renderSources);
+$('absorption-plan').addEventListener('click',()=>submitCommand('/api/commands',{text:'흡수 계획'}));
 $('import-sources').addEventListener('click',()=>{
   if(!online || current?.capabilities?.sourceIntake!==true || sourceRequests?.pending || sourceStorageError)return;
   sourceFileGeneration+=1;sourceImportPreview=null;$('source-import-form').reset();$('source-import-preview').hidden=true;$('source-import-error').textContent='';renderSourceRequest();
@@ -389,7 +395,7 @@ $('global-stop').addEventListener('click',e=>perform(async()=>{const action=curr
 $('concurrency').addEventListener('change',e=>perform(()=>api('/api/settings',{concurrency:Number(e.target.value),requestId:requestId()})));
 $('module-settings').addEventListener('change',e=>{if(e.target.dataset.module)perform(()=>api('/api/settings',{modules:{[e.target.dataset.module]:e.target.checked},requestId:requestId()}));});
 $('compact-toggle').addEventListener('click',()=>{const compact=document.body.classList.toggle('compact');$('compact-toggle').textContent=compact?'펼치기':'작게';$('compact-toggle').setAttribute('aria-pressed',String(compact));});
-function disconnect(){token='';current=null;sessionStorage.removeItem('yeno-token');connection(false);$('pair-screen').hidden=false;}
+function disconnect(){worldView.reset();token='';current=null;sessionStorage.removeItem('yeno-token');connection(false);$('pair-screen').hidden=false;}
 $('disconnect').addEventListener('click',disconnect);$('disconnect-mobile').addEventListener('click',disconnect);
 $('reconnect').addEventListener('click',()=>refresh(true));
 document.addEventListener('click',e=>{

@@ -1,0 +1,54 @@
+{
+  "sources": [
+    {
+      "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php",
+      "title": "USGS 공개 지진 피드 — 세계 현황 기능",
+      "readingStatus": "read",
+      "decision": "candidate",
+      "summary": "2026-09-11 공식 GeoJSON Summary 문서의 피드 구조, 최근 24시간 규모 2.5 이상 경로, 매분 갱신 설명을 확인했다. 이 수집기는 해당 고정 공개 피드만 읽는다. 원문 설명은 관측의 완전성이나 무지연을 보장하지 않는다.",
+      "application": "분류: 공통 기능 / 세계 상황판. 블랙홀 세계 현황 명령, 원자료 시각과 출처를 붙인 지도·문서로 연결한다. 구현/시험/운영 결과는 별도 증거로 기록한다. God Eye 원 영상의 검증이나 코드 가져오기를 뜻하지 않는다.",
+      "riskNotes": "USGS가 앱용으로 공개한 데이터 인터페이스를 이용하고 출처와 생성 시각을 표시한다. 저작권 안내 페이지는 접근 제한으로 전문 재확인하지 못했다. 사진·로고·영상은 사용하지 않으며 위치 권한·개인 추적·안전 판정은 제공하지 않는다.",
+      "projectId": null
+    },
+    {
+      "url": "https://www.naturalearthdata.com/about/terms-of-use/",
+      "title": "Natural Earth 공개 지도 — 세계 현황 배경",
+      "readingStatus": "read",
+      "decision": "candidate",
+      "summary": "2026-09-11 제작자 Terms of Use에서 지도 데이터의 public domain 공개와 개인·상업 이용 설명을 확인했다. 유지관리 저장소의 110m 육지 데이터를 고정 커밋으로 가져와 자체 SVG로 변환했다.",
+      "application": "분류: 공통 기능 / 세계 상황판. 별도 지도 API 키나 외부 타일 호출 없이 블랙홀 웹에 육지와 지진 좌표를 표시한다. 세부 내비게이션·경계 판단용 지도는 아니다.",
+      "riskNotes": "지도 데이터 조건과 사이트의 다른 이미지/로고 조건을 구분한다. 원 제작자 출처·고정 커밋을 기록하며 데이터의 정확성 보증으로 해석하지 않는다.",
+      "projectId": null
+    },
+    {
+      "url": "https://github.com/screenpipe/screenpipe",
+      "title": "Screenpipe — 화면 기억 기능 검토",
+      "readingStatus": "partial",
+      "decision": "deferred",
+      "summary": "2026-09-11 README의 로컬 화면/음성 수집과 에이전트 문맥 연결 설명 및 LICENSE.md를 확인했다. 코드 실행·전체 저장소 검토는 하지 않았다. Product Hunt의 2026-08-28 출시 항목도 확인했다: https://www.producthunt.com/products/screenpipe",
+      "application": "분류: 공통 기능 / 선택한 화면의 기억. 사용자가 켠 앱·시간 범위만 수집하는 최소 실험과 프로젝트별 문맥 연결을 검토한다. 기존 기억 저장과 중복을 비교한 뒤 PC 연결이 가능한 환경에서 시험한다.",
+      "riskNotes": "현재 LICENSE.md는 상용 라이선스이며 상업적 사용·제품 통합 등에 별도 조건이 있다. 자동 설치·계약·상시 녹화는 하지 않았다. 화면/음성의 제3자 개인정보와 비밀값 제외, 저장 기간·삭제·보안 검증이 필요하다.",
+      "projectId": null
+    },
+    {
+      "url": "https://github.com/gitroomhq/postiz-app",
+      "title": "Postiz — 콘텐츠 배포 기능 / B02-6",
+      "readingStatus": "read",
+      "decision": "candidate",
+      "summary": "2026-09-11 공식 README에서 게시 예약·분석·공개 API/SDK와 공식 OAuth 연결 설명을 확인했고 저장소 AGPL-3.0 표시 및 라이선스 조항을 확인했다. 블랙홀 연결·실제 게시 시험은 하지 않았다.",
+      "application": "분류: 기존 프로젝트 / B02-6 Multichannel Distribution. 새 SNS 사업을 중복 생성하지 않고 기존 콘텐츠 배포 단계의 초안·예약·승인 흐름에 적용한다. 가장 작은 검증은 가짜 채널에서 예약·취소·중복 방지를 확인하고 실제 OAuth 연결은 별도 검증한다.",
+      "riskNotes": "AGPL 조건과 각 플랫폼 API/OAuth 이용조건을 따로 검토한다. 공급자 비용·승인·계정 권한 연결이 필요할 수 있다. 새 결제·계정 생성·외부 발송·실제 공개 게시를 하지 않았다.",
+      "projectId": null
+    },
+    {
+      "url": "https://github.com/Eshaan-Nair/ArcRift",
+      "title": "ArcRift — 지속 기억 연결 검토",
+      "readingStatus": "partial",
+      "decision": "deferred",
+      "summary": "Reddit 공개 제작자 글에서 발견해 원 제작자 README의 로컬 기억·브라우저 확장·MCP 연결·Node/Ollama 의존성 설명과 MIT LICENSE를 확인했다. README 전체/코드 실행/성능 주장은 검증하지 않았다. 단서: https://www.reddit.com/r/ollama/comments/1tszsp5/i_built_an_opensource_desktop_app_that_gives_your/",
+      "application": "분류: 공통 기능 / 지속 기억. MegaMemory·OSIRIS 및 현재 메모 검색과 중복을 비교한다. 계정 간 대화를 자동으로 모두 수집하지 않고 소유자가 지정한 시험 대화로 검색 정확도와 원문 보존을 검증하는 단계부터 검토한다.",
+      "riskNotes": "MIT 저작권·허가 고지 유지가 필요하다. 대화 가로채기·문맥 자동 삽입에 따른 계정별 이용조건과 개인정보·다른 프로젝트 정보 혼입을 검증해야 한다. PC/Ollama 미연결이며 설치/실제 호출은 하지 않았다.",
+      "projectId": null
+    }
+  ]
+}

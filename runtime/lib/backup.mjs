@@ -1,3 +1,4 @@
+import {validateWorldSnapshot} from './world.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -17,7 +18,7 @@ const MAGIC = Buffer.from('YENOBK1\n');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const HASH = /^[a-f0-9]{64}$/;
 const STATE_KEYS = ['revision', 'emergencyStop', 'concurrency', 'modules', 'jobs', 'memories', 'snapshots', 'events', 'requests', 'artifacts', 'devices', 'projects', 'sources'];
-const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment'];
+const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'worldSnapshot'];
 const fail = message => { throw new Error(`Backup: ${message}`); };
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = (value, min, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value) && value >= min && value <= max;
@@ -53,8 +54,10 @@ function validateState(state) {
   const jobs = new Map(), references = new Set();
   for (const job of state.jobs) {
     keys(job, JOB_KEYS, ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts']);
-    if (!UUID.test(job.id) || jobs.has(job.id) || !string(job.title, 160) || !string(job.input, 80000) || !['document', 'diagnostics', 'evolution', 'ai', 'agent'].includes(job.type) || !['queued', 'running', 'paused', 'completed', 'failed', 'cancelled'].includes(job.status) || !integer(job.step, 0, 3) || job.totalSteps !== 3 || !integer(job.version, 1, Number.MAX_SAFE_INTEGER - 1) || !Array.isArray(job.artifacts) || (job.error !== null && !string(job.error))) fail('invalid job');
+    if (!UUID.test(job.id) || jobs.has(job.id) || !string(job.title, 160) || !string(job.input, 80000) || !['document', 'diagnostics', 'evolution', 'ai', 'agent', 'world'].includes(job.type) || !['queued', 'running', 'paused', 'completed', 'failed', 'cancelled'].includes(job.status) || !integer(job.step, 0, 3) || job.totalSteps !== 3 || !integer(job.version, 1, Number.MAX_SAFE_INTEGER - 1) || !Array.isArray(job.artifacts) || (job.error !== null && !string(job.error))) fail('invalid job');
     if (job.agentJournal) validateAgentJournal(job.agentJournal);
+    if (Object.hasOwn(job, 'worldSnapshot')) { if (job.type !== 'world') fail('invalid world job'); validateWorldSnapshot(job.worldSnapshot); }
+    if (job.type === 'world' && job.step >= 2 && !job.worldSnapshot) fail('missing world checkpoint');
     validateBotAssignment(job);
     timestamp(job.createdAt); timestamp(job.updatedAt);
     if (Date.parse(job.updatedAt) < Date.parse(job.createdAt)) fail('invalid job timestamp order');

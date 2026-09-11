@@ -30,6 +30,8 @@ Native mutations now require requestId. The compact requestLedger retains at mos
 
 Read `YENO_START_HERE.md`, `docs/STATUS.md`, and `docs/FIRST_TASK.md` before changing code. Consult `docs/BUILD_DECISIONS.md` for the accepted architecture.
 
+The world observation job and source destination proposals are documented in `docs/WORLD.md` and `docs/ABSORPTION.md`. World reads only the fixed public USGS feed, has no model/key/location requirement, preserves raw-data hashes and bounded snapshots, and participates in stop/restart/backup recovery. `흡수 계획` classifies references; it does not create projects, install tools or claim unseen sources were verified. Keep these distinctions in future work.
+
 ## Commands
 
 - Node 24 is the selected starter development runtime.
