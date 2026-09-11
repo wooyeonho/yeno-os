@@ -1,0 +1,51 @@
+{
+  "verifiedAt": "2026-09-11T02:54:11.200827+00:00",
+  "revision": 206,
+  "codeCommit": "5150b79f683e8c4f266a6109b85979d48d494cbe",
+  "sourceCount": 96,
+  "originalRowsPreserved": true,
+  "commands": [
+    {
+      "command": "자료 목록 2",
+      "jobId": "dd6d88f4-f48c-4000-9df8-e202b07fc7b5",
+      "status": "completed",
+      "artifactId": "12ace886-cd4a-42b0-9609-e10e84274564",
+      "sha256": "e3f9714335f1aa787b76f07134b6098f4a9d2ef23b6115a0508dc8c4b8441579",
+      "bytes": 12681
+    },
+    {
+      "command": "자료 목록: God Eye",
+      "jobId": "9e364b65-49a4-437b-b439-cab2819bda7a",
+      "status": "completed",
+      "artifactId": "40cc1821-793e-44a8-95b4-3137384bf571",
+      "sha256": "ad1a507b2ad4cc02fb89c7fdfa4e5421e5db92f6b3f8aea44499661a95cb808d",
+      "bytes": 1338
+    },
+    {
+      "command": "자료 브리핑: God Eye",
+      "jobId": "c6adc983-2ff0-41ea-83cd-00195ce38a2a",
+      "status": "completed",
+      "artifactId": "7fb0b26c-741e-4bf0-a7f3-078673b97075",
+      "sha256": "91a06980852a200ff70c33904ac2cfb3a9116d4bf23ff67baedf1c3afd7ca463",
+      "bytes": 2285
+    }
+  ],
+  "static": {
+    "/source-reference-labels.mjs": {
+      "status": 200,
+      "sha256": "72e427eb95a23672fc27b33b2778d0ac7668da080a5dbb3e64b9805d38739484"
+    },
+    "/app.js": {
+      "status": 200,
+      "sha256": "6b3489d9d5f29c2b33ef29236ca5e73d9a870a03f95772979b296fbd7d5d62a3"
+    },
+    "verifiedAt": "2026-09-11T02:52:14.589039+00:00"
+  },
+  "phoneVerified": false,
+  "providerConfigured": false,
+  "deployment": {
+    "id": "4ca020ad-8adb-4d46-9261-4b22f2b21c3c",
+    "state": "Healthy / Active",
+    "imageManifestSha256": "eacfa3973674a53abd13dec89601c79de69e56048d909553be25a4c5c5419e98"
+  }
+}
