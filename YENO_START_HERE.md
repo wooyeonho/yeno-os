@@ -1,3 +1,5 @@
+> 최신: 기존 앱의 **작업과 결과 → 블랙홀 전체 작업표 · 원본49 + 신규1 · 자료103**에서 전체 범위를 확인한다. 새 V11 플레이본은 `projects/blackhole-casebook/BLACKHOLE_CASEBOOK.html`이다. [전체 작업표](docs/ALL_PROJECTS_AND_SOURCES_20260911.md). 이는 전체 제품의 개발 완료를 뜻하지 않는다.
+
 > 최신: 세계 현황·흡수 분류는 코드/검사 완료, 운영 배포 승인 대기다. 아래 새 명령은 서버 반영 후 사용할 수 있다. [검증 기록](docs/WORLD_VERIFICATION_20260911.json).
 
 # 바로 쓰는 세계 현황과 흡수 계획

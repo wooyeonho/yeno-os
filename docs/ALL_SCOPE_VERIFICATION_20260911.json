@@ -1,0 +1,53 @@
+{
+  "checkedAt": "2026-09-11T04:22:21.322858+00:00",
+  "jobId": "b924f3a8-bc60-40e1-a9e1-b65a8187c734",
+  "artifactId": "0cddf6b7-c928-45e6-849b-60bfef61c907",
+  "sha256": "acc52b2e0646b71ee4ce82847249acd1b65311dabf5326638d6ca0742b3f37cb",
+  "bytes": 47171,
+  "jobStatus": "completed",
+  "scope": {
+    "originalProjects": 49,
+    "additionalProject": "V11",
+    "sources": 103
+  },
+  "means": "Actual persisted scope document and verified download, not 49 implemented products.",
+  "gameCodeCommit": "159561b8861af831a29137f870c8ce424a09174d",
+  "gameEngineTests": {
+    "passed": 2,
+    "failed": 0
+  },
+  "coreTests": {
+    "passed": 159,
+    "failed": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "durationMs": 18087.415529
+  },
+  "scopeCategories": {
+    "featureReferences": 59,
+    "projectReferences": 36,
+    "unclassifiedReferences": 8
+  },
+  "individualWrites": {
+    "newProject": "V11",
+    "newPrimarySources": 2,
+    "sourceProjectReviewUpdates": 4,
+    "additionalSourceAnnotations": 13,
+    "all49ProjectNextActionRowsUpdated": false,
+    "batchDisposition": "Stopped long per-row request sequence after 13 acknowledged source writes; final state revision227 confirmed exactly 13. Switched to one complete scope artifact."
+  },
+  "deployment": "No retry of previously blocked Koyeb deployment in this turn. Existing live source remains separate from candidate runtime code.",
+  "automaticAllPlatformDiscovery": false,
+  "allProjectsImplemented": false,
+  "finalReadback": {
+    "revision": 233,
+    "originalProjectGoalsPreserved": true,
+    "oldSourceUrlsAndJobsPreserved": true,
+    "projectsTotalIncludingArchived": 70,
+    "activeOrPausedProjectCount": 50,
+    "sources": 103,
+    "jobs": 40,
+    "c00ScopeIndexUpdated": true,
+    "aiConfigured": false
+  }
+}

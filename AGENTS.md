@@ -14,7 +14,7 @@ Be explicit about implemented, tested, deployed, and device-verified states. Do 
 
 ## Product
 
-The original portfolio has 49 canonical entries including C00 Master Control. Use `docs/PROJECT_SCOPE_CORRECTION.md` and the current core registry; GitHub repository names are code/reference locations, never a replacement portfolio. Preserve canonical goals and restart execution from zero. Historical completion labels are not current evidence. The mistaken repository-based batch was cancelled; do not recreate or resume it.
+The original portfolio has 49 canonical entries including C00 Master Control. The owner subsequently requested that suitable references become real projects: V11 BLACKHOLE casebook is one additional registered project, with an original offline playable prototype. Preserve the original 49 and this separately identified addition. Read docs/ALL_PROJECTS_AND_SOURCES_20260911.md for all delivery assignments and docs/ALL_SCOPE_VERIFICATION_20260911.json for actual scope-document, registration and test evidence; assignments are not 49 completed products. Use `docs/PROJECT_SCOPE_CORRECTION.md` and the current core registry; GitHub repository names are code/reference locations, never a replacement portfolio. Preserve canonical goals and restart execution from zero. Historical completion labels are not current evidence. The mistaken repository-based batch was cancelled; do not recreate or resume it.
 
 YENO is a personal OS for daily life: Android APK and Windows EXE share identity, memory, goals, durable jobs, results, and owner controls through a persistent core. The first usable flow is: submit a task on the phone, close the app, reopen it, inspect the real result, and pause/resume work. Travel is one use case, not the product boundary.
 

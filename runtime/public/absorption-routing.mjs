@@ -9,12 +9,33 @@ export function sourceDestination(source, projects = []) {
   const text = [source.title, ...sourceReferenceNames(source)].join(' ');
   const feature = (key, name, stage = '구현 대기', command = null) => ({ kind: 'feature', key, name, stage, command, basis: '원본 자료명에 따른 기능 분류 제안' });
   const apply = (code, name) => ({ kind: 'project', code, name, projectId: project(projects, code)?.id ?? null, stage: '적용 검토', basis: '기존 프로젝트 목표와 원본 자료명 대조' });
-  if (/DcjMGA9vHxU/.test(source.canonicalUrl) || /세계 상황판|God.?s?\s*Eye|USGS|Natural Earth/i.test(text)) return feature('world', '세계 상황판', '지진 조회 사용 가능', '세계 현황');
+  // Specific domains precede broad agent/marketing keywords. Reading status
+  // stays independent: routing an unread reference is not adopting its claims.
+  if (/Polymarket|퀀트|예측 시장|투자 발언|주가 데이터/i.test(text)) return apply('V03', 'V03 · 예측시장 모의 연구 (실거래 제외)');
+  if (/No Results Found/i.test(text)) return apply('V11', 'V11 · BLACKHOLE 기록실');
+  if (/Life Clock/i.test(text)) return apply('A04', 'A04 · 시간·문화 캘린더 참고');
+  if (/Photon Matrix/i.test(text)) return apply('C01', 'C01 · 외부 하드웨어 조사 (도입 보류)');
+  if (/AI 안경|스마트글래스|Yeogie/i.test(text)) return apply('A02', 'A02 · 여기·스마트글래스 입력');
+  if (/개인정보|사이버보안|보안 에이전트/i.test(text)) return feature('privacy', '개인정보·권한·보안 점검', '기기 폐기·백업 구현 / 외부 삭제 자동화 미연결');
+  if (/OSIRIS|자료 발굴|주도적인 자료|변화 감지/i.test(text)) return feature('discovery', '공개 자료 발견·변화 확인', 'GitHub 주제·공식 릴리스 수집 / 모든 SNS 자동 열람 미연결');
+  if (/W3C PROV|출처와 파생/i.test(text)) return feature('provenance', '출처·파생 관계 추적', '기본 출처·해시 구현 / 표준 전체 통합 대기');
+  if (/검사와 배포 환경|GitHub.*배포/i.test(text)) return feature('release', '빌드·배포·복원 검증', 'APK 빌드·코어 검사 구현 / 운영 승격 별도');
+  if (/NotebookLM|LangGraph|작업 상태와 장기 기억/i.test(text)) return feature('memory', '지속 기억·관련 내용 검색', '기본 기억 사용 가능 / 외부 도구 통합 대기', '찾아줘: 검색어');
+  if (/MoneyPrinterTurbo|스프라이트|이미지 생성|빈티지 스케치|모션 추적|라이브 월페이퍼/i.test(text)) return feature('content-render', '글·영상 제작', '영상 CLI 준비 / 폰 실행 연결 대기');
+  if (/경영진 역할|Hermes Agent|OpenHands|gemini-cli|claude-code/i.test(text)) return feature('execution', '작업 배정·실행·검증', '일부 읽기 도구 구현 / 무인 개발 미연결');
+  if (/수익화|사업|기회/i.test(text)) return apply('C01', 'C01 · Buzz 기회 조사');
+  if (/AI 프롬프트/i.test(text)) return feature('prompts', '검증한 작업 지시문 재사용', '자료 분류 / 실행 효과 검증 대기');
+  if (/Private Tutor|학습 홍보/i.test(text)) return feature('learning', '학습·근거 확인 도우미');
+  if (/인터랙티브 웹|웹 앱 제작/i.test(text)) return feature('app-builder', '화면·앱 제작 도구', '현재 세션 구현 / 무인 생성 미연결');
+  if (/배틀그라운드|게임 설계/i.test(text)) return apply('V09', 'V09 · 게임 설계 참고 (원문 검증 전)');
+  if (/블로그 키워드|마케팅 레퍼런스/i.test(text)) return apply('A01', 'A01 · 검색·콘텐츠 근거 조사');
+  if (/유튜브 창작|TikTok Shop|K뷰티/i.test(text)) return apply('B02', 'B02 · ShoppingShorts');
+  if (/DcjMGA9vHxU/.test(source.canonicalUrl) || /세계 상황판|God.?s?\s*Eye|USGS|Natural Earth/i.test(text)) return feature('world', '세계 상황판', '지진 조회 구현·검사 완료 / 운영 반영 확인 필요', '세계 현황');
   if (/screenpipe|화면 기억/i.test(text)) return feature('screen-memory', '선택한 화면의 기억', '권한·라이선스 검토');
-  if (/MegaMemory|ArcRift|OSIRIS|기억|memory/i.test(text)) return feature('memory', '지속 기억·관련 내용 검색', '기본 기억 사용 가능 / 외부 도구 통합 대기', '찾아줘: 검색어');
+  if (/MegaMemory|ArcRift|기억|memory/i.test(text)) return feature('memory', '지속 기억·관련 내용 검색', '기본 기억 사용 가능 / 외부 도구 통합 대기', '찾아줘: 검색어');
   if (/Postiz|social-media-skills|배포|SNS 콘텐츠 재가공/i.test(text)) return apply('B02-6', 'B02-6 · 콘텐츠 배포');
   if (/ComfyUI|Pollo|Higgsfield|영상 생성|영상 제작|링크.*영상|TouchDesigner/i.test(text)) return feature('content-render', '글·영상 제작', '영상 CLI 준비 / 폰 실행 연결 대기');
-  if (/Grok|Jarvis|에이전트|스킬|Claude Code|Codex|n8n/i.test(text)) return feature('execution', '작업 배정·실행·검증', '일부 읽기 도구 구현 / 무인 개발 미연결');
+  if (/Grok|Jarvis|자비스|에이전트|스킬|Claude Code|Codex|n8n/i.test(text)) return feature('execution', '작업 배정·실행·검증', '일부 읽기 도구 구현 / 무인 개발 미연결');
   if (/Qwen|OmniRoute|Token|모델|비용 관찰/i.test(text)) return feature('model-routing', '모델 선택·비용 관리', '연결부 구현 / 실제 모델 인증 대기');
   if (/Fish Audio|음성/i.test(text)) return feature('voice', '음성 입력·응답');
   if (/GEO|SEO|For.?Ai/i.test(text)) return apply('A01', 'A01 · For-Ai');
