@@ -35,12 +35,13 @@ test('agent requires explicit provider credentials, model and a positive bounded
   const f=fixture();await assert.rejects(runAgent({...f,config:agentConfig({}),fetchImpl:()=>assert.fail('No network')}),/required/);
 });
 
-for(const provider of ['anthropic','gemini','xai','openai'])test(`${provider} simulated wire: reserve -> model -> actual read tool -> model -> final, with no key in state`,async()=>{
+for(const provider of ['anthropic','gemini','xai','openai','moonshot','nvidia'])test(`${provider} simulated wire: reserve -> model -> actual read tool -> model -> final, with no key in state`,async()=>{
   const f=fixture(provider);let calls=0;
   const draft=await runAgent({...f,fetchImpl:async(url,options)=>{
     assert.equal(url,f.config.endpoint);assert.equal(options.redirect,'error');assert.ok(f.saves()>0);
     assert.equal(f.job.agentJournal.calls.at(-1).status,'reserved');
     const payload=JSON.parse(options.body);assert.equal(payload.model,env.YENO_AGENT_MODEL);
+    assert.deepEqual(payload.tools.map(t=>t.name??t.function.name),['ecosystem_list','ecosystem_read','runtime_inspect','sources_list','source_read_release']);
     assert.equal(provider==='anthropic'?options.headers['x-api-key']:options.headers.Authorization,provider==='anthropic'?KEY:`Bearer ${KEY}`);
     if(calls++)assert.match(options.body,/developerWorker/);
     return response(provider,calls===1?[tool('inspect','runtime_inspect')]:[]);
@@ -48,6 +49,55 @@ for(const provider of ['anthropic','gemini','xai','openai'])test(`${provider} si
   assert.equal(calls,2);assert.match(draft,/도구 응답 1회/);assert.match(draft,/실제 원문 읽기 0회/);
   assert.equal(JSON.stringify(f.state).includes(KEY),false);assert.equal(f.job.agentJournal.history.at(-2).role,'tool');
   assert.deepEqual(agentUsage(f.state.jobs),{date:new Date().toISOString().slice(0,10),attempts:2,unknown:0,inputTokens:20,outputTokens:10,usageMissing:0});
+});
+
+test('Gemini signed parallel tool calls survive disk checkpoint and resume without replay or public signature disclosure',async t=>{
+  const f=fixture('gemini'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'blackhole-gemini-'));
+  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  const file=path.join(dir,'checkpoint.json'),signature='opaque+/provider=signature',expected='시험 이야기: 별을 삼킨 고양이.';let posts=0;
+  const save=()=>{fs.writeFileSync(file,JSON.stringify(f.job.agentJournal));if(f.job.agentJournal.history.filter(m=>m.role==='tool').length===2)f.controller.abort();};
+  await assert.rejects(runAgent({...f,save,fetchImpl:async()=>{
+    posts++;
+    const body=await response('gemini',[tool('a','runtime_inspect'),tool('b','sources_list')],'').json();
+    body.choices[0].message.tool_calls[0].extra_content={google:{thought_signature:signature,untrusted:'discard'},untrusted:'discard'};
+    return json(body);
+  }}),/stopped/);
+  f.job.agentJournal=JSON.parse(fs.readFileSync(file,'utf8'));
+  validateAgentJournal(f.job.agentJournal);assert.equal(f.job.agentJournal.calls[0].status,'settled');
+  const answer=await runAgent({...f,signal:new AbortController().signal,fetchImpl:async(url,options)=>{
+    posts++;const payload=JSON.parse(options.body),calls=payload.messages.find(m=>m.tool_calls)?.tool_calls;
+    assert.deepEqual(calls.map(c=>c.id),['a','b']);
+    assert.deepEqual(calls[0].extra_content,{google:{thought_signature:signature}});
+    assert.equal(calls[1].extra_content,undefined);assert.equal(payload.messages.filter(m=>m.role==='tool').length,2);
+    return response('gemini',[],expected);
+  }});
+  assert.equal(posts,2);assert.ok(answer.startsWith(expected));assert.equal(answer.includes(signature),false);
+  assert.equal(f.job.agentJournal.history.filter(m=>m.role==='tool').length,2);
+});
+
+test('Gemini continuation metadata is bounded and provider-specific; legacy journals still validate',async()=>{
+  for(const signature of [null,{},'', '가'.repeat(6000)]){
+    const f=fixture('gemini');let calls=0;
+    const invoke=()=>runAgent({...f,fetchImpl:async()=>{
+      calls++;const body=await response('gemini',[tool('t','runtime_inspect')]).json();
+      body.choices[0].message.tool_calls[0].extra_content={google:{thought_signature:signature}};
+      return json(body);
+    }});
+    await assert.rejects(invoke(),/invalid_thought_signature/);
+    await assert.rejects(invoke(),/previous_call_outcome_unknown/);assert.equal(calls,1);validateAgentJournal(f.job.agentJournal);
+  }
+  const old={provider:'gemini',model:'synthetic-test-model',calls:[],history:[{role:'assistant',content:'',toolCalls:[tool('old','runtime_inspect')]}]};
+  validateAgentJournal(old);
+  const signed=structuredClone(old);signed.history[0].toolCalls[0].thoughtSignature='opaque';validateAgentJournal(signed);
+  signed.provider='openai';assert.throws(()=>validateAgentJournal(signed),/invalid_thought_signature/);
+  const other=fixture('openai');let posts=0;
+  await runAgent({...other,fetchImpl:async(url,options)=>{
+    assert.equal(options.body.includes('thought_signature'),false);
+    const body=await response('openai',posts++===0?[tool('t','runtime_inspect')]:[]).json();
+    if(body.choices[0].message.tool_calls.length)body.choices[0].message.tool_calls[0].extra_content={google:{thought_signature:'discard-me'}};
+    return json(body);
+  }});
+  assert.equal(JSON.stringify(other.job.agentJournal).includes('discard-me'),false);
 });
 
 test('official reader enforces stored release identity, bounded excerpts, no credentials, and no registry promotion',async()=>{
