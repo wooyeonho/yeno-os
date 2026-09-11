@@ -169,7 +169,10 @@ export function createYenoServer(options={}) {
  }
  function agentConnectionDocument(){
    const usage=agentUsage(s.jobs);
-   return `\n## AI 실행 연결\n- 제공자: ${agentSettings.provider}\n- 준비: ${agentSettings.ready?'설정 있음 — 실제 호출 성공은 별도 확인':'모델 인증·모델 이름·호출 상한 연결 대기'}\n- 오늘 시도: ${usage.attempts} / 하루 상한 ${agentSettings.dailyCallLimit}회\n- 응답 미확인: ${usage.unknown}회\n- 사용량 누락: ${usage.usageMissing}회\n- 자동 자료 검토 설정: ${agentSettings.auto?'켜짐':'꺼짐'}\n- 명령: 자율 임무: 공식 자료를 읽고 다음 개선 초안을 만들어줘\n모델이 읽기 도구를 선택하고 결과를 문서로 남깁니다. 제공자 1개만 사용하며 코드·권한·결제·배포를 실행하지 않습니다. 호출 횟수 제한은 결제 금액 보장이 아닙니다.\n`;
+   const labels={openai:'GPT (OpenAI)',gemini:'Gemini',moonshot:'Kimi (Moonshot)',xai:'Grok (xAI)',anthropic:'Claude',nvidia:'NVIDIA'};
+   const missing={key:'API 키',model:'모델 이름',callLimit:'호출 상한',invalidConfiguration:'설정 수정'};
+   const choices=agentSettings.providers.map(c=>`- ${labels[c.provider]}: ${c.configured?'설정 준비됨 · 실제 호출 미확인':c.missing.map(reason=>missing[reason]).join('·')+' 필요'}${c.eligible?'':' · 현재 선택 범위 밖'}`).join('\n');
+   return `\n## AI 실행 연결\n- 제공자: ${agentSettings.ready?labels[agentSettings.provider]:'연결 대기'}\n- 선택 방식: ${agentSettings.selectionMode==='configured-order'?'지정한 순서에서 설정된 제공자 선택':'지정한 제공자 사용'}\n- 준비: ${agentSettings.ready?'설정 있음 — 실제 호출 성공은 별도 확인':'모델 인증·모델 이름·호출 상한 연결 대기'}\n- 오늘 시도: ${usage.attempts} / 하루 상한 ${agentSettings.dailyCallLimit}회\n- 응답 미확인: ${usage.unknown}회\n- 사용량 누락: ${usage.usageMissing}회\n- 자동 자료 검토 설정: ${agentSettings.auto?'켜짐':'꺼짐'}\n\n### 제공자별 연결 준비\n${choices}\n\nNVIDIA는 필수 조건이 아닙니다. 각 제공자의 API 키와 모델을 별도로 연결할 수 있습니다.\n- 명령: 자율 임무: 공식 자료를 읽고 다음 개선 초안을 만들어줘\n한 작업은 선택한 모델로 기록을 유지하며, 응답이 불명확한 호출을 다른 제공자에게 다시 보내지 않습니다. 모델이 읽기 도구를 선택하고 결과를 문서로 남깁니다. 코드·권한·결제·배포 실행은 별도입니다. 호출 횟수 제한은 결제 금액 보장이 아닙니다.\n`;
  }
  function evolutionDocument(){
    const failures=s.jobs.filter(j=>j.status==='failed');

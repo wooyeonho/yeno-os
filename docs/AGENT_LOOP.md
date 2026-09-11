@@ -1,3 +1,7 @@
+# 2026-09-12 제공자 선택 보완
+
+GPT·Gemini·Kimi·Grok·Claude·NVIDIA를 별도 키/모델 쌍으로 선택할 수 있다. `YENO_AGENT_PROVIDER=auto`는 지정 목록에서 설정된 제공자를 고르며 NVIDIA 가입 대기를 필수로 두지 않는다. 실제 인증·응답 확인과 자동 선택은 구분한다. [연결 설정과 복구 조건](PROVIDER_SELECTION.md). 아래는 당시 구현 이력이다.
+
 # 2026-09-10 확장
 
 NVIDIA·Moonshot(Kimi) 연결과 reasoning_content 보존, ecosystem_list/ecosystem_read 도구를 추가했다. 기존 세 읽기 도구도 유지한다. K3 요청은 low reasoning / 최대 4,096 출력토큰으로 제한한다. 최신 원문 수집 범위와 연결 준비는 [ECOSYSTEM_INTAKE](ECOSYSTEM_INTAKE.md), 실제 가동 여부는 [STATUS](STATUS.md)를 따른다. 아래 130개 검사 기록은 이전 버전 이력이다.
