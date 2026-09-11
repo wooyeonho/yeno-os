@@ -1,11 +1,31 @@
 import { sourceReferenceNames } from './source-reference-labels.mjs';
 
 const project = (projects, code) => projects.find(p => p.status !== 'archived' && (p.name === code || p.name.startsWith(`${code} — `))) ?? null;
+// Exact creator/page identities reviewed on 2026-09-11. A caption identifies
+// an application area; it does not promote the source's reading/decision state.
+function reviewedRoute(source) {
+  let url;
+  try { url = new URL(source.canonicalUrl || source.url); } catch { return null; }
+  if (url.protocol !== 'https:' || url.username || url.password || url.port) return null;
+  const host = url.hostname.replace(/^www\./, ''), path = url.pathname.replace(/\/$/, '');
+  const identified = (key, name, stage, basis, command = null) => ({ kind: 'feature', key, name, stage, basis, command });
+  if (host === 'instagram.com' && path === '/reel/DdBgyy7TCrB')
+    return identified('memory', '지속 기억·관련 내용 검색', '기본 기억 사용 가능 / 외부 도구 통합 대기', '2026-09-11 설명문에서 기억 주제 확인; 영상 전체 확인 아님', '찾아줘: 검색어');
+  if ((host === 'github.com' && path.toLowerCase() === '/google/artemis') || (host === 'threads.com' && path === '/share/BAVbqbnjbv'))
+    return identified('android-test', 'Android 명령·결과·재접속 시험', '원 제작자 문서 검토 / 기기 시험 미실행', '2026-09-11 ARTEMIS 공식 README 확인; Threads는 소개·링크 카드만 확인');
+  if ((host === 'openai.com' && path === '/index/introducing-the-agents-api') || (host === 'developers.openai.com' && path === '/api/docs/guides/agents-api/overview'))
+    return identified('execution', '작업 배정·실행·검증', '공식 문서 검토 / API 실행자 미연결', '2026-09-11 Agents API 공식 소개·개요 확인');
+  if ((host === 'github.com' && path.toLowerCase() === '/bilawalsidhu/gods-eye-view') || (host === 'instagram.com' && path === '/reel/DcjMGA9vHxU'))
+    return identified('world', '세계 상황판', '지진 조회 구현·검사 완료 / 확장 레이어 미연결', '2026-09-11 제작자 README·LICENSE 확인; Instagram 영상은 부분 확인', '세계 현황');
+  return null;
+}
 export function sourceDestination(source, projects = []) {
   // A routing proposal based on stored titles; never an automatic source review,
   // project creation, installation, or claim about unseen video contents.
   const explicit = projects.find(p => p.id === source.projectId && p.status !== 'archived');
   if (explicit) return { kind: 'project', name: explicit.name, projectId: explicit.id, basis: '등록된 프로젝트 연결', stage: '검토 대기' };
+  const reviewed = reviewedRoute(source);
+  if (reviewed) return reviewed;
   const text = [source.title, ...sourceReferenceNames(source)].join(' ');
   const feature = (key, name, stage = '구현 대기', command = null) => ({ kind: 'feature', key, name, stage, command, basis: '원본 자료명에 따른 기능 분류 제안' });
   const apply = (code, name) => ({ kind: 'project', code, name, projectId: project(projects, code)?.id ?? null, stage: '적용 검토', basis: '기존 프로젝트 목표와 원본 자료명 대조' });
@@ -30,7 +50,7 @@ export function sourceDestination(source, projects = []) {
   if (/배틀그라운드|게임 설계/i.test(text)) return apply('V09', 'V09 · 게임 설계 참고 (원문 검증 전)');
   if (/블로그 키워드|마케팅 레퍼런스/i.test(text)) return apply('A01', 'A01 · 검색·콘텐츠 근거 조사');
   if (/유튜브 창작|TikTok Shop|K뷰티/i.test(text)) return apply('B02', 'B02 · ShoppingShorts');
-  if (/DcjMGA9vHxU/.test(source.canonicalUrl) || /세계 상황판|God.?s?\s*Eye|USGS|Natural Earth/i.test(text)) return feature('world', '세계 상황판', '지진 조회 구현·검사 완료 / 운영 반영 확인 필요', '세계 현황');
+  if (/세계 상황판|God.?s?\s*Eye|USGS|Natural Earth/i.test(text)) return feature('world', '세계 상황판', '지진 조회 구현·검사 완료 / 운영 반영 확인 필요', '세계 현황');
   if (/screenpipe|화면 기억/i.test(text)) return feature('screen-memory', '선택한 화면의 기억', '권한·라이선스 검토');
   if (/MegaMemory|ArcRift|기억|memory/i.test(text)) return feature('memory', '지속 기억·관련 내용 검색', '기본 기억 사용 가능 / 외부 도구 통합 대기', '찾아줘: 검색어');
   if (/Postiz|social-media-skills|배포|SNS 콘텐츠 재가공/i.test(text)) return apply('B02-6', 'B02-6 · 콘텐츠 배포');
@@ -47,16 +67,35 @@ export function sourceDestination(source, projects = []) {
   return { kind: 'unclassified', name: '원문 확인 후 분류', stage: '대기', basis: '이름만으로 기능이나 프로젝트를 확정할 근거 부족' };
 }
 
+export function sourceCoverage(sources, projects = []) {
+  const active = new Set(projects.filter(p => p.status !== 'archived').map(p => p.id));
+  const seen = new Set(), counts = { feature: 0, project: 0, 'project-review': 0, unclassified: 0 };
+  const entries = sources.map((source, index) => {
+    const destination = sourceDestination(source, projects), issues = [];
+    counts[destination.kind]++;
+    if (!source.id) issues.push('missing-source-id');
+    else if (seen.has(source.id)) issues.push('duplicate-source-id');
+    seen.add(source.id);
+    if (source.projectId && !active.has(source.projectId)) issues.push('inactive-project-link');
+    if (destination.kind === 'project' && !destination.projectId) issues.push('missing-destination-project');
+    if (source.decision === 'candidate' && (source.readingStatus !== 'read' || !['summary', 'application', 'riskNotes'].every(k => typeof source[k] === 'string' && source[k].trim()))) issues.push('incomplete-candidate-evidence');
+    return { index, sourceId: source.id ?? null, readingStatus: source.readingStatus, decision: source.decision, destination, issues };
+  });
+  return { total: sources.length, counts, entries, attentionCount: entries.filter(e => e.issues.length).length, unclassifiedCount: counts.unclassified };
+}
+
 export function absorptionDocument(sources, projects) {
+  const coverage = sourceCoverage(sources, projects);
   const groups = new Map();
-  for (const source of sources) {
-    const dest = sourceDestination(source, projects), key = `${dest.kind}:${dest.name}`;
+  for (const entry of coverage.entries) {
+    const source = sources[entry.index], dest = entry.destination, key = `${dest.kind}:${dest.name}`;
     if (!groups.has(key)) groups.set(key, { dest, sources: [] });
     groups.get(key).sources.push(source);
   }
   const labels = { feature: '공통 기능', project: '기존 프로젝트 적용', 'project-review': '새 프로젝트 검토', unclassified: '분류 대기' };
-  const counts = Object.fromEntries(Object.keys(labels).map(kind => [kind, sources.filter(s => sourceDestination(s, projects).kind === kind).length]));
+  const counts = coverage.counts;
   let remaining = 120;
   const line = s => `- ${s.title.replace(/[\r\n]/g, ' ')} · ${s.readingStatus}/${s.decision} · ID ${s.id}`;
-  return `# BLACKHOLE 흡수 계획\n\n${Object.entries(counts).map(([kind, count]) => `${labels[kind]} ${count}개 자료`).join(' / ')}\n\n원본 자료명과 기존 프로젝트 목표를 대조한 분류입니다. 원문 읽기/채택 상태는 그대로 보존합니다. 설치·프로젝트 생성·기능 실행은 각각 별도이며 등록만으로 완료 처리하지 않습니다.\n\n${[...groups.values()].slice(0, 30).map(({ dest, sources: items }) => { const shown=items.slice(0,Math.min(15,remaining));remaining-=shown.length;return `## ${labels[dest.kind]} — ${dest.name}\n- 상태: ${dest.stage}\n- 분류 근거: ${dest.basis}\n${dest.command ? `- 실행 명령: ${dest.command}\n` : ''}${dest.projectId ? `- 기존 프로젝트 ID: ${dest.projectId}\n` : ''}${shown.map(line).join('\n')}${items.length > shown.length ? `\n- 나머지 ${items.length - shown.length}개는 자료 목록에서 조회` : ''}`;}).join('\n\n')}\n\n## 새 자료를 추가하는 기준\n원 제작자 문서/코드 확인 → 권리·비용·개인정보 확인 → 기존 기능/프로젝트 중복 대조 → 최소 실행과 결과·중단·복구 시험. 공통으로 재사용할 능력은 기능으로, 고객과 결과물이 분명한 독립 과제는 프로젝트로 분리합니다. 여행 자료는 개선 후보에서 제외합니다.\n\n현재 상주 수집기의 GitHub 검색 범위와, 이 대화에서 수행한 Product Hunt·Reddit·X·Instagram 공개 조사를 구분합니다. 모든 사이트의 트렌드를 코어가 자동 열람하도록 연결된 상태는 아닙니다.\n`;
+  const shownCount = [...groups.values()].slice(0, 30).reduce((count, group) => Math.min(120, count + Math.min(15, group.sources.length)), 0);
+  return `# BLACKHOLE 흡수 계획\n\n${Object.entries(counts).map(([kind, count]) => `${labels[kind]} ${count}개 자료`).join(' / ')}\n\n전체 ${coverage.total}개 중 이 문서에 ${shownCount}개 표시 · ${coverage.total - shownCount}개 생략(자료 목록에 보존). 분류 대기 ${coverage.unclassifiedCount}개 · 연결/검토 기록 확인 필요 ${coverage.attentionCount}개.\n\n확인한 원자료와 기존 제목·프로젝트 목표를 대조한 분류 제안입니다. 원문 읽기/채택 상태는 그대로 보존합니다. 설치·프로젝트 생성·기능 실행은 각각 별도이며 등록만으로 완료 처리하지 않습니다.\n\n${[...groups.values()].slice(0, 30).map(({ dest, sources: items }) => { const shown=items.slice(0,Math.min(15,remaining));remaining-=shown.length;return `## ${labels[dest.kind]} — ${dest.name}\n- 상태: ${dest.stage}\n- 분류 근거: ${dest.basis}\n${dest.command ? `- 실행 명령: ${dest.command}\n` : ''}${dest.projectId ? `- 기존 프로젝트 ID: ${dest.projectId}\n` : ''}${shown.map(line).join('\n')}${items.length > shown.length ? `\n- 나머지 ${items.length - shown.length}개는 자료 목록에서 조회` : ''}`;}).join('\n\n')}\n\n## 새 자료를 추가하는 기준\n원 제작자 문서/코드 확인 → 권리·비용·개인정보 확인 → 기존 기능/프로젝트 중복 대조 → 최소 실행과 결과·중단·복구 시험. 공통으로 재사용할 능력은 기능으로, 고객과 결과물이 분명한 독립 과제는 프로젝트로 분리합니다. 여행 자료는 개선 후보에서 제외합니다.\n\n현재 상주 수집기의 GitHub 검색 범위와, 이 대화에서 수행한 Product Hunt·Reddit·X·Instagram 공개 조사를 구분합니다. 모든 사이트의 트렌드를 코어가 자동 열람하도록 연결된 상태는 아닙니다.\n`;
 }

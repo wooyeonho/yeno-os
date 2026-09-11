@@ -1,0 +1,33 @@
+{
+  "verifiedAt": "2026-09-11T11:28:19.606376+00:00",
+  "sourceCountBefore": 103,
+  "sourceCountAfter": 106,
+  "createdCount": 3,
+  "existingSourcesUnchanged": true,
+  "projectsUnchanged": true,
+  "projectCount": 70,
+  "confirmedSources": [
+    {
+      "id": "1f4041d9-02ea-4ec0-80ce-8a660a3fa245",
+      "canonicalUrl": "https://github.com/bilawalsidhu/gods-eye-view",
+      "readingStatus": "read",
+      "decision": "candidate"
+    },
+    {
+      "id": "fe208d3f-ba5d-4636-adf4-d565fc4c175f",
+      "canonicalUrl": "https://github.com/google/artemis",
+      "readingStatus": "read",
+      "decision": "candidate"
+    },
+    {
+      "id": "89eb90f0-b110-4326-a335-a0ce81aa6889",
+      "canonicalUrl": "https://openai.com/index/introducing-the-agents-api/",
+      "readingStatus": "read",
+      "decision": "candidate"
+    }
+  ],
+  "providerConfigured": false,
+  "candidateRegistrationOnly": true,
+  "codeDeployed": false,
+  "deviceTestPerformed": false
+}
