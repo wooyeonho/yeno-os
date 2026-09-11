@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer">
+<title>블랙홀 기록실 · 사라진 내일</title>
+<style>
+:root{color-scheme:dark;font:16px/1.65 system-ui,sans-serif;background:#090e13;color:#e3e9ec}*{box-sizing:border-box}body{margin:0}main{max-width:1050px;margin:auto;padding:28px 22px 70px}header{display:flex;justify-content:space-between;border-bottom:1px solid #34424b;padding-bottom:16px;gap:15px}header strong{letter-spacing:.22em;color:#82ddc3}small,.muted{color:#a8b7c2}.hero{padding:40px 0 24px;max-width:710px}.eyebrow{font-size:.8rem;letter-spacing:.14em;color:#d9b77b}h1{font-size:clamp(2rem,6vw,3.3rem);line-height:1.2;margin:14px 0}h2{font-size:1.1rem}.grid{display:grid;grid-template-columns:1.25fr 1fr;gap:24px}.panel{background:#121b23;border:1px solid #2a3945;border-radius:16px;padding:22px}form{display:flex;gap:10px}input,select,button{font:inherit;border:1px solid #40515e;border-radius:9px;padding:12px;color:inherit;background:#0b1218}input{width:100%;min-width:0}button{cursor:pointer}button:hover,button:focus-visible{border-color:#82ddc3}button.primary{background:#82ddc3;color:#081711;font-weight:700}.result{display:block;text-align:left;width:100%;margin-top:10px}.record{min-height:210px;white-space:pre-line}#feedback{color:#82ddc3;min-height:1.8em}#opened{display:flex;flex-wrap:wrap;gap:8px}.chip{font-size:.8rem;padding:7px 10px}.tools{margin-top:22px;display:flex;flex-wrap:wrap;gap:8px}.tools button{font-size:.85rem}select{width:100%;margin-bottom:10px}details{margin-top:18px}footer{margin-top:30px;border-top:1px solid #34424b;padding-top:16px;font-size:.8rem}a{color:#82ddc3}@media(max-width:680px){.grid{grid-template-columns:1fr}main{padding:20px 16px}.hero{padding-top:24px}.panel{padding:17px}header{font-size:.82rem}}
+</style>
+<main>
+<header><strong>BLACKHOLE / 기록실</strong><small>CASE 001 · 플레이 가능한 초기판</small></header>
+<section class="hero"><div class="eyebrow">검색으로 풀어가는 오리지널 미스터리</div><h1>사라진 내일</h1><p>전시를 한 시간 앞두고 마지막 녹음이 사라졌다.<br>남은 것은 짧은 메모 한 장. <strong>“비늘부터 찾아보세요.”</strong></p><p class="muted">기록을 읽고 낯선 단어를 검색하세요. 세 가지 근거를 모아, 녹음이 사라진 이유를 밝혀내세요. 약 3~5분.</p></section>
+<div class="grid"><section class="panel"><h2>기록 검색</h2><form id="search-form"><input id="query" aria-label="단서 검색어" placeholder="비늘" maxlength="80" autocomplete="off"><button class="primary">검색</button></form><p id="search-status" class="muted" aria-live="polite">첫 단서: 비늘</p><div id="results"></div><details><summary>막혔을 때 단서 보기</summary><p>기록에 나온 이름과 물건을 검색해 보세요. 비늘 → 청록 → 유리새. 그다음은 편지와 읽기 기록에 있습니다.</p></details></section>
+<section class="panel"><h2 id="record-title">열어 본 기록</h2><div id="record-body" class="record muted">검색 결과를 누르면 기록을 읽을 수 있습니다.</div><p id="progress" class="muted"></p><div id="opened"></div></section></div>
+<section class="panel" style="margin-top:24px"><h2>사건의 결론</h2><label for="choice">녹음은 왜 사라졌을까요?</label><select id="choice"><option value="">근거를 읽고 선택하세요</option><option value="deleted">누군가 원본을 삭제했다</option><option value="stolen">녹음기가 반출됐다</option><option value="clock">장비 시간 오차로 다른 날짜에 저장됐다</option></select><button id="finish" class="primary">근거 대조하기</button><p id="feedback" role="status"></p></section>
+<div class="tools"><button id="export">진행 파일 저장</button><button id="import">진행 파일 불러오기</button><button id="reset">처음부터</button><input type="file" id="file" accept="application/json,.json" hidden></div><p id="save-status" class="muted" role="status"></p>
+<footer>모든 인물과 기록은 이 프로젝트를 위해 만든 허구입니다. 계정·결제·API·외부 통신 없이 실행됩니다. 이 기기의 저장 기능이 허용되면 진행을 보존하며, 기기 간 동기화는 진행 파일로 합니다. 원작의 사건·문장·이미지를 포함하지 않습니다. 검색 추리 구조의 참고: <a href="https://store.steampowered.com/app/4911390" target="_blank" rel="noopener noreferrer">No Results Found 제작자 소개</a>. 모바일 실기기 확인 전입니다.</footer>
+</main><script>
+/* CASE_ENGINE */
+const $=id=>document.getElementById(id), storageKey='blackhole.casebook.missing-tomorrow.v1';
+let state=fresh();
+try{state=restore(localStorage.getItem(storageKey));}catch{}
+function save(){try{localStorage.setItem(storageKey,JSON.stringify(state));$('save-status').textContent='이 기기에 진행을 저장했습니다.';}catch{$('save-status').textContent='이 환경에서는 자동 저장이 제한됩니다. 진행 파일 저장을 이용하세요.';}}
+function progress(){
+ $('progress').textContent=`읽은 기록 ${state.opened.length} / ${RECORDS.length}`;
+ $('opened').replaceChildren();
+ for(const id of state.opened){const record=RECORDS.find(r=>r.id===id),b=document.createElement('button');b.className='chip';b.textContent=record.title;b.onclick=()=>show(id);$('opened').append(b);}
+ if(state.ending)$('feedback').textContent='해결한 사건입니다. 녹음은 날짜가 다른 목록에 보존돼 있었습니다.';
+}
+function show(id){const record=RECORDS.find(r=>r.id===id);state=openRecord(state,id);$('record-title').textContent=record.title;$('record-body').textContent=record.body;save();progress();}
+$('search-form').onsubmit=e=>{e.preventDefault();const q=$('query').value.trim(),found=search(q);$('results').replaceChildren();$('search-status').textContent=q.length<2?'두 글자 이상 입력하세요.':`${found.length}개 기록을 찾았습니다.`;for(const r of found){const b=document.createElement('button');b.className='result';b.textContent=r.title;b.onclick=()=>show(r.id);$('results').append(b);}};
+$('finish').onclick=()=>{const r=conclude(state,$('choice').value);state=r.state;save();progress();$('feedback').textContent=r.message;};
+$('export').onclick=()=>{const u=URL.createObjectURL(new Blob([JSON.stringify(state)],{type:'application/json'}));const a=document.createElement('a');a.href=u;a.download='blackhole-casebook-progress.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);};
+$('import').onclick=()=>$('file').click();
+$('file').onchange=async()=>{const f=$('file').files[0];if(!f)return;try{if(f.size>4096)throw Error();const raw=JSON.parse(await f.text()),s=restore(raw);if(JSON.stringify(s)!==JSON.stringify(raw))throw Error();state=s;save();progress();$('record-title').textContent='진행을 불러왔습니다';$('record-body').textContent='읽은 기록 버튼을 눌러 이어가세요.';}catch{$('save-status').textContent='유효한 이 사건의 진행 파일이 아닙니다. 현재 진행을 유지합니다.';}$('file').value='';};
+$('reset').onclick=()=>{if(!confirm('이 사건의 진행을 지우고 처음부터 시작할까요?'))return;state=fresh();save();$('feedback').textContent='';$('results').replaceChildren();$('record-title').textContent='열어 본 기록';$('record-body').textContent='비늘부터 다시 검색해 보세요.';progress();};
+progress();
+</script></html>
