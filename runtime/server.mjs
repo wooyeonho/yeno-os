@@ -73,7 +73,10 @@ export function createYenoServer(options={}) {
  const moduleFor=type=>['document','world'].includes(type)?'documents':['ai','agent'].includes(type)?'ai':'diagnostics';
  function requireModule(name){if(!s.modules[name])throw new HttpError(409,`${name} module is disabled`);}
  function newJob(body){
-   const type=body.type;if(!['document','diagnostics','evolution','ai','agent','world'].includes(type))throw new HttpError(422,'Unsupported job type');
+   // The UI advertises AI when the bounded primary provider is configured.
+   // Keep legacy draft credentials optional: route that same request through
+   // the primary agent's persisted budget and stop controls when appropriate.
+   const type=body.type==='ai'&&!aiEndpoint&&agentSettings.ready?'agent':body.type;if(!['document','diagnostics','evolution','ai','agent','world'].includes(type))throw new HttpError(422,'Unsupported job type');
    if(type==='agent'&&!agentSettings.ready)throw new HttpError(409,'자율 임무는 모델 인증·모델 이름·하루 호출 상한 연결이 필요합니다. 자율 점검에서 연결 상태를 확인하세요.');
    requireModule(moduleFor(type));
    if(type==='ai'&&!aiEndpoint)throw new HttpError(409,'AI provider is not configured');
@@ -397,7 +400,8 @@ export function createYenoServer(options={}) {
          if((match=text.match(/^(?:문서 만들어|document)\s*[:：]\s*(.+)$/is)))return {status:201,payload:{kind:'job',job:publicJob(newJob({type:'document',text:match[1]}))}};
          if(/^(?:진단해|diagnose)$/i.test(text))return {status:201,payload:{kind:'job',job:publicJob(newJob({type:'diagnostics'}))}};
          if(/^(?:개선점 찾아줘|evolve)$/i.test(text))return {status:201,payload:{kind:'job',job:publicJob(newJob({type:'evolution'}))}};
-         throw new HttpError(422,'This command is not supported. Use one of the explicit commands.',{examples});
+         if(agentSettings.ready)return {status:201,payload:{kind:'job',job:publicJob(newJob({type:'agent',text,title:'BLACKHOLE 요청'}))}};
+         throw new HttpError(422,'자유로운 요청을 처리할 AI 모델이 아직 연결되지 않았습니다. 현재는 기억·문서·세계 현황 등 지원 명령을 사용할 수 있습니다.',{examples});
        }
        const actionMatch=url.pathname.match(/^\/api\/jobs\/([a-f0-9-]+)\/action$/);
        if(actionMatch){const job=s.jobs.find(j=>j.id===actionMatch[1]);if(!job)throw new HttpError(404,'Job not found');if(b.revision!==undefined&&b.revision!==job.version)throw new HttpError(409,'Job changed; refresh before retrying',{job:publicJob(job)});const action=b.action;if(!['pause','resume','cancel'].includes(action))throw new HttpError(400,'Unsupported action');if(['completed','cancelled','failed'].includes(job.status))throw new HttpError(409,'Terminal jobs cannot be changed');if(action==='pause'){if(!['queued','running'].includes(job.status))throw new HttpError(409,'Job is already paused');job.status='paused';job.pauseReason='owner';invalidate(job);}else if(action==='resume'){if(job.status!=='paused')throw new HttpError(409,'Only paused jobs can resume');if(s.emergencyStop)throw new HttpError(409,'Emergency stop is active');requireModule(moduleFor(job.type));if(job.botAssignment&&botBlockReason(job,s,profiles))throw new BotError(409,'Bot cannot resume: '+botBlockReason(job,s,profiles));job.status='queued';delete job.pauseReason;}else{job.status='cancelled';delete job.draft;invalidate(job);}touch(job);event(`Job ${action}: ${job.title}`);return {status:200,payload:{job:publicJob(job)}};}

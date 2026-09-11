@@ -138,6 +138,32 @@ test('unconfigured live-style core accepts status checks but rejects agent missi
   t.after(()=>{runtime.shutdown();fs.rmSync(dir,{recursive:true,force:true});});
   const r=await fetch(`http://127.0.0.1:${runtime.server.address().port}/api/commands`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({text:'자율 임무: 자료 확인',requestId:randomUUID()})});
   assert.equal(r.status,409);assert.equal(runtime.state().jobs.length,0);assert.equal(runtime.state().agent.configured,false);assert.equal(runtime.state().agent.usage.attempts,0);
+  const plain=await fetch(`http://127.0.0.1:${runtime.server.address().port}/api/commands`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({text:'짧은 이야기 한 편 써줘',requestId:randomUUID()})});
+  assert.equal(plain.status,422);assert.match((await plain.json()).error,/AI 모델이 아직 연결되지/);assert.equal(runtime.state().jobs.length,0);
+});
+
+test('primary-only model serves AI compose and plain-language commands through the same durable bounded agent',async t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'blackhole-compose-')),token='synthetic-compose-owner-token';let calls=0;
+  const runtime=await start({dataDir:dir,token,host:'127.0.0.1',port:0,env:{...env,YENO_AGENT_PROVIDER:'nvidia'},agentFetch:async()=>{calls++;return response('nvidia',[],'검사에서 만든 이야기 초안');}});
+  t.after(()=>{runtime.shutdown();fs.rmSync(dir,{recursive:true,force:true});});
+  const request=async(route,body)=>{const r=await fetch(`http://127.0.0.1:${runtime.server.address().port}${route}`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(body)});return {status:r.status,body:await r.json()};};
+  assert.equal(runtime.state().ai.draftConfigured,false);assert.equal(runtime.state().agent.configured,true);
+  const plain={text:'짧은 이야기 한 편 써줘',requestId:randomUUID()};
+  assert.equal((await request('/api/commands',plain)).status,409);assert.equal(calls,0);
+  await request('/api/settings',{modules:{ai:true},requestId:randomUUID()});
+  for(const [route,body] of [['/api/jobs',{type:'ai',text:'이야기 써줘',requestId:randomUUID()}],['/api/commands',{...plain,requestId:randomUUID()}]]){
+    const accepted=await request(route,body);assert.equal(accepted.status,201);assert.equal(accepted.body.job.type,'agent');
+    assert.equal((await request(route,body)).body.job.id,accepted.body.job.id);
+    const job=await eventually(()=>runtime.state().jobs.find(j=>j.id===accepted.body.job.id),j=>j.status==='completed');
+    const state=openStore(dir).state,artifact=state.artifacts[job.artifacts[0].id];
+    const raw=fs.readFileSync(path.join(dir,'artifacts',artifact.filename));
+    assert.match(raw.toString(),/검사에서 만든 이야기 초안/);assert.equal(digest(raw),artifact.sha256);
+  }
+  assert.equal(calls,2);assert.equal(runtime.state().agent.usage.attempts,2);
+  await request('/api/control',{action:'stop',requestId:randomUUID()});
+  assert.equal((await request('/api/commands',{...plain,requestId:randomUUID()})).status,409);assert.equal(calls,2);
+  assert.equal((await request('/api/commands',{text:'기억해: 요청 문법 없이 쓴다',requestId:randomUUID()})).body.kind,'memory');
+  assert.equal(calls,2);assert.equal(JSON.stringify(runtime.state()).includes(KEY),false);
 });
 
 test('core discovery completion schedules exactly one review; restart and stop do not silently repeat it',async t=>{
