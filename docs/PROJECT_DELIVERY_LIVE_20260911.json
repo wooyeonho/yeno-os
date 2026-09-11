@@ -1,0 +1,12 @@
+{
+  "verifiedAt": "2026-09-11T11:11:57.789067+00:00",
+  "updatedProjectIds": [
+    "327a7cca-59b3-4a43-a536-41330d7a2246",
+    "61be3ace-df35-47c3-996c-de3715a94cd0"
+  ],
+  "projectCountPreserved": 70,
+  "otherProjectsUnchanged": true,
+  "originalGoalsPreserved": true,
+  "providerCallsPerformedByThisScript": 0,
+  "scope": "project progress metadata only; executable file delivery is separate"
+}
