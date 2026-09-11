@@ -420,3 +420,9 @@ async def absorb_tool(job, guard, sources, sandboxes, evaluator, registry):
 - 모든 프로젝트에서 다음 행동·막힌 이유·최신 결과가 보이고, 원본 계보 누락이 없음.
 
 첫 구현 우선순위는 모델 연결과 실제 프로젝트의 폰 사용 경로다. 새로운 프레임워크 추가나 트렌드 수집을 이 경로의 완료 조건으로 만들지 않는다.
+
+## 사용자 첨부 청사진 보완 — 2026-09-11
+
+첨부 `Black_Hole_OS_Blueprint.md` 전체를 검토했다. [반영 결정·검증 기준](BLACKHOLE_BLUEPRINT_REVIEW_20260911.md)에 정확한 승인 대상 해시, 부모·자식 공통 예산, 수신 Inbox 중복 처리, 승인 대기 중 자원 반납, 최종 빌드 재검사, Staged/Active 구분과 원격 MCP의 신뢰 한계를 추가했다. 이 보완 명세를 개발 실행자 구현에 적용한다.
+
+현재 Node·Tauri 앱과 원본49개·별도 V11을 유지한다. Python 전면 재작성·PWA 대체·Temporal 도입·첨부 예시 예산을 실행하지 않는다. 이번 반영은 설계 변경이며 코드 구현·운영 배포·실기기 검증 완료가 아니다.
