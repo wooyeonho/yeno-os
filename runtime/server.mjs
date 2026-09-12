@@ -24,6 +24,7 @@ import {VideoError,validateVideoInput,renderVideo} from './lib/video.mjs';
 import {PRODUCTION_PROJECTS,productionAvailability,productionCapabilities} from './lib/production.mjs';
 import {issueHankkiInvite,revokeHankkiInvite,getHankkiRecipientView,respondToHankkiInvite,createHankkiRateLimiter} from './lib/hankki-sharing.mjs';
 import {assertProductionCapacity,productionCapacity,ProductionCapacityError} from './lib/production-capacity.mjs';
+import {createWebSessions,WebSessionError} from './lib/web-session.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const VERSION='0.2.2';
@@ -49,6 +50,7 @@ export function createYenoServer(options={}) {
  if(!token){if(fs.existsSync(secretFile))token=fs.readFileSync(secretFile,'utf8').trim();else{token=crypto.randomBytes(32).toString('base64url');atomicWrite(secretFile,`${token}\n`);}}
  if(typeof token!=='string'||token.length<16){releaseLock();throw new Error('YENO_TOKEN must contain at least 16 characters.');}
  const tokenHash=digest(token);
+ const webSessions=createWebSessions({key:token,now:options.webSessionNow??Date.now});
  const hankkiRateLimit=createHankkiRateLimiter();
  const aiBase=env.YENO_AI_BASE_URL??'', aiModel=env.YENO_AI_MODEL??'', aiKey=env.YENO_AI_API_KEY??'';
  let aiEndpoint=null;
@@ -330,7 +332,21 @@ export function createYenoServer(options={}) {
    if(valid()){const timer=setTimeout(()=>runStep(job,generation),250);timer.unref();}
  }
  function bearer(req){const supplied=req.headers.authorization;if(typeof supplied!=='string'||!supplied.startsWith('Bearer '))return null;return supplied.slice(7);}
- function authenticate(req,deviceOnly=false){const credential=bearer(req);if(!credential)throw new HttpError(401,deviceOnly?'Device token required':'Pairing token required');const candidate=digest(credential);if(!deviceOnly&&crypto.timingSafeEqual(Buffer.from(candidate),Buffer.from(tokenHash)))return {kind:'pairing'};for(const device of Object.values(s.devices)){if(!device.revokedAt&&device.tokenHash===candidate){device.lastSeenAt=now();return {kind:'device',device};}}throw new HttpError(401,deviceOnly?'Invalid or revoked device token':'Invalid pairing token');}
+ function webPrincipal(req,{allowExpired=false,allowRevoked=false}={}){
+   const session=webSessions.read(req,{allowExpired});if(!session)throw new HttpError(401,'브라우저 연결이 필요합니다.');
+   webSessions.guard(req,{mutation:!['GET','HEAD'].includes(req.method)});ensureDurable();
+   const device=s.devices[session.id];
+   if(!device||device.platform!=='web'||device.tokenHash!==digest(deriveDeviceToken(device.id))||(!allowRevoked&&device.revokedAt))throw new HttpError(401,'브라우저 연결이 폐기되었습니다. 다시 연결해 주세요.');
+   if(!device.revokedAt)device.lastSeenAt=now();
+   return {kind:'device',device,web:session};
+ }
+ function authenticate(req,deviceOnly=false){
+   const credential=bearer(req);
+   // Cookies never authenticate the native API, and an explicit invalid bearer
+   // never falls back to a different browser identity.
+   if(!credential){if(!deviceOnly&&req.headers.authorization===undefined)return webPrincipal(req);throw new HttpError(401,deviceOnly?'Device token required':'Pairing token required');}
+   const candidate=digest(credential);if(!deviceOnly&&crypto.timingSafeEqual(Buffer.from(candidate),Buffer.from(tokenHash)))return {kind:'pairing'};for(const device of Object.values(s.devices)){if(!device.revokedAt&&device.tokenHash===candidate){device.lastSeenAt=now();return {kind:'device',device};}}throw new HttpError(401,deviceOnly?'Invalid or revoked device token':'Invalid pairing token');
+ }
  // A retry can recover the same credential without putting it in request receipts.
  // The pairing secret remains separate from the public device ID and saved hash.
  function deriveDeviceToken(id){return crypto.createHmac('sha256',token).update(`YENO/device-bearer/v1\0${id}`).digest('base64url');}
@@ -395,9 +411,10 @@ export function createYenoServer(options={}) {
      if(req.method==='GET'&&(url.pathname==='/api/health'||url.pathname==='/api/v1/health'))return respond(res,200,{name:'YENO OS',version:VERSION,apiVersion:API_VERSION,authRequired:true,authentication:'device-bearer'});
      if(!url.pathname.startsWith('/api/')){
        if(req.method!=='GET'&&req.method!=='HEAD')throw new HttpError(405,'Method not allowed');
-       const allowed={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/command-request.mjs':'command-request.mjs','/source-reference-labels.mjs':'source-reference-labels.mjs','/world-view.mjs':'world-view.mjs','/studio-view.mjs':'studio-view.mjs','/studio.css':'studio.css','/absorption-routing.mjs':'absorption-routing.mjs','/world-land.svg':'world-land.svg','/style.css':'style.css','/manifest.webmanifest':'manifest.webmanifest','/icon.svg':'icon.svg'};
+       const allowed={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/command-request.mjs':'command-request.mjs','/source-reference-labels.mjs':'source-reference-labels.mjs','/world-view.mjs':'world-view.mjs','/studio-view.mjs':'studio-view.mjs','/studio.css':'studio.css','/absorption-routing.mjs':'absorption-routing.mjs','/world-land.svg':'world-land.svg','/style.css':'style.css','/manifest.webmanifest':'manifest.webmanifest','/icon.svg':'icon.svg','/web-client.mjs':'web-client.mjs','/sw.js':'sw.js','/offline.html':'offline.html'};
        Object.assign(allowed,{'/hankki/answer':'hankki-answer.html','/hankki-answer.mjs':'hankki-answer.mjs','/hankki-answer.css':'hankki-answer.css'});
-       const filename=allowed[url.pathname];if(!filename)throw new HttpError(404,'Not found');const file=path.join(ROOT,'public',filename);if(!fs.existsSync(file))throw new HttpError(404,'UI not available');const contentTypes={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.webmanifest':'application/manifest+json','.svg':'image/svg+xml'};res.writeHead(200,{'Content-Type':contentTypes[path.extname(file)]??'application/octet-stream'});if(req.method==='HEAD')return res.end();return fs.createReadStream(file).pipe(res);
+       Object.assign(allowed,{'/icon-192.png':'icon-192.png','/icon-512.png':'icon-512.png'});
+       const filename=allowed[url.pathname];if(!filename)throw new HttpError(404,'Not found');const file=path.join(ROOT,'public',filename);if(!fs.existsSync(file))throw new HttpError(404,'UI not available');const contentTypes={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.png':'image/png'};res.writeHead(200,{'Content-Type':contentTypes[path.extname(file)]??'application/octet-stream'});if(req.method==='HEAD')return res.end();return fs.createReadStream(file).pipe(res);
      }
      const recipientMatch=url.pathname.match(/^\/api\/hankki\/checkins\/([a-f0-9-]+)$/);
      if(recipientMatch){
@@ -408,6 +425,40 @@ export function createYenoServer(options={}) {
        const b=await body(req,4096),result=respondToHankkiInvite(s.studio,recipientMatch[1],credential,b,{key:token});
        if(s.emergencyStop)throw new HttpError(409,'현재 안부 응답 접수가 일시 중지되어 있습니다.');
        s.studio=result.studio;event('Hankki recipient response saved.');save();return respond(res,200,{ok:true,checkin:result.view});
+     }
+     if(url.pathname==='/api/web/session'&&req.method==='POST'){
+       webSessions.guard(req,{mutation:true});
+       const rate=webSessions.loginLimit(req);if(!rate.allowed){res.setHeader('Retry-After',String(rate.retryAfter));throw new HttpError(429,'연결 시도가 많습니다. 잠시 후 같은 연결 요청을 확인해 주세요.');}
+       const credential=bearer(req);if(!credential||!crypto.timingSafeEqual(Buffer.from(digest(credential)),Buffer.from(tokenHash)))throw new HttpError(401,'개인 연결 키를 확인해 주세요.');
+       const b=await body(req,4096);
+       if(Object.keys(b).some(key=>!['requestId','name','remember'].includes(key))||(b.remember!==undefined&&typeof b.remember!=='boolean'))throw new HttpError(400,'브라우저 연결 입력을 확인해 주세요.');
+       const name=b.name===undefined?'BLACKHOLE 브라우저':requiredText(b.name,80);
+       const result=mutation(req,url,b,()=>{
+         const devices=Object.values(s.devices).filter(device=>device.platform==='web');
+         if(devices.length>=1000||devices.filter(device=>!device.revokedAt).length>=100)throw new HttpError(409,'등록된 브라우저가 많습니다. 이전 브라우저 연결을 해제해 주세요.');
+         return {status:201,payload:{device:enrollDevice({name,platform:'web'})}};
+       },{required:true});
+       const device=s.devices[result.payload.device?.id];
+       if(!device||device.platform!=='web'||device.revokedAt||device.tokenHash!==digest(deriveDeviceToken(device.id)))throw new HttpError(409,'이전 브라우저 등록이 해제되었습니다. 새 연결 요청으로 다시 연결해 주세요.');
+       const session=webSessions.issue(req,device,b.remember===true);
+       res.setHeader('Set-Cookie',session.cookie);return respond(res,result.status,webSessions.session(device,session.expiresAt));
+     }
+     if(url.pathname==='/api/web/session'&&req.method==='GET'){
+       const principal=webPrincipal(req);return respond(res,200,webSessions.session(principal.device,principal.web.expiresAt));
+     }
+     if(url.pathname==='/api/web/logout'&&req.method==='POST'){
+       webSessions.guard(req,{mutation:true});
+       const b=await body(req,4096);if(Object.keys(b).some(key=>!['requestId','deviceId'].includes(key))||(b.deviceId!==undefined&&(typeof b.deviceId!=='string'||!/^[a-f0-9-]{36}$/.test(b.deviceId))))throw new HttpError(400,'로그아웃 요청을 확인해 주세요.');
+       // The response clearing the cookie may itself be lost. With no cookie
+       // remaining there is no browser capability to revoke a second time.
+       if(!webSessions.read(req,{allowExpired:true})){res.setHeader('Set-Cookie',webSessions.clear(req));return respond(res,200,{loggedOut:true,revoked:false,deviceId:null});}
+       const principal=webPrincipal(req,{allowExpired:true,allowRevoked:true}),id=principal.device.id;
+       // Cookies are shared across tabs. A logout staged before a different
+       // login must not revoke the newly connected browser identity.
+       if(b.deviceId!==undefined&&b.deviceId!==id)throw new HttpError(409,'브라우저 연결이 바뀌었습니다. 현재 연결을 확인한 뒤 로그아웃해 주세요.');
+       if(principal.device.revokedAt){res.setHeader('Set-Cookie',webSessions.clear(req));return respond(res,200,{loggedOut:true,revoked:true,deviceId:id});}
+       const result=mutation(req,url,b,()=>{s.devices[id].revokedAt=now();event(`Browser connection revoked: ${id}`);return {status:200,payload:{loggedOut:true,revoked:true,deviceId:id}};},{required:true,safetyAction:true,fingerprintPath:`/api/devices/${id}/web-logout`});
+       res.setHeader('Set-Cookie',webSessions.clear(req));return respond(res,result.status,result.payload);
      }
      const versioned=url.pathname.startsWith('/api/v1/');
      if(versioned&&req.method==='POST'&&url.pathname==='/api/v1/devices/enroll'){
@@ -469,7 +520,7 @@ export function createYenoServer(options={}) {
        // The effective target comes from authentication, not the body. Bind
        // that target into the fingerprint so another device cannot receive a
        // successful cached revocation for a different device and stay active.
-       const result=mutation(req,url,b,()=>{s.devices[id].revokedAt=now();event(`Device revoked: ${s.devices[id].name}`);return {status:200,payload:{revoked:true,deviceId:id}};},{required:versioned,safetyAction:true,fingerprintPath:`/api/devices/${id}/self-revoke`});
+       const result=mutation(req,url,b,()=>{s.devices[id].revokedAt=now();event(`Device revoked: ${s.devices[id].name}`);return {status:200,payload:{revoked:true,deviceId:id}};},{required:versioned||!!principal.web,safetyAction:true,fingerprintPath:`/api/devices/${id}/self-revoke`});
        return respond(res,result.status,result.payload);
      }
      const requestMatch=url.pathname.match(/^\/api\/requests\/([^/]+)$/);
@@ -588,9 +639,9 @@ export function createYenoServer(options={}) {
        const restoreMatch=url.pathname.match(/^\/api\/snapshots\/([a-f0-9-]+)\/restore$/);
        if(restoreMatch){if(b.confirm!==true)throw new HttpError(400,'Explicit confirm:true is required');const snapshot=s.snapshots.find(x=>x.id===restoreMatch[1]);if(!snapshot)throw new HttpError(404,'Snapshot not found');if(s.jobs.some(j=>['running','queued'].includes(j.status)))throw new HttpError(409,'Pause or stop all active jobs before restoring');const pre=takeSnapshot(`복원 전 자동 저장 — ${snapshot.label}`);s.memories=structuredClone(snapshot.data.memories);s.concurrency=snapshot.data.settings.concurrency;s.modules=structuredClone(snapshot.data.settings.modules);if(!aiEndpoint&&!agentSettings.ready&&!profiles.grok.ready)s.modules.ai=false;event(`Memory/settings restored: ${snapshot.label}. Job and event history preserved.`);return {status:200,payload:{snapshot:publicSnapshot(snapshot),preRestoreSnapshot:publicSnapshot(pre),state:state()}};}
        throw new HttpError(404,'Not found');
-     },{required:versioned,safetyAction:(url.pathname==='/api/studio'&&isStudioSafetyAction(s.studio,b))||(url.pathname==='/api/bots'&&b.action==='stop')||(url.pathname==='/api/commands'&&/^봇\s*운영\s*중지$/.test(b.text??''))||(url.pathname==='/api/control'&&b.action==='stop')||(['/api/discovery','/api/ecosystem'].includes(url.pathname)&&b.enabled===false)});
+     },{required:versioned||!!principal.web,safetyAction:(url.pathname==='/api/studio'&&isStudioSafetyAction(s.studio,b))||(url.pathname==='/api/bots'&&b.action==='stop')||(url.pathname==='/api/commands'&&/^봇\s*운영\s*중지$/.test(b.text??''))||(url.pathname==='/api/control'&&b.action==='stop')||(['/api/discovery','/api/ecosystem'].includes(url.pathname)&&b.enabled===false)});
      respond(res,result.status,result.payload);
-   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof ProductionCapacityError||error instanceof StudioError||error instanceof VideoError||error instanceof ForAiError||error instanceof QuestError||error instanceof BotError||error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError||error instanceof RequestLedgerError;respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
+   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof WebSessionError||error instanceof ProductionCapacityError||error instanceof StudioError||error instanceof VideoError||error instanceof ForAiError||error instanceof QuestError||error instanceof BotError||error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError||error instanceof RequestLedgerError;respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
  });
  server.requestTimeout=15000;server.headersTimeout=10000;
  function shutdown(){if(closed)return;closed=true;discovery.close();ecosystem.close();clearTimeout(schedulerTimer);for(const job of s.jobs)if(['running','queued'].includes(job.status)){job.status='paused';job.pauseReason='shutdown';touch(job);}for(const controller of controllers.values())controller.abort();event('Runtime stopped; unfinished jobs paused.');try{save();}finally{releaseLock();server.close();}}
