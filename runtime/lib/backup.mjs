@@ -14,6 +14,7 @@ import {validateQuestState} from './quests.mjs';
 import {emptyStudio,validateStudio} from './studio.mjs';
 import {validateVideoInput} from './video.mjs';
 import {validateForAiInput} from './forai.mjs';
+import {validateResearchRequest,validateResearchBundle} from './research.mjs';
 
 export const BACKUP_MAX_PLAINTEXT_BYTES = 16 * 1024 * 1024;
 export const BACKUP_MAX_ARCHIVE_BYTES = BACKUP_MAX_PLAINTEXT_BYTES + 36;
@@ -22,7 +23,7 @@ const MAGIC = Buffer.from('YENOBK1\n');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const HASH = /^[a-f0-9]{64}$/;
 const STATE_KEYS = ['revision', 'emergencyStop', 'concurrency', 'modules', 'jobs', 'memories', 'snapshots', 'events', 'requests', 'artifacts', 'devices', 'projects', 'sources'];
-const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt', 'productionEvidence', 'studioSeriesId', 'studioChapterId'];
+const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt', 'productionEvidence', 'studioSeriesId', 'studioChapterId', 'researchRequest', 'researchEvidenceId'];
 const fail = message => { throw new Error(`Backup: ${message}`); };
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = (value, min, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value) && value >= min && value <= max;
@@ -69,6 +70,15 @@ function validateState(state) {
     if(Object.hasOwn(job,'productionEvidence')&&(job.type!=='forai'||!record(job.productionEvidence)||Buffer.byteLength(JSON.stringify(job.productionEvidence))>65536))fail('invalid production evidence');
     if(Object.hasOwn(job,'studioSeriesId')&&(job.type!=='agent'||!state.studio.series.some(item=>item.id===job.studioSeriesId)))fail('invalid novel series reference');
     if(Object.hasOwn(job,'studioChapterId')&&(!job.studioSeriesId||!state.studio.chapters.some(item=>item.id===job.studioChapterId&&item.seriesId===job.studioSeriesId)))fail('invalid novel chapter reference');
+    if(Object.hasOwn(job,'researchRequest')){
+      validateResearchRequest(job.researchRequest);
+      if(job.type!=='agent'||!job.questId||job.callLimit!==1||job.botAssignment||job.studioSeriesId||(job.projectId??null)!==job.researchRequest.projectId)fail('invalid research job');
+      if(job.step>=2&&!job.researchEvidenceId)fail('missing research evidence');
+    }
+    if(Object.hasOwn(job,'researchEvidenceId')){
+      const evidence=state.artifacts[job.researchEvidenceId];
+      if(!job.researchRequest||!UUID.test(job.researchEvidenceId)||!evidence||evidence.jobId!==job.id||evidence.mimeType!=='application/json'||evidence.name!==`research-evidence-${job.id.slice(0,8)}.json`||!job.artifacts.some(a=>a.id===evidence.id))fail('invalid research evidence reference');
+    }
     if (job.agentJournal) validateAgentJournal(job.agentJournal);
     if (Object.hasOwn(job, 'selectedProvider') && !['openai', 'gemini', 'moonshot', 'xai', 'anthropic', 'nvidia'].includes(job.selectedProvider)) fail('invalid selected provider');
     if (Object.hasOwn(job, 'questId') && (typeof job.questId !== 'string' || !UUID.test(job.questId))) fail('invalid job quest reference');
@@ -173,6 +183,15 @@ function validateArchive(payload) {
     if (!metadata || typeof file.content !== 'string' || file.content.length !== 4 * Math.ceil(metadata.bytes / 3)) fail('invalid artifact encoding or metadata');
     const content = Buffer.from(file.content, 'base64');
     if (content.length !== metadata.bytes || content.toString('base64') !== file.content || digest(content) !== metadata.sha256) fail('archive artifact checksum mismatch');
+    const researchJob=payload.state.jobs.find(job=>job.researchEvidenceId===metadata.id);
+    if(researchJob){
+      const bundle=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(content));validateResearchBundle(bundle);
+      for(const key of ['question','query','projectId','trackCode'])if(bundle[key]!==researchJob.researchRequest[key])fail('research evidence scope mismatch');
+      for(const search of bundle.searches.filter(search=>search.status==='ok')){
+        const raw=researchJob.artifacts.map(ref=>payload.state.artifacts[ref.id]).find(raw=>raw?.name===search.rawFileName&&raw.sha256===search.rawSha256);
+        if(!raw||raw.mimeType!=='application/json'||raw.bytes>512*1024)fail('research raw evidence reference missing');
+      }
+    }
     seen.add(file.filename);
   }
   return payload;

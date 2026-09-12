@@ -23,7 +23,8 @@ import {ForAiError,validateForAiInput,runForAiAudit} from './lib/forai.mjs';
 import {VideoError,validateVideoInput,renderVideo} from './lib/video.mjs';
 import {PRODUCTION_PROJECTS,productionAvailability,productionCapabilities} from './lib/production.mjs';
 import {issueHankkiInvite,revokeHankkiInvite,getHankkiRecipientView,respondToHankkiInvite,createHankkiRateLimiter} from './lib/hankki-sharing.mjs';
-import {assertProductionCapacity,productionCapacity,ProductionCapacityError} from './lib/production-capacity.mjs';
+import {assertProductionCapacity,productionCapacity,ProductionCapacityError,RESEARCH_RESERVED_ARTIFACT_BYTES} from './lib/production-capacity.mjs';
+import {RESEARCH_TRACKS,ResearchError,validateResearchInput,validateResearchBundle,collectResearchEvidence,createResearchPrompt} from './lib/research.mjs';
 import {createWebSessions,WebSessionError} from './lib/web-session.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
@@ -151,6 +152,18 @@ export function createYenoServer(options={}) {
    return studioMutation({action:'chapter.create',requestId:body.requestId,seriesId:body.seriesId,number:body.number,title:body.title,content:manuscript,notes:`AI 원고 초안 · 작업 ${job.id} · 결과 SHA-256 ${item.sha256} · 출판 전 소유자 검토 필요`});
  }
  function questState(){return {...questsOverview(s),providers:providerStatus(),selectedProvider:agentSettings.provider,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs)};}
+ function researchState(){return {tracks:RESEARCH_TRACKS.filter(track=>s.projects.some(p=>p.id===track.projectId&&p.status!=='archived')).map(track=>({...track,scope:track.scopeConstraints})),jobs:s.jobs.filter(job=>job.researchRequest).map(publicJob),providerReady:agentSettings.ready,usage:agentUsage(s.jobs),dailyCallLimit:agentSettings.dailyCallLimit,emergencyStop:s.emergencyStop};}
+ function startResearch(body){
+   if(!body.requestId)throw new HttpError(400,'Persistent requestId required');
+   const {provider,researchRequest}=validateResearchInput(body,s.projects);
+   const config=agentConfigForProvider(env,provider);
+   if(s.emergencyStop||!config.ready||agentUsage(s.jobs).attempts>=config.dailyCallLimit)throw new HttpError(409,'전체 멈춤·모델 연결·오늘 호출 상한을 확인하세요.');
+   assertProductionCapacity(s,{reserveTextBytes:RESEARCH_RESERVED_ARTIFACT_BYTES});
+   const quest=addQuest({goal:researchRequest.question,drive:'pride',provider,maxCalls:1,durationMinutes:30,baseline:'공개 문헌의 초록·서지정보를 수집해 판단한다. 원 데이터 분석·독립 재현은 미수행.',successCriterion:'질문에 대한 잠정 답, 실제 근거 ID, 반대 근거·불확실성, 반증 가능한 다음 검증 하나를 작성한다. 과학적 해결 완료로 표시하지 않는다.',...(researchRequest.projectId?{projectId:researchRequest.projectId}:{})});
+   const result=runQuest(quest.id),job=s.jobs.find(j=>j.id===result.payload.job.id);
+   job.title=`연구 · ${researchRequest.trackCode??'문제의 답'} · ${researchRequest.question}`.slice(0,160);
+   job.researchRequest=researchRequest;result.payload.job=publicJob(job);return result;
+ }
  function addQuest(body){const quest=planQuest(body,s,agentSettings);s.quests.unshift(quest);event('Goal contract saved.');return quest;}
  function findQuest(id){const quest=s.quests.find(q=>q.id===id);if(!quest)throw new HttpError(404,'목표를 찾을 수 없습니다.');return quest;}
  function runQuest(id){
@@ -170,7 +183,7 @@ export function createYenoServer(options={}) {
  }
  function verifiedQuestArtifact(quest,artifactId){
    const job=s.jobs.find(j=>j.id===quest.jobId);if(!job||job.status!=='completed')throw new HttpError(409,'실제 결과가 완료된 목표만 사용할 수 있습니다.');
-   const ref=job.artifacts.find(a=>artifactId===undefined||a.id===artifactId);const item=s.artifacts[ref?.id];if(!item)throw new HttpError(409,'결과 파일이 없습니다.');
+   const ref=job.artifacts.find(a=>artifactId===undefined?(!job.researchRequest||a.name.startsWith('research-answer-')):a.id===artifactId);const item=s.artifacts[ref?.id];if(!item)throw new HttpError(409,'결과 파일이 없습니다.');
    const file=path.join(dataDir,'artifacts',item.filename);if(path.dirname(file)!==path.join(dataDir,'artifacts')||!fs.existsSync(file))throw new HttpError(409,'결과 파일이 없습니다.');
    const bytes=fs.readFileSync(file);if(digest(bytes)!==item.sha256)throw new HttpError(409,'결과 파일의 해시가 일치하지 않습니다.');
    return {job,item,content:bytes.toString('utf8')};
@@ -251,6 +264,49 @@ export function createYenoServer(options={}) {
    const sha256=digest(content);if(digest(fs.readFileSync(file))!==sha256)throw new Error('Artifact SHA-256 verification failed');
    s.artifacts[id]={id,name,filename,sha256,bytes:Buffer.byteLength(content),jobId:job.id,...(mimeType?{mimeType}:{})};
    job.artifacts.push({id,name});
+   return id;
+ }
+ function storedResearchBundle(job){
+   const item=s.artifacts[job.researchEvidenceId];
+   if(!item||item.jobId!==job.id||item.name!==`research-evidence-${job.id.slice(0,8)}.json`)throw new AgentError('research_evidence_missing');
+   const file=path.join(dataDir,'artifacts',item.filename);
+   if(path.dirname(file)!==path.join(dataDir,'artifacts'))throw new AgentError('research_evidence_invalid');
+   const bytes=fs.readFileSync(file);if(digest(bytes)!==item.sha256)throw new AgentError('research_evidence_checksum');
+   const bundle=JSON.parse(bytes.toString('utf8'));validateResearchBundle(bundle);
+   for(const key of ['question','query','projectId','trackCode'])if(bundle[key]!==job.researchRequest[key])throw new AgentError('research_evidence_scope_mismatch');
+   for(const search of bundle.searches.filter(search=>search.status==='ok')){
+     const raw=job.artifacts.map(ref=>s.artifacts[ref.id]).find(raw=>raw?.name===search.rawFileName&&raw.sha256===search.rawSha256);
+     if(!raw||raw.mimeType!=='application/json'||raw.bytes>512*1024)throw new AgentError('research_raw_evidence_missing');
+     const rawFile=path.join(dataDir,'artifacts',raw.filename);
+     if(path.dirname(rawFile)!==path.join(dataDir,'artifacts')||digest(fs.readFileSync(rawFile))!==search.rawSha256)throw new AgentError('research_raw_evidence_checksum');
+   }
+   return bundle;
+ }
+ function checkpointResearch(job,result){
+   for(const raw of result.rawFiles)writeArtifact(job,raw.content,raw.name,raw.mimeType);
+   job.researchEvidenceId=writeArtifact(job,JSON.stringify(result.bundle,null,2),`research-evidence-${job.id.slice(0,8)}.json`,'application/json');
+   touch(job);save();
+ }
+ async function prepareResearch(job,signal,valid){
+   if(!job.researchEvidenceId){
+     let result;
+     try{result=await collectResearchEvidence(job.researchRequest,{fetchImpl:options.researchFetch??fetch,signal});}
+     catch(error){if(valid()&&error.partialResult)checkpointResearch(job,error.partialResult);throw error;}
+     if(!valid())return null;checkpointResearch(job,result);
+   }
+   const bundle=storedResearchBundle(job);
+   if(!bundle.sources.length)throw new AgentError('research_no_evidence');
+   if(!job.agentJournal.calls.length){
+     const quest=findQuest(job.questId),prompt=createResearchPrompt(job.researchRequest,bundle,quest.projectContext);
+     job.agentJournal.history=[{role:'user',content:prompt}];save();
+   }
+   return bundle;
+ }
+ function researchAnswer(job,draft,bundle){
+   const cited=[...draft.matchAll(/\[(S\d+)\]/g)].map(match=>match[1]);
+   if(!cited.length||cited.some(id=>!bundle.sources.some(source=>source.citationId===id)))throw new AgentError('research_citation_check_failed');
+   const clean=value=>String(value??'').replace(/[\r\n|\[\]<>]/g,' ');
+   return `# 연구 답안 · 검증 전 AI 초안\n\n질문: ${clean(bundle.question)}\n수집: ${bundle.collectedAt} · 모델 호출 상한1회\n\n${draft}\n\n## 실제 수집 근거\n\n${bundle.sources.map(source=>`- [${source.citationId}] ${clean(source.title)} — ${source.url}\n  읽은 범위: ${source.readLevel==='abstract'?'초록 발췌':'서지정보만'} · 원 응답 SHA-256: ${source.rawSha256}`).join('\n')}\n\n검색 실패: ${bundle.searches.filter(search=>search.status==='error').map(search=>search.provider).join(', ')||'없음'}. 최대4건의 제한된 검색이며 체계적 문헌고찰이 아닙니다.\n원 응답 JSON과 근거표 JSON을 같은 작업에 보관했습니다. 초록·서지정보의 해시는 수집 증거이며 가설·치료 효과·난제 해결의 증명이 아닙니다.\n`;
  }
  async function aiDraft(job){
    const controller=new AbortController();controllers.set(job.id,controller);
@@ -321,14 +377,14 @@ export function createYenoServer(options={}) {
        else if(job.type==='agent'){
          const controller=new AbortController();controllers.set(job.id,controller);
          const timeout=setTimeout(()=>controller.abort(),Math.max(1,Math.min(90000,job.deadlineAt?Date.parse(job.deadlineAt)-Date.now():90000)));
-         try {const draft=await runAgent({job,state:s,config:configFor(job),save:()=>{if(closed)throw new AgentError('runtime_closed');save();},signal:controller.signal,fetchImpl:options.agentFetch});if(!valid())return;job.draft=draft;}
+         try {const bundle=job.researchRequest?await prepareResearch(job,controller.signal,valid):null;if(!valid())return;const draft=await runAgent({job,state:s,config:configFor(job),save:()=>{if(closed)throw new AgentError('runtime_closed');save();},signal:controller.signal,fetchImpl:options.agentFetch});if(!valid())return;job.draft=bundle?researchAnswer(job,draft,bundle):draft;}
          finally{clearTimeout(timeout);if(controllers.get(job.id)===controller)controllers.delete(job.id);}
        }
        else {const draft=await aiDraft(job);if(!valid())return;job.draft=`# ${job.title}\n\n${draft}\n\n---\nAI 생성 초안 · 모델: ${aiModel}\n외부 사실 검증이나 도구 실행은 하지 않았습니다.\n입력 SHA-256: ${job.inputSha256}\n`;}
        job.step=2;
-     }else if(job.step===2){writeArtifact(job,job.draft,`${job.type}-${job.id.slice(0,8)}.md`);if(job.type==='forai'&&job.productionEvidence){writeArtifact(job,JSON.stringify(job.productionEvidence,null,2),`forai-evidence-${job.id.slice(0,8)}.json`,'application/json');}delete job.draft;delete job.productionEvidence;job.step=3;job.status='completed';event(`Job completed and output verified: ${job.title}`);}
+     }else if(job.step===2){writeArtifact(job,job.draft,`${job.researchRequest?'research-answer':job.type}-${job.id.slice(0,8)}.md`);if(job.type==='forai'&&job.productionEvidence){writeArtifact(job,JSON.stringify(job.productionEvidence,null,2),`forai-evidence-${job.id.slice(0,8)}.json`,'application/json');}delete job.draft;delete job.productionEvidence;job.step=3;job.status='completed';event(`Job completed and output verified: ${job.title}`);}
      touch(job);save();
-   }catch(error){if(!valid())return;const hold=job.botAssignment&&error instanceof AgentError&&({daily_call_limit:'dailyBudget',previous_call_outcome_unknown:'outcomeUnknown',project_scope_changed:'projectChanged'}[error.code]);job.status=hold?'paused':'failed';if(hold)job.pauseReason=hold;job.error=job.type==='agent'?(error instanceof AgentError?error.message:'Agent execution stopped or failed; inspect preserved checkpoints.'):job.type==='ai'?(String(error.message).startsWith('AI provider')?error.message:'AI request failed or timed out; no provider response details retained.'):String(error.message).slice(0,300);touch(job);event(`Job failed: ${job.title}`);save();}
+   }catch(error){if(!valid())return;const hold=job.botAssignment&&error instanceof AgentError&&({daily_call_limit:'dailyBudget',previous_call_outcome_unknown:'outcomeUnknown',project_scope_changed:'projectChanged'}[error.code]);job.status=hold?'paused':'failed';if(hold)job.pauseReason=hold;job.error=job.type==='agent'?(error instanceof AgentError||error instanceof ResearchError?error.message:'Agent execution stopped or failed; inspect preserved checkpoints.'):job.type==='ai'?(String(error.message).startsWith('AI provider')?error.message:'AI request failed or timed out; no provider response details retained.'):String(error.message).slice(0,300);touch(job);event(`Job failed: ${job.title}`);save();}
    if(valid()){const timer=setTimeout(()=>runStep(job,generation),250);timer.unref();}
  }
  function bearer(req){const supplied=req.headers.authorization;if(typeof supplied!=='string'||!supplied.startsWith('Bearer '))return null;return supplied.slice(7);}
@@ -412,7 +468,7 @@ export function createYenoServer(options={}) {
      if(!url.pathname.startsWith('/api/')){
        if(req.method!=='GET'&&req.method!=='HEAD')throw new HttpError(405,'Method not allowed');
        const allowed={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/command-request.mjs':'command-request.mjs','/source-reference-labels.mjs':'source-reference-labels.mjs','/world-view.mjs':'world-view.mjs','/studio-view.mjs':'studio-view.mjs','/studio.css':'studio.css','/absorption-routing.mjs':'absorption-routing.mjs','/world-land.svg':'world-land.svg','/style.css':'style.css','/manifest.webmanifest':'manifest.webmanifest','/icon.svg':'icon.svg','/web-client.mjs':'web-client.mjs','/sw.js':'sw.js','/offline.html':'offline.html'};
-       Object.assign(allowed,{'/hankki/answer':'hankki-answer.html','/hankki-answer.mjs':'hankki-answer.mjs','/hankki-answer.css':'hankki-answer.css'});
+       Object.assign(allowed,{'/research-view.mjs':'research-view.mjs','/hankki/answer':'hankki-answer.html','/hankki-answer.mjs':'hankki-answer.mjs','/hankki-answer.css':'hankki-answer.css'});
        Object.assign(allowed,{'/icon-192.png':'icon-192.png','/icon-512.png':'icon-512.png'});
        const filename=allowed[url.pathname];if(!filename)throw new HttpError(404,'Not found');const file=path.join(ROOT,'public',filename);if(!fs.existsSync(file))throw new HttpError(404,'UI not available');const contentTypes={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.png':'image/png'};res.writeHead(200,{'Content-Type':contentTypes[path.extname(file)]??'application/octet-stream'});if(req.method==='HEAD')return res.end();return fs.createReadStream(file).pipe(res);
      }
@@ -533,6 +589,7 @@ export function createYenoServer(options={}) {
        res.writeHead(200,{'Content-Type':file.mimeType,'Content-Disposition':`attachment; filename="${file.name}"`,'Content-Length':Buffer.byteLength(file.content),'X-Content-SHA256':digest(file.content)});return res.end(file.content);
      }
      if(req.method==='GET'&&url.pathname==='/api/quests')return respond(res,200,questState());
+     if(req.method==='GET'&&url.pathname==='/api/research')return respond(res,200,researchState());
      if(req.method==='GET'&&url.pathname==='/api/bots')return respond(res,200,botStatus(s,profiles));
      if(req.method==='GET'&&url.pathname==='/api/projects')return respond(res,200,{projects:s.projects});
      if(req.method==='GET'&&url.pathname==='/api/sources')return respond(res,200,{sources:s.sources});
@@ -544,6 +601,7 @@ export function createYenoServer(options={}) {
      const result=mutation(req,url,b,()=>{
        if(url.pathname==='/api/studio')return studioMutation(b);
        if(url.pathname==='/api/production/run')return productionJob(b);
+       if(url.pathname==='/api/research/run')return startResearch(b);
        if(url.pathname==='/api/studio/generate')return generateChapter(b);
        if(url.pathname==='/api/studio/import')return importChapter(b);
        if(url.pathname==='/api/quests'){if(!b.requestId)throw new HttpError(400,'Persistent requestId required');return {status:201,payload:{quest:publicQuest(addQuest(b),s)}};}
@@ -589,6 +647,7 @@ export function createYenoServer(options={}) {
            if(s.emergencyStop||agentUsage(s.jobs).attempts>=agentSettings.dailyCallLimit)throw new HttpError(409,'전체 멈춤 또는 오늘의 호출 상한을 확인하세요.');
            const quest=addQuest({goal:match[1],drive:'sloth',provider:'auto'});return runQuest(quest.id);
          }
+         if((match=text.match(/^연구\s*[:：]\s*(E0[1-9])\s*\|\s*(.+)$/is))){const track=RESEARCH_TRACKS.find(item=>item.code===match[1].toUpperCase());return startResearch({requestId:b.requestId,projectId:track.projectId,question:match[2],provider:'auto'});}
          if(/^봇\s*현황$/.test(text))return {status:201,payload:{kind:'job',job:sourceDocumentJob(null,botDocument(s,profiles),'YENO 봇 현황')}};
          if(/^모든\s*프로젝트\s*봇\s*시작$/.test(text))return startBots({profile:'primary',includePaused:true});
          if(/^프로젝트\s*봇\s*시작$/.test(text))return startBots({profile:'primary'});
@@ -641,7 +700,7 @@ export function createYenoServer(options={}) {
        throw new HttpError(404,'Not found');
      },{required:versioned||!!principal.web,safetyAction:(url.pathname==='/api/studio'&&isStudioSafetyAction(s.studio,b))||(url.pathname==='/api/bots'&&b.action==='stop')||(url.pathname==='/api/commands'&&/^봇\s*운영\s*중지$/.test(b.text??''))||(url.pathname==='/api/control'&&b.action==='stop')||(['/api/discovery','/api/ecosystem'].includes(url.pathname)&&b.enabled===false)});
      respond(res,result.status,result.payload);
-   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof WebSessionError||error instanceof ProductionCapacityError||error instanceof StudioError||error instanceof VideoError||error instanceof ForAiError||error instanceof QuestError||error instanceof BotError||error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError||error instanceof RequestLedgerError;respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
+   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof ResearchError||error instanceof WebSessionError||error instanceof ProductionCapacityError||error instanceof StudioError||error instanceof VideoError||error instanceof ForAiError||error instanceof QuestError||error instanceof BotError||error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError||error instanceof RequestLedgerError;respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
  });
  server.requestTimeout=15000;server.headersTimeout=10000;
  function shutdown(){if(closed)return;closed=true;discovery.close();ecosystem.close();clearTimeout(schedulerTimer);for(const job of s.jobs)if(['running','queued'].includes(job.status)){job.status='paused';job.pauseReason='shutdown';touch(job);}for(const controller of controllers.values())controller.abort();event('Runtime stopped; unfinished jobs paused.');try{save();}finally{releaseLock();server.close();}}

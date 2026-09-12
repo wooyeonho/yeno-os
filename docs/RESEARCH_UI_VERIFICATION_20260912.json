@@ -1,0 +1,27 @@
+{
+  "at": "2026-09-12T17:51:31.718Z",
+  "scope": "shipped web app and actual temporary HTTP core; JSDOM/cookies/locks and external API replies simulated; zero paid calls",
+  "checks": [
+    "cookie login; research navigation; canonical nine tracks; actual POST committed before simulated reply loss; scoped pending request persisted",
+    "close/reopen with same cookie and exact question; pending research opens automatically; same request ID replay; one job, one quest and one simulated model call",
+    "root artifact dialog opens answer with [S1] and source links; answer download matches; both raw JSON dialogs/downloads preserve exact source bytes",
+    "execution-record callback navigates correctly; settled result survives another tab close/reopen without another research submission or model call"
+  ],
+  "modelCalls": 1,
+  "evidenceCalls": 2,
+  "paidCalls": 0,
+  "jobs": 1,
+  "quests": 1,
+  "preservedProjects": 9,
+  "artifacts": 4,
+  "rawFiles": [
+    {
+      "name": "research-europepmc.json",
+      "sha256": "e32bf0cadeb8a6472af4afd5bb7d8f920a6fed728af7500cc201309d0c36d936"
+    },
+    {
+      "name": "research-crossref.json",
+      "sha256": "901c2194c3e64236ac3dca93d2d6fb09477c7b69730ced73125a9eaf501a6f49"
+    }
+  ]
+}

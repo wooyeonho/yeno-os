@@ -7,6 +7,7 @@ import { VIDEO_LIMITS } from './video.mjs';
 // a later resume cannot make an already admitted batch exceed the backup limit.
 export const PRODUCTION_CAPACITY_HEADROOM_BYTES = 1024 * 1024;
 export const FORAI_RESERVED_ARTIFACT_BYTES = 128 * 1024;
+export const RESEARCH_RESERVED_ARTIFACT_BYTES = 1536 * 1024;
 const ARCHIVE_ENVELOPE_BYTES = 256;
 const NEW_ARTIFACT_RECORD_BYTES = 256;
 const PENDING = new Set(['queued', 'running', 'paused']);
@@ -41,8 +42,10 @@ function estimate(state, reservation) {
   const pending = state.jobs.filter(job => record(job) && PENDING.has(job.status) && (job.artifacts?.length ?? 0) === 0);
   const pendingVideoCount = pending.filter(job => job.type === 'video').length;
   const pendingForAiCount = pending.filter(job => job.type === 'forai').length;
+  const pendingResearchCount = state.jobs.filter(job=>record(job)&&PENDING.has(job.status)&&job.researchRequest).length;
   const pendingArchiveBytes = pendingVideoCount * estimateNewArtifacts(VIDEO_LIMITS.bytes)
-    + pendingForAiCount * estimateNewArtifacts(FORAI_RESERVED_ARTIFACT_BYTES, 2);
+    + pendingForAiCount * estimateNewArtifacts(FORAI_RESERVED_ARTIFACT_BYTES, 2)
+    + pendingResearchCount * estimateNewArtifacts(RESEARCH_RESERVED_ARTIFACT_BYTES, 4);
   const additionalArchiveBytes = estimateNewArtifacts(reservation.reserveVideoBytes)
     + estimateNewArtifacts(reservation.reserveTextBytes, 2);
   const estimatedArchiveBytes = ARCHIVE_ENVELOPE_BYTES + stateBytes + artifactArchiveBytes + pendingArchiveBytes + additionalArchiveBytes;
@@ -52,7 +55,7 @@ function estimate(state, reservation) {
     maxBytes: BACKUP_MAX_PLAINTEXT_BYTES,
     estimatedBytes, estimatedArchiveBytes, headroomBytes: PRODUCTION_CAPACITY_HEADROOM_BYTES,
     remainingBytes, stateBytes, artifactRawBytes, artifactArchiveBytes,
-    pendingVideoCount, pendingForAiCount, pendingArchiveBytes, additionalArchiveBytes,
+    pendingVideoCount, pendingForAiCount, pendingResearchCount, pendingArchiveBytes, additionalArchiveBytes,
     withinCapacity: estimatedBytes <= BACKUP_MAX_PLAINTEXT_BYTES,
     canCreateVideo: estimatedBytes + estimateNewArtifacts(VIDEO_LIMITS.bytes) <= BACKUP_MAX_PLAINTEXT_BYTES,
     canCreateForAi: estimatedBytes + estimateNewArtifacts(FORAI_RESERVED_ARTIFACT_BYTES, 2) <= BACKUP_MAX_PLAINTEXT_BYTES,

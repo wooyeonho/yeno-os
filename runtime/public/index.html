@@ -20,6 +20,7 @@
         <button class="nav active" data-tab="control"><span>⌘</span> 조종석</button>
         <button class="nav" data-tab="quests"><span>↗</span> 목표 실행</button>
         <button class="nav" data-tab="studio"><span>✦</span> 운영실</button>
+        <button class="nav" data-tab="research"><span>⌕</span> 문제의 답 · EUREKA</button>
         <button class="nav" data-tab="world"><span>◎</span> 세계 현황</button>
         <button class="nav" data-tab="projects"><span>▤</span> 프로젝트 <span id="project-count" class="count">—</span></button>
         <button class="nav" data-tab="sources"><span>▧</span> 자료 <span id="source-count" class="count">—</span></button>
@@ -37,13 +38,14 @@
         <section class="core-panel">
           <div class="core-heading"><div class="core-signal" id="core-signal" aria-hidden="true"><span></span></div><div><span class="eyebrow">BLACKHOLE CORE</span><h2 id="core-title">연결을 기다리고 있어요.</h2><p id="core-subtitle">실행 본체의 개인 연결 키로 조종석을 열어주세요.</p></div></div>
           <form id="command-form"><label for="command">무엇을 할까요?</label><textarea id="command" rows="3" placeholder="기억해: BLACKHOLE는 내가 폰에서 조종하는 개인 도구다." maxlength="80000" required></textarea><div class="command-footer"><select id="command-type" aria-label="작업 종류"><option value="command">기본 명령</option><option value="document">입력 내용 문서화</option><option value="ai">AI 작성 · 연결 필요</option></select><span id="ai-label" class="muted">AI 연결 확인 전</span><button id="send-command" class="button primary" type="submit" disabled>실행 <span>↗</span></button></div></form>
-          <div class="quick-actions"><button data-tab="studio">영상·소설·안부 운영실 열기</button><button data-example="세계 현황">세계 현황</button><button data-example="기억해: ">기억해</button><button data-example="찾아줘: ">기억 찾기</button><button data-example="문서 만들어: ">문서 만들기</button><button data-quick="diagnostics">본체 진단</button><button data-quick="evolution">개선점 찾기</button></div>
+          <div class="quick-actions"><button data-tab="research">문제의 답 · 인류 난제 연구</button><button data-tab="studio">영상·소설·안부 운영실 열기</button><button data-example="세계 현황">세계 현황</button><button data-example="기억해: ">기억해</button><button data-example="찾아줘: ">기억 찾기</button><button data-example="문서 만들어: ">문서 만들기</button><button data-quick="diagnostics">본체 진단</button><button data-quick="evolution">개선점 찾기</button></div>
           <div id="command-result" class="command-result" aria-live="polite" hidden></div>
         </section>
         <div class="summary-row"><div><span>진행 중</span><strong id="running-count">—</strong></div><div><span>멈춤·대기</span><strong id="pending-count">—</strong></div><div><span>완료</span><strong id="done-count">—</strong></div><div><span>실행 규모</span><strong id="slot-count">—</strong></div></div>
         <div class="workspace-grid"><section><div class="section-heading"><h2>작업</h2><span id="jobs-count" class="muted">본체 연결 전</span></div><div id="jobs-list" class="jobs-list"><div class="empty">연결하면 작업 상태가 여기에 표시됩니다.</div></div></section><aside class="activity"><div class="section-heading"><h2>실행 기록</h2></div><ol id="events-list"><li class="muted">아직 확인한 기록이 없습니다.</li></ol></aside></div>
       </section>
       <section id="tab-studio" class="tab-panel" hidden><div id="studio-root"></div></section>
+      <section id="tab-research" class="tab-panel" hidden><div id="research-root"></div></section>
       <section id="tab-quests" class="tab-panel" hidden>
         <div class="section-heading quest-heading"><div><span class="eyebrow">BLACKHOLE / SEVEN DRIVES</span><h2>원하는 결과를, 하나씩 현실로.</h2><p class="muted">목표와 완료 기준을 정하고 실행하세요. 폰을 닫아도 접수된 작업과 결과는 본체에 남습니다.</p></div><button id="refresh-quests" class="button subtle" disabled>상태 새로고침</button></div>
         <div id="quest-availability" class="banner" role="status">본체에 연결하면 목표 실행 기능을 확인합니다.</div>
