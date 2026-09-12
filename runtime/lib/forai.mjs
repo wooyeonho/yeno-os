@@ -249,8 +249,10 @@ function makeCandidates(profile) {
   return { status: 'draft_from_owner_profile', schemaJson, llmsTxt, requiredFields: [] };
 }
 
-export async function runForAiAudit({ input, signal, fetchImpl } = {}) {
+export async function runForAiAudit({ input, signal, fetchImpl, generatedFrom } = {}) {
   const checked = validateForAiInput(input);
+  // Trusted runtime-only provenance, never accepted from a submitted page input.
+  if(generatedFrom!==undefined&&(!record(generatedFrom)||Object.keys(generatedFrom).sort().join()!==['answerSha256','jobId'].sort().join()||!/^[a-f0-9-]{36}$/.test(generatedFrom.jobId??'')||!/^[a-f0-9]{64}$/.test(generatedFrom.answerSha256??'')||checked.mode!=='html'||checked.url))fail('자동 생성 페이지의 원 연구 출처를 확인하세요.');
   interrupted(signal);
   // A generic fetch ignores Node's pinned lookup. Do not silently weaken the
   // URL transport if a caller supplies the shared provider fetch test seam.
@@ -279,16 +281,16 @@ export async function runForAiAudit({ input, signal, fetchImpl } = {}) {
   const candidates = makeCandidates(checked.profile);
   const evidence = {
     format: 1, projectId: FORAI_PROJECT_ID, mode: checked.mode, checkedAt: new Date().toISOString(),
-    source: { url: page.url, sha256: createHash('sha256').update(page.raw).digest('hex'), bytes: page.raw.length, contentType: page.contentType, status: page.status, readMethod: checked.mode === 'url' ? 'dns_pinned_https' : 'owner_paste', robotsHeader: page.robotsHeader },
+    source: { url: page.url, sha256: createHash('sha256').update(page.raw).digest('hex'), bytes: page.raw.length, contentType: page.contentType, status: page.status, readMethod: generatedFrom?'core_generated_research':checked.mode === 'url' ? 'dns_pinned_https' : 'owner_paste',...(generatedFrom?{generatedFrom:{...generatedFrom}}:{}), robotsHeader: page.robotsHeader },
     observations, findings, candidates,
-    limitations: ['서버가 받은 HTML의 태그 검사이며 브라우저 렌더링·CSS·JavaScript 실행·로그인·하위 페이지 조회를 하지 않았습니다.', '붙여넣기 입력은 사용자 제출 자료이며 입력한 URL에서 실제 내려받았다는 증거가 아닙니다.', 'AI 노출·순위·검색 색인·저자 신원·성과와 개선 효과는 미측정입니다.', 'schema.json과 llms.txt 후보는 소유자 프로필만 사용한 초안이며 자동 게시하거나 검색 노출 효과를 검증하지 않았습니다.'],
+    limitations: ['서버가 받은 HTML의 태그 검사이며 브라우저 렌더링·CSS·JavaScript 실행·로그인·하위 페이지 조회를 하지 않았습니다.', generatedFrom?'이 페이지는 코어가 검증된 연구 초안으로 생성한 개인 자료입니다. 소유자 원문·공개 게시·외부 사이트 조회가 아닙니다.':'붙여넣기 입력은 사용자 제출 자료이며 입력한 URL에서 실제 내려받았다는 증거가 아닙니다.', 'AI 노출·순위·검색 색인·저자 신원·성과와 개선 효과는 미측정입니다.', 'schema.json과 llms.txt 후보는 소유자 프로필만 사용한 초안이며 자동 게시하거나 검색 노출 효과를 검증하지 않았습니다.'],
   };
   // Keep retained evidence bounded even for a deliberately dense input page.
   if (Buffer.byteLength(JSON.stringify(evidence), 'utf8') > 32 * 1024) fail('관측 결과가 저장 한도를 넘었습니다. 더 짧은 HTML로 범위를 나누어 점검하세요.');
   const rows = findings.map(item => `| ${md(item.code)} | ${{ observed: '관측', needs_review: '확인 필요', unknown: '미확인' }[item.state]} | ${md(item.detail)} |`).join('\n');
   const details = isHtml ? `\n## 관측값\n\n- title: ${observations.titles.map(md).join(' / ') || '없음'}\n- description: ${observations.descriptions.map(md).join(' / ') || '없음'}\n- canonical: ${observations.canonicals.map(md).join(' / ') || '없음'}\n- JSON-LD 유형: ${observations.jsonLd.types.map(md).join(', ') || '없음'}\n- 저자 메타: ${observations.sourceInfo.authors.map(md).join(', ') || '없음'}\n- robots: ${[...observations.robotsMeta, page.robotsHeader].filter(Boolean).map(md).join(' / ') || '관측 없음'}\n\n${observations.headings.map(heading => `- H${heading.level}: ${md(heading.text)}`).join('\n')}\n` : '';
   const drafts = candidates.schemaJson ? `\n## 소유자 프로필로 만든 적용 후보\n\n소유자가 입력한 사실만 사용했습니다. 아래 JSON은 schema.json으로, 다음 텍스트는 llms.txt로 저장할 수 있습니다. 사이트에 적용하기 전에 사실과 URL을 확인하세요. 자동 게시·노출 개선 검증은 수행하지 않았습니다.\n\n### schema.json\n\n\`\`\`json\n${candidates.schemaJson}\n\`\`\`\n\n### llms.txt\n\n\`\`\`text\n${candidates.llmsTxt}\n\`\`\`\n` : '\n## 적용 후보 생성\n\n사이트 이름·설명·공개 주소를 profile.name / profile.description / profile.siteUrl에 함께 입력하면 그 사실만으로 schema.json과 llms.txt 초안을 만듭니다.\n';
-  const report = `# BLACKHOLE · For-Ai 페이지 점검\n\n점검 시각: ${evidence.checkedAt}\n입력 방식: ${checked.mode === 'url' ? '공개 HTTPS 원문 직접 조회' : '소유자 원문 붙여넣기'}\n입력 URL: ${page.url ? md(page.url) : '제공하지 않음'}\n원문 UTF-8 바이트: ${page.raw.length}\n원문 SHA-256: ${evidence.source.sha256}\n\n| 항목 | 상태 | 결과 및 다음 행동 |\n|---|---|---|\n${rows}\n${details}${drafts}\n## 점검 범위\n\n${evidence.limitations.map(value => `- ${value}`).join('\n')}\n`;
+  const report = `# BLACKHOLE · For-Ai 페이지 점검\n\n점검 시각: ${evidence.checkedAt}\n입력 방식: ${generatedFrom?'코어가 저장된 연구로 생성한 개인 HTML':checked.mode === 'url' ? '공개 HTTPS 원문 직접 조회' : '소유자 원문 붙여넣기'}\n입력 URL: ${page.url ? md(page.url) : '제공하지 않음'}\n원문 UTF-8 바이트: ${page.raw.length}\n원문 SHA-256: ${evidence.source.sha256}\n${generatedFrom?`원 연구 작업: ${generatedFrom.jobId}\n원 답안 SHA-256: ${generatedFrom.answerSha256}\n`:''}\n| 항목 | 상태 | 결과 및 다음 행동 |\n|---|---|---|\n${rows}\n${details}${drafts}\n## 점검 범위\n\n${evidence.limitations.map(value => `- ${value}`).join('\n')}\n`;
   interrupted(signal);
   return { report, evidence };
 }

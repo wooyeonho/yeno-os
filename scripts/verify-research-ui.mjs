@@ -76,7 +76,7 @@ async function close(page){page.window.dispatchEvent(new page.window.Event('page
 const proof={at:new Date().toISOString(),scope:'shipped web app and actual temporary HTTP core; JSDOM/cookies/locks and external API replies simulated; zero paid calls',checks:[]};
 try{
   dom=openDom();await until(()=>reads.includes('/api/web/session'),'login ready');submit('#pair-form',{'pair-token':owner});
-  await until(()=>$('#pair-screen').hidden&&$('.studio-status')?.textContent.includes('본체 확인'),'authenticated cookie session');
+  await until(()=>$('#pair-screen').hidden&&$('.autopilot-status')?.textContent.includes('자동'),'authenticated cookie session');
   assert.equal(dom.window.document.cookie,'');assert.ok(![...persisted.values()].join('').includes(owner));
   click('[data-tab="research"]');await until(()=>!$('#tab-research').hidden&&!$('[data-research-run]').disabled,'research navigation wired');
   assert.equal($('[name="projectId"]').options.length,10);
@@ -117,7 +117,7 @@ try{
   proof.checks.push('root artifact dialog opens answer with [S1] and source links; answer download matches; both raw JSON dialogs/downloads preserve exact source bytes');
   click(`[data-research-action="open-job"][data-id="${job.id}"]`);await until(()=>!$('#tab-control').hidden,'job callback opens execution records');
   click('[data-tab="research"]');await until(()=>!$('#tab-research').hidden&&$('.research-jobs').textContent.includes('연구 초안 완료'),'research history reopens');
-  await close(dom);dom=openDom();await until(()=>$('#pair-screen').hidden&&$('.studio-status')?.textContent.includes('본체 확인'),'reopen after settlement');
+  await close(dom);dom=openDom();await until(()=>$('#pair-screen').hidden&&$('.autopilot-status')?.textContent.includes('자동'),'reopen after settlement');
   click('[data-tab="research"]');await until(()=>$('.research-jobs').textContent.includes('연구 초안 완료'),'saved answer after fresh tab');
   click(`[data-research-action="open-artifact"][data-id="${answer.id}"]`);await until(()=>$('#artifact-dialog').open&&$('#artifact-title').textContent===answer.name,'same saved artifact reopens');
   assert.match($('#artifact-content').textContent,/\[S1\]/);assert.equal(modelCalls,1);assert.equal(evidenceCalls,2);assert.equal(calls.filter(call=>call.path==='/api/research/run').length,2);assert.equal(errors.length,0,errors.join(';'));

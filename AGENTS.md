@@ -45,6 +45,8 @@ The owner authorized automatic Android builds on 2026-09-10. `android-debug.yml`
 
 ## Implementation constraints
 
+The owner explicitly authorized proactive native operation on 2026-09-12. The separate durable autopilot may select canonical EUREKA research, public world observations, private research-page For-Ai audits and caption MP4 outputs without a new task request, at most four model calls per UTC day within the existing overall limit. Read docs/AUTOPILOT_20260912.md and current live evidence. This does not enable coding workers, publication, outreach, trading, or use synthetic acceptance studio records as owner content. Preserve deterministic stage identities, verified parent artifacts, global-stop and unknown-call holds.
+
 - Keep the first native controller compatible with a deliberately versioned server API. Existing relative `/api` requests and sessionStorage tokens cannot simply be copied into a native app unchanged.
 - Implement explicit API origin/base selection, device-scoped authentication and revocation, and operating-system secret storage. Model and signing keys must remain outside client bundles.
 - The existing file store is single-process. Do not run multiple control servers against it. Introduce transactional storage with a migration and recovery plan before expanding concurrency.
