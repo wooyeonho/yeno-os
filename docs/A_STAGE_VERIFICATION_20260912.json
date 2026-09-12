@@ -46,12 +46,13 @@
     "service": "global-iris/yeno-core",
     "serviceId": "7fb597dd-726e-45ee-bfde-7f695f6dc8ba",
     "action": "Koyeb Trigger build for the prepared source commit",
-    "status": "blocked_by_automatic_approval_review",
-    "reason": "Consequential production-service mutation with possible disruption; user did not explicitly authorize this exact Koyeb deployment.",
+    "status": "submitted_after_owner_approval_but_koyeb_console_timed_out",
+    "ownerApproval": "User said 확인진행해줘 after the exact existing-service deployment request.",
+    "reason": "Koyeb browser console stopped responding after Trigger build; deployment success or failure was not inferred.",
     "workaroundAttempted": false,
-    "newRuntimeDeployed": false,
+    "newRuntimeDeployed": "unknown",
     "newRealModelCall": false,
     "newPhoneVerification": false
   },
-  "nextAction": "Explicit owner approval to deploy f98cfa4 to the existing Koyeb service; then one existing-budget Gemini goal verification."
+  "nextAction": "Read Koyeb deployment ID and Healthy status after the console recovers; then perform one existing-budget Gemini goal verification."
 }
