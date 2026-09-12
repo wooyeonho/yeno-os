@@ -1,0 +1,57 @@
+{
+  "date": "2026-09-12",
+  "sourceCommit": "f98cfa4cb17492d58589ca3aaa0ae372fd69d251",
+  "sourceBranches": [
+    "codex",
+    "yeno-koyeb-pilot"
+  ],
+  "attachments": {
+    "uniqueLocalFiles": 2,
+    "strategyUploadedTwiceToSamePath": true,
+    "strategySha256": "046234ce4ca2c13f16a40c833ce8c0485d1d88abb64ad8547ad54738dc94f94b",
+    "zipSha256": "6e880e202628a0c6b92871cc2951a79968506b9d9ecd43802659b0321baac547"
+  },
+  "validation": {
+    "nodeTests": 202,
+    "passed": 202,
+    "failed": 0,
+    "durationMs": 21620.374702,
+    "providers": "synthetic",
+    "ui": "synthetic DOM and transport; not browser/device",
+    "liveScriptRepeatedTwice": {
+      "syntheticProviderCalls": 1,
+      "sameJobAndArtifactHash": true,
+      "globalSettingsPreserved": true
+    }
+  },
+  "productionReadOnlyBeforeDeployment": {
+    "revision": 285,
+    "activeJobs": 0,
+    "jobs": 45,
+    "projects": 70,
+    "sources": 110,
+    "memories": 0,
+    "snapshots": 0,
+    "requestLedger": 108,
+    "primary": "gemini",
+    "model": "gemini-3.8-flash",
+    "dailyLimit": 4,
+    "attemptsToday": 3,
+    "unknownToday": 1,
+    "settledGeminiCalls": 2,
+    "automaticReviews": false,
+    "openaiApiCreditBalanceUsd": 0
+  },
+  "deployment": {
+    "service": "global-iris/yeno-core",
+    "serviceId": "7fb597dd-726e-45ee-bfde-7f695f6dc8ba",
+    "action": "Koyeb Trigger build for the prepared source commit",
+    "status": "blocked_by_automatic_approval_review",
+    "reason": "Consequential production-service mutation with possible disruption; user did not explicitly authorize this exact Koyeb deployment.",
+    "workaroundAttempted": false,
+    "newRuntimeDeployed": false,
+    "newRealModelCall": false,
+    "newPhoneVerification": false
+  },
+  "nextAction": "Explicit owner approval to deploy f98cfa4 to the existing Koyeb service; then one existing-budget Gemini goal verification."
+}
