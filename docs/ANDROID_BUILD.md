@@ -1,5 +1,9 @@
 # Android APK 빌드와 연결
 
+## 2026-09-12 운영실 APK
+
+[빌드34702041819](https://github.com/wooyeonho/yeno-os/actions/runs/34702041819) 성공. 앱0.2.0·versionCode2000·ARM64, 실제 APK59.5MB. [기능과 검증](NATIVE_STUDIO_20260912.md), [파일/서명 증거](NATIVE_UI_VERIFICATION_20260912.json)를 따른다. **원래 전달 APK와 서명이 달라 기존 설치 위 업데이트가 불가능하며, 기존 앱을 삭제하지 않는다.** 기존 폰은 웹 운영실을 사용하고 서명/연결 정보를 보존한 전환을 별도로 확인해야 한다. 새 APK의 물리 Android 설치·재생·저장 검사는 미완료다.
+
 ## 현재 결과 구분
 
 **첫 실제 APK 빌드가 성공했다.** 커밋·파일 크기·SHA-256·실제 검사와 다운로드는 `STATUS.md`를 따른다. 폰 실사용 확인은 별도 단계다.
@@ -56,7 +60,7 @@ SDK 준비 구현 근거: [setup-android 고정 버전](https://github.com/andro
 
 ## 연결과 저장
 
-코어는 단일 프로세스와 영속 `YENO_DATA_DIR`을 사용한다. HTTPS 역방향 프록시 주소를 `YENO_ALLOWED_HOSTS`에 포함한다. 실제 상주 주소와 배포는 아직 별도 연결 단계다.
+코어는 단일 프로세스와 영속 `YENO_DATA_DIR`을 사용한다. HTTPS 역방향 프록시 주소를 `YENO_ALLOWED_HOSTS`에 포함한다. 현재 상주 코어 주소와 실제 배포 기록은 `STATUS.md`를 따른다.
 
 앱은 사용자가 지정한 HTTPS 호스트의 `/api/v1/*` 경로에 접속할 수 있고 로컬 개발 HTTP는 localhost/127.0.0.1로 제한한다. HTTP 리디렉션을 따르지 않는다. 연결 키와 모델·서명 비밀은 소스나 APK에 넣지 않는다.
 

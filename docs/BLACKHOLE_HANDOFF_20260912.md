@@ -1,5 +1,19 @@
 # BLACKHOLE OS 인수인계 — 2026-09-12
 
+## 가장 최근 인계 — 15:33Z Android 운영실 APK
+
+앱 소스 `94f6258695e5e914ff36037246548f2e1934db93`, [Actions34702041819](https://github.com/wooyeonho/yeno-os/actions/runs/34702041819) success. 0.2.0·versionCode2000·`kr.yeno.controller`·ARM64 APK 59,455,729바이트, SHA-256 `d41b31814cb5862ded83af0fed311f5d36c7dbcdffa00901185af6a402b55a55`. artifact10300339810의 ZIP과 내부 APK를 내려받아 해시 대조, ARM64 라이브러리와 v2 공개 서명 인증서 확인, 설치 파일 보관까지 완료했다. 로컬 경로는 `/workspace/scratch/87919c3606ef/native-delivery/BLACKHOLE-Android-0.2.0.apk`다.
+
+**기존 전달 APK와 서명이 다르다.** 새 인증서 `91bf7eadd8baf1604fa469d70a2785b86963390337afa3c5312c3f0e638b8046`, 기존 `6a9df77d9729f0b538fae81928fa32cc1eb70766cc36ad8ce039d73d8374ab00`. 기존 서명 키는 이 환경에 없다. 기존 앱 삭제/보관소 초기화/키 추출로 우회하지 않는다. 기존 폰에서 지금 사용할 경로는 아래 웹 운영실이고, APK의 기존 설치 위 업데이트·물리 기기 설치/재생/파일 저장은 아직 미완료다. 새 API 키로 해결되는 문제가 아니다.
+
+추가한 앱 기능: 공통 studio-view/command-request/world-view 번들, origin/device별 Stronghold 접수 대기와 전송 전 저장 확인, 다운로드8MiB 한도·SHA/크기/MP4 형식 검사, MP4 영상 요소와 텍스트 결과, Android 문서 저장 창/쓰기/재읽기 해시, 시스템 브라우저 HTTPS 링크. 새 모델 호출/게시/메시지0, 운영 서버 재배포0이다. 운영 소스018/Koyebacfba09c는 아래 이전 실검증 기준을 유지한다.
+
+검사: 로컬293/293 실제 영상 필수 통과. 빌드된 HTML/JS+실제 임시 코어의 저장/집필 원고/For-Ai/실제2초 영상/내보내기/종료·재열기/폐기를 확인했다. 네이티브 IPC와 보관소·OS 파일 대화상자·재생은 모의 구현으로 물리 Android 증거가 아니다. GitHub286통과/영상7생략/실패0, UI 검사 통과. [증거](NATIVE_UI_VERIFICATION_20260912.json), [사용·한계](NATIVE_STUDIO_20260912.md).
+
+실제 빌드의 Cargo.lock은 [docs/builds/android-94f62586-Cargo.lock](builds/android-94f62586-Cargo.lock), SHA-256 `2d1a48e85e18002149fefeee73cc647e2431a9a9f5cbc25683ae1c5b64336dd2`로 보존했다. CI가 lock을 재생성하는 기존 절차는 유지하며, 기존 src-tauri/Cargo.lock을 이 빌드의 동결 입력이라고 주장하지 않는다. 이후 정식 서명 릴리스에서 lock 동기화/고정 빌드를 처리한다. 기록 파일만 저장하는 후속 문서 커밋은 APK 재빌드 입력이 아니다.
+
+Grok Bot은 로그인 차단 이후 사용자 쪽 제품 인증이 필요하다. 동일 차단 경로를 반복하거나 xAI 텍스트 모델 호출을 Grok Bot 연결로 표시하지 않는다. 전체 프로젝트 완성/무인 코딩/외부 게시/안경·항공·선박 연결도 미완료다.
+
 ## 가장 최근 인계 — 14:11Z 운영실 검증
 
 이 절과 최신 STATUS가 아래의 이전 기록보다 우선한다. 현재 실행 소스는 `018ac0adb7c1699b7d756786bbfa699060858bbc`, Koyeb `acfba09c-f55f-4e55-aa42-39753b417301` Healthy/Active, 이전 `51fa15e4` Stopped다. 기존 Micro Frankfurt·단일 볼륨·키 참조를 유지했다. 소유자가 하루4→20회 확대를 승인했고 실제 적용됐다. 현재5/20회, 이번 실검증1회·추가 재시도0회·신규 미확인0회다. 기존 미확인1회는 그대로 남긴다.
