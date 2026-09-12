@@ -46,13 +46,214 @@
     "service": "global-iris/yeno-core",
     "serviceId": "7fb597dd-726e-45ee-bfde-7f695f6dc8ba",
     "action": "Koyeb Trigger build for the prepared source commit",
-    "status": "submitted_after_owner_approval_but_koyeb_console_timed_out",
+    "status": "healthy_active",
     "ownerApproval": "User said 확인진행해줘 after the exact existing-service deployment request.",
-    "reason": "Koyeb browser console stopped responding after Trigger build; deployment success or failure was not inferred.",
+    "reason": "Browser connection recovered. Existing active deployment was still 2b14d03f. An approved new build deployed f98cfa4c; Koyeb showed Healthy, Active deployment, 1 of 1 running.",
     "workaroundAttempted": false,
-    "newRuntimeDeployed": "unknown",
-    "newRealModelCall": false,
-    "newPhoneVerification": false
+    "newRuntimeDeployed": true,
+    "newRealModelCall": true,
+    "newPhoneVerification": false,
+    "deploymentId": "568d3cc3-1e1d-4607-99f7-9533543fbfea",
+    "instanceShortId": "87785aa1",
+    "runningCommit": "f98cfa4cb17492d58589ca3aaa0ae372fd69d251",
+    "previousDeploymentId": "3b0d2024-4a5b-44d5-bac8-c8f9c7a0c4bd",
+    "previousDeploymentStatus": "Stopped",
+    "persistentVolumePreserved": true,
+    "instanceClass": "Micro",
+    "region": "Frankfurt"
   },
-  "nextAction": "Read Koyeb deployment ID and Healthy status after the console recovers; then perform one existing-budget Gemini goal verification."
+  "nextAction": "Owner can open the saved Gemini result now. Additional AI use today requires explicit approval to increase the existing daily call limit; do not silently add spend, retry unknown calls, or enable automatic reviews.",
+  "productionAfterDeploymentReadOnly": {
+    "active": 0,
+    "checkedAt": "2026-09-12T12:55:40.716Z",
+    "collections": {
+      "jobs": {
+        "count": 45,
+        "idsSha256": "2b69410583e9824052e3639efc8c1d4c42cf749f1d0a1dc107daacb9bc966ae1"
+      },
+      "memories": {
+        "count": 0,
+        "idsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "projects": {
+        "count": 70,
+        "idsSha256": "bcef4fb464495d236677bfcbdcf4a75f4d342a11b13839a529176f71310d99da"
+      },
+      "snapshots": {
+        "count": 0,
+        "idsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "sources": {
+        "count": 110,
+        "idsSha256": "290f325a8d32c642bc952ca28bade5cfa421b2ae126d31d0ab55261bd4a048f8"
+      }
+    },
+    "globalStop": false,
+    "mode": "read-only",
+    "providers": [
+      {
+        "configured": true,
+        "eligible": false,
+        "lastSuccessfulAt": null,
+        "missing": [],
+        "model": "gpt-4.1-mini-2025-04-14",
+        "provider": "openai",
+        "successfulCalls": 0
+      },
+      {
+        "configured": true,
+        "eligible": true,
+        "lastSuccessfulAt": "2026-09-12T04:04:27.711Z",
+        "missing": [],
+        "model": "gemini-3.8-flash",
+        "provider": "gemini",
+        "successfulCalls": 2
+      },
+      {
+        "configured": false,
+        "eligible": false,
+        "lastSuccessfulAt": null,
+        "missing": [
+          "model",
+          "key"
+        ],
+        "model": null,
+        "provider": "moonshot",
+        "successfulCalls": 0
+      },
+      {
+        "configured": false,
+        "eligible": false,
+        "lastSuccessfulAt": null,
+        "missing": [
+          "model",
+          "key"
+        ],
+        "model": null,
+        "provider": "xai",
+        "successfulCalls": 0
+      },
+      {
+        "configured": false,
+        "eligible": false,
+        "lastSuccessfulAt": null,
+        "missing": [
+          "model",
+          "key"
+        ],
+        "model": null,
+        "provider": "anthropic",
+        "successfulCalls": 0
+      },
+      {
+        "configured": false,
+        "eligible": false,
+        "lastSuccessfulAt": null,
+        "missing": [
+          "key"
+        ],
+        "model": "moonshotai/kimi-k3",
+        "provider": "nvidia",
+        "successfulCalls": 0
+      }
+    ],
+    "questCount": 0,
+    "revision": 286,
+    "usage": {
+      "attempts": 3,
+      "date": "2026-09-12",
+      "inputTokens": 1080,
+      "outputTokens": 74,
+      "unknown": 1,
+      "usageMissing": 0
+    }
+  },
+  "realModelVerification": {
+    "artifactId": "742b3494-6c59-4132-9160-cffd0da45592",
+    "artifactName": "agent-5188b3d2.md",
+    "bytes": 5142,
+    "checkedAt": "2026-09-12T12:56:31.230Z",
+    "existingDataPreserved": true,
+    "globalAISettingPreserved": true,
+    "jobId": "5188b3d2-8121-4476-9467-afbd427d81b1",
+    "model": "gemini-3.8-flash",
+    "modelCalls": 1,
+    "provider": "gemini",
+    "questId": "7fb52abd-0607-4e0b-b3f4-45d5d28b18de",
+    "replaySameJob": true,
+    "sha256": "f428b44b02f5e46a2ddbd93ff4edf9e4c655291a122d30a7e74b488c69215203",
+    "status": "completed",
+    "unknownCalls": 0,
+    "usage": {
+      "attempts": 4,
+      "date": "2026-09-12",
+      "inputTokens": 1918,
+      "outputTokens": 1462,
+      "unknown": 1,
+      "usageMissing": 0
+    }
+  },
+  "httpsVerification": {
+    "active": 0,
+    "aiEnabled": true,
+    "artifactStatus": 200,
+    "automaticReviews": false,
+    "bytes": 5142,
+    "checkedAt": "2026-09-12T12:58:20.679Z",
+    "counts": {
+      "jobs": 46,
+      "projects": 70,
+      "sources": 110
+    },
+    "dailyCallLimit": 4,
+    "globalStop": false,
+    "jobId": "5188b3d2-8121-4476-9467-afbd427d81b1",
+    "jobStatus": "completed",
+    "revision": 294,
+    "sha256": "f428b44b02f5e46a2ddbd93ff4edf9e4c655291a122d30a7e74b488c69215203",
+    "status": 200,
+    "title": "추가 조사나 도구 호출 없이, 아래 제공 정보만으로 블랙홀을 소개하는 한국어 45초 쇼츠 영상의 완성 대본을 작성해줘. 각 장면의 시간·화면 연출·내레이션·자막을 표로 제시하고 마지막에 게시용 소개문 초안 2개를 붙",
+    "usage": {
+      "attempts": 4,
+      "date": "2026-09-12",
+      "inputTokens": 1918,
+      "outputTokens": 1462,
+      "unknown": 1,
+      "usageMissing": 0
+    },
+    "origin": "https://global-iris-gyeol-98386a17.koyeb.app/",
+    "location": "Existing Koyeb container calling the public HTTPS origin; not an Android device test"
+  },
+  "browserVerification": {
+    "publicOriginLoaded": true,
+    "goalNavigationVisible": true,
+    "authenticatedDashboardTested": false,
+    "phoneDeviceTested": false
+  },
+  "resultContentReview": {
+    "type": "Korean 45-second promotional storyboard and two post drafts",
+    "fiveSceneTimingsSeconds": [
+      7,
+      10,
+      10,
+      10,
+      8
+    ],
+    "sumSeconds": 45,
+    "hasNarrationAndCaptions": true,
+    "actualAudioDurationMeasured": false,
+    "actuallyPosted": false,
+    "videoRendered": false,
+    "modelSelfAssessmentIsNotExternalVerification": true
+  },
+  "remaining": {
+    "dailyCallLimit": 4,
+    "attemptsToday": 4,
+    "unknownCallsFromEarlierJob": 1,
+    "additionalCallsTodayWithoutApproval": false,
+    "secondRealProviderVerified": false,
+    "openaiLastObservedCreditUsd": 0,
+    "phoneEndToEndVerified": false,
+    "autonomousCodingImplemented": false
+  }
 }
