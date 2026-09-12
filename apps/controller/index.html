@@ -5,16 +5,30 @@
 <header><b>BLACKHOLE</b><span id="connection">연결 안 됨</span></header>
 <section id="unlock" hidden><h1>블랙홀 열기</h1><p>기기 인증은 암호화된 네이티브 보관소에 있습니다.</p><form id="unlock-form"><label>보관소 암호<input id="unlock-password" type="password" minlength="8" required></label><button>다시 연결</button></form></section>
 <section id="setup"><h1>본체 연결</h1><p>상주 코어의 HTTPS 주소와 연결 키를 입력하세요. 주소와 기기 인증은 앱을 닫아도 암호화해 보관됩니다.</p><form id="pair"><label>코어 주소<input id="origin" type="url" placeholder="https://yeno.example.com" required></label><label>연결 키<input id="pairing" type="password" required></label><label>보관소 암호 (8자 이상)<input id="vault-password" type="password" minlength="8" required></label><button id="pair-button">이 기기 연결</button></form></section>
+<div id="workspace" hidden>
+<nav class="native-nav" aria-label="블랙홀 화면"><button type="button" data-native-view="studio" aria-pressed="true">운영실</button><button type="button" data-native-view="world" aria-pressed="false">God Eye</button><button type="button" data-native-view="jobs" aria-pressed="false">명령·결과</button></nav>
+<section id="native-studio" aria-label="운영실"></section>
+<section id="tab-world" hidden>
+<div class="section-heading"><div><span class="eyebrow">BLACKHOLE / WORLD</span><h2>God Eye · 공개 재난 현황</h2><p class="muted">USGS 지진과 NASA 자연재해를 출처별로 확인합니다.</p></div><button id="world-refresh" type="button" disabled>새로 조회</button></div>
+<div class="world-bar"><span id="world-status" role="status">첫 조회 대기</span><label>최소 규모 <select id="world-magnitude"><option value="2.5">M 2.5</option><option value="4.5">M 4.5</option><option value="6">M 6.0</option></select></label></div>
+<p id="world-error" role="alert"></p>
+<div class="world-map-wrap"><svg id="world-map" viewBox="0 0 1000 500" role="group" aria-label="공개 재난 위치 지도"><rect width="1000" height="500" fill="#0a1917"/><path d="M0 250H1000M500 0V500M0 125H1000M0 375H1000M250 0V500M750 0V500" stroke="#1d342f"/><image id="world-land" width="1000" height="500"/><g id="world-markers"></g></svg><div class="world-map-caption">발생 위치</div></div>
+<div class="world-stats"><div><small>표시한 사건</small><strong id="world-total">—</strong></div><div><small>최대 규모</small><strong id="world-largest">—</strong></div></div>
+<p id="world-updated" class="muted"></p><p id="world-coverage" class="muted"></p><div id="world-detail" hidden></div><div id="world-list" class="world-list"></div>
+<p class="muted">조회 결과는 작업 이력에 남습니다. 위치 권한과 AI 키는 필요하지 않습니다. 긴급 경보 서비스가 아닙니다.</p>
+<p class="muted">지도: <a href="https://www.naturalearthdata.com/about/terms-of-use/" target="_blank" rel="noopener noreferrer">Natural Earth</a></p>
+</section>
 <section id="cockpit" hidden>
 <div class="status"><h1 id="headline">상태 확인 중</h1><p id="seen"></p></div>
 <form id="command"><label>명령<textarea id="text" placeholder="문서 만들어: 오늘 할 일을 정리해" required></textarea></label><button id="submit-command">명령 맡기기</button></form>
 <p id="pending"></p><button id="retry-command" class="secondary" type="button" hidden>대기 중인 원래 명령으로 다시 확인</button>
 <div class="controls"><button id="stop" type="button">전체 멈춤</button><button id="refresh" type="button">새로 확인</button></div>
 <div id="command-result" class="result" aria-live="polite" hidden><h2>최근 명령 결과</h2><p id="receipt-meta"></p><div id="receipt-body"></div></div>
-<div id="artifact-result" class="result" hidden><h2 id="artifact-title">결과 내용</h2><pre id="artifact-body" tabindex="0"></pre><button id="copy-artifact" class="secondary" type="button">결과 복사</button></div>
+<div id="artifact-result" class="result" hidden><h2 id="artifact-title">결과 내용</h2><p id="artifact-meta"></p><video id="artifact-video" controls playsinline preload="metadata" hidden></video><pre id="artifact-body" tabindex="0"></pre><div class="controls"><button id="copy-artifact" class="secondary" type="button">결과 복사</button><button id="save-artifact" class="secondary" type="button">파일 저장</button></div></div>
 <h2>작업과 결과</h2><div id="jobs"></div>
 <button id="disconnect" class="secondary" type="button">서버 토큰 폐기 후 연결 해제</button>
 <button id="local-forget" class="secondary" type="button" hidden>서버 폐기 확인 없이 이 폰에서만 지우기</button>
 </section>
+</div>
 <p id="message" role="alert"></p>
 </main><script type="module" src="/src/main.ts"></script></body></html>

@@ -16,7 +16,7 @@ const fieldLabels={title:'제목',address:'주소',note:'메모',url:'주소',na
 const capabilityLinks=cap=>cap.id==='grok-bot'?`<div class="studio-actions">${link('https://grok.com/?product=grok-bot','공식 Grok Bot 열기')}${link('https://play.google.com/store/apps/details?id=ai.x.grok.bot','Android 앱 열기')}</div>`:'';
 
 // The surrounding controller owns authentication and job/artifact controls.
-export function createStudioView({root, api, notify = () => {}, onJobCreated = () => {}}) {
+export function createStudioView({root, api, notify = () => {}, onJobCreated = () => {}, storage = globalThis.sessionStorage, storageKey = 'blackhole-pending-studio-v1', saveFile}) {
   if (!root || typeof api !== 'function') throw new Error('운영실의 화면과 연결 함수가 필요합니다.');
   let data=null, capabilities=[], capabilityError='', state=null, currentTab='forai';
   let loading=false, error='', message='', epoch=0, selectedSeries='', showArchived=false;
@@ -24,7 +24,7 @@ export function createStudioView({root, api, notify = () => {}, onJobCreated = (
   const drafts=new Map(), editRevisions=new Map(), createdJobIds=new Set(), invitationLinks=new Map();
   const allowedPaths=new Set(['/api/studio','/api/studio/generate','/api/studio/import','/api/production/run','/api/hankki/invite','/api/hankki/revoke']);
   try {
-    requests=createCommandRequest({storage:globalThis.sessionStorage,key:'blackhole-pending-studio-v1',allowPath:path=>allowedPaths.has(path),transport:async(path,body)=>{
+    requests=createCommandRequest({storage,key:storageKey,allowPath:path=>allowedPaths.has(path),transport:async(path,body)=>{
       const result=await api(path,body);
       const valid=path==='/api/production/run'?typeof result?.job?.id==='string':path==='/api/studio/generate'?typeof result?.job?.id==='string' && typeof result?.quest?.id==='string':typeof result?.result?.id==='string' && Number.isInteger(result?.result?.revision);
       if(!valid || (path==='/api/hankki/invite'&&!safeUrl(result?.responseUrl)))throw new Error('운영실 요청의 접수 응답을 확인하지 못했습니다.');
@@ -169,12 +169,15 @@ export function createStudioView({root, api, notify = () => {}, onJobCreated = (
     finally {if(generation===epoch)displayStatus();}
   }
   async function exportData(kind,id) {
+    const generation=epoch;
     try {
       const response=await api(`/api/studio/export?kind=${encodeURIComponent(kind)}${id?`&id=${encodeURIComponent(id)}`:''}`,undefined,{raw:true});
-      const blob=await response.blob();const url=URL.createObjectURL(blob);
+      const blob=await response.blob();if(generation!==epoch)return;
       const filename=response.headers.get('content-disposition')?.match(/filename="([^"/\\]+)"/)?.[1]||`blackhole-${kind}-${new Date().toISOString().slice(0,10)}.md`;
+      if(saveFile){await saveFile({blob,filename,sha256:response.headers.get('x-content-sha256')});return;}
+      const url=URL.createObjectURL(blob);
       const anchor=document.createElement('a');anchor.href=url;anchor.download=filename;document.body.append(anchor);anchor.click();anchor.remove();setTimeout(()=>URL.revokeObjectURL(url),30_000);notify('파일을 내려받았습니다.');
-    } catch(err) {error=err.message;displayStatus();}
+    } catch(err) {if(generation===epoch){error=err.message;displayStatus();}}
   }
   root.addEventListener('click',event=>{
     const tab=event.target.closest('[data-studio-tab]');
@@ -246,6 +249,7 @@ export function createStudioView({root, api, notify = () => {}, onJobCreated = (
   renderPane(false);
   return {
     refresh,
+    get sending() {return Boolean(requests?.sending);},
     setState(next) {state=next;updateNovelCandidates();displayStatus();renderJobs();},
     reset() {epoch++;state=null;data=null;capabilities=[];capabilityError='';loading=false;error='';message='';selectedSeries='';editingPlace='';editingContact='';editingSeries='';editingChapter='';drafts.clear();editRevisions.clear();createdJobIds.clear();invitationLinks.clear();renderPane(false);},
   };

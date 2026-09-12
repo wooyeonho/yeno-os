@@ -6,6 +6,11 @@ on:
     branches: [codex]
     paths:
       - 'apps/controller/**'
+      - 'runtime/public/studio-view.mjs'
+      - 'runtime/public/studio.css'
+      - 'runtime/public/command-request.mjs'
+      - 'runtime/public/world-view.mjs'
+      - 'runtime/public/world-land.svg'
       - '.github/workflows/android-debug.yml'
       - 'scripts/collect-android-artifacts.py'
       - 'scripts/write-android-summary.py'
@@ -61,6 +66,8 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Build frontend
         run: npm run build
+      - name: Verify shipped UI against a temporary core
+        run: npm run verify:ui
       - name: Set up Android command-line tools
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
         with:

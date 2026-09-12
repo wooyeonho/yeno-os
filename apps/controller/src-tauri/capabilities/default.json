@@ -21,6 +21,10 @@
         }
       ]
     },
-    "stronghold:default"
+    "stronghold:default",
+    "dialog:allow-save",
+    "fs:allow-write-file",
+    "fs:allow-read-file",
+    {"identifier": "opener:allow-open-url", "allow": [{"url": "https://*"}]}
   ]
 }

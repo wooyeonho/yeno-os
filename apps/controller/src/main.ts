@@ -1,12 +1,19 @@
+import '../../../runtime/public/studio.css';
 import './style.css';
 import { fetch } from '@tauri-apps/plugin-http';
 import { appDataDir, join } from '@tauri-apps/api/path';
 import { Stronghold, type Store } from '@tauri-apps/plugin-stronghold';
+import { save } from '@tauri-apps/plugin-dialog';
+import { writeFile, readFile } from '@tauri-apps/plugin-fs';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import { createStudioView } from '../../../runtime/public/studio-view.mjs';
+import { createWorldView } from '../../../runtime/public/world-view.mjs';
+import worldLand from '../../../runtime/public/world-land.svg?url';
 import { CommandSession, HttpFailure, isDefinitiveRejection, type CommandReceipt } from './command-session.ts';
+import { normalizeOrigin, versionedUrl, createStudioApi, studioStorageKey, SecureRequestStorage, readVerifiedFile, saveVerifiedFile, type Connection, type VerifiedFile } from './native-studio.ts';
 
 type Job = { id: string; title: string; status: string; version: number; updatedAt: string; artifacts: { id: string; name: string }[] };
-type State = { name: string; apiVersion: string; revision: number; emergencyStop: boolean; jobs: Job[] };
-type Connection = { origin: string; deviceId: string; token: string };
+type State = { name: string; apiVersion: string; revision: number; emergencyStop: boolean; jobs: Job[]; world?: Record<string, unknown>; modules?: {documents?: boolean} };
 type Memory = { id?: string; text: string; createdAt?: string };
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const encoder = new TextEncoder(), decoder = new TextDecoder();
@@ -19,6 +26,10 @@ let connectionStatus: 'checking' | 'online' | 'unavailable' = 'checking';
 let refreshing = false, submitting = false, pairing = false, disconnecting = false;
 let nativeVault: { stronghold: Stronghold; store: Store } | null = null;
 let vaultPassword: string | null = null;
+let studio: ReturnType<typeof createStudioView> | null = null;
+let studioStorage: SecureRequestStorage | null = null;
+let activeView: 'studio' | 'world' | 'jobs' = 'studio';
+let artifactFile: VerifiedFile | null = null, artifactUrl: string | null = null, artifactEpoch = 0, savingFile = false;
 
 async function openVault(password: string) {
   if (nativeVault && vaultPassword === password) return nativeVault;
@@ -40,14 +51,6 @@ async function saveConnection(value: Connection | null) {
   else await nativeVault.store.remove('connection');
   await nativeVault.stronghold.save();
 }
-function normalizeOrigin(raw: string) {
-  const url = new URL(raw);
-  if (url.username || url.password || url.search || url.hash || !['https:', 'http:'].includes(url.protocol) || !['', '/'].includes(url.pathname)) {
-    throw new Error('경로 없이 HTTPS 코어 주소를 입력하세요.');
-  }
-  if (url.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(url.hostname)) throw new Error('원격 코어는 HTTPS가 필요합니다.');
-  return url.origin;
-}
 function requestId() { return crypto.randomUUID(); }
 function showMessage(value = '') { $('message').textContent = value; }
 function errorText(error: unknown) { return error instanceof Error ? error.message : String(error); }
@@ -68,7 +71,7 @@ async function request<T>(url: string, init: RequestInit, decode: (response: Res
 async function api<T>(path: string, init: RequestInit = {}, target = connection): Promise<T> {
   if (!target) throw new Error('기기가 연결되지 않았습니다.');
   try {
-    return await request(`${target.origin}/api/v1${path}`, {
+    return await request(versionedUrl(target.origin, `/api${path}`), {
       ...init,
       headers: { authorization: `Bearer ${target.token}`, ...(init.body ? { 'content-type': 'application/json' } : {}), ...init.headers },
     }, response => response.json() as Promise<T>);
@@ -77,7 +80,18 @@ async function api<T>(path: string, init: RequestInit = {}, target = connection)
     throw error;
   }
 }
-function activate(value: Connection) {
+async function activate(value: Connection) {
+  if (!nativeVault) throw new Error('보관소를 먼저 여세요.');
+  const vault = nativeVault, key = studioStorageKey(value);
+  const saved = await vault.store.get(key);
+  const storage = new SecureRequestStorage(key, saved ? decoder.decode(new Uint8Array(saved)) : null, async next => {
+    if (next === null) await vault.store.remove(key);
+    else await vault.store.insert(key, Array.from(encoder.encode(next)));
+    await vault.stronghold.save();
+  });
+  studio?.reset(); world.reset(); clearArtifact();
+  const root = $('native-studio').cloneNode(false) as HTMLElement;
+  $('native-studio').replaceWith(root);
   connection = value;
   state = null;
   lastSeen = null;
@@ -86,10 +100,20 @@ function activate(value: Connection) {
     origin: value.origin, deviceId: value.deviceId, storage: localStorage, createId: requestId,
     send: command => api('/commands', { method: 'POST', body: JSON.stringify(command) }, value),
   });
+  studioStorage = storage;
+  studio = createStudioView({root, api: createStudioApi({connection:value, request, isCurrent:() => connection === value && !disconnecting}),
+    storage, storageKey:key, notify:showMessage, saveFile:async ({blob,filename,sha256}) => {
+      if (connection !== value || !sha256) throw new Error('파일을 다시 열어 주세요.');
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      if (connection !== value) throw new Error('기기 연결이 변경됐습니다. 파일을 다시 열어 주세요.');
+      await saveResult({bytes,name:filename,mime:blob.type,sha256});
+    }, onJobCreated: () => { if (connection === value) { showView('jobs'); guard(refresh); } },
+  });
   $('local-forget').hidden = true;
   $('artifact-result').hidden = true;
   $('artifact-body').textContent = '';
   render();
+  showView('studio');
   renderReceipt(commands.receipt);
   const pending = commands.pending;
   if (pending) $<HTMLTextAreaElement>('text').value = pending.text;
@@ -98,11 +122,13 @@ function renderConnection() {
   const connected = !!connection, locked = !connected && localStorage.getItem(vaultMarker) === 'present';
   $('unlock').hidden = !locked;
   $('setup').hidden = connected || locked;
-  $('cockpit').hidden = !connected;
+  $('workspace').hidden = !connected;
   $('connection').textContent = !connected ? (locked ? '보관소 잠김' : '연결 안 됨') : connectionStatus === 'online' ? '코어 응답 확인됨' : connectionStatus === 'checking' ? '연결 확인 중' : '최신 상태 확인 실패';
   $('seen').textContent = lastSeen ? `마지막 상태 확인 · ${lastSeen.toLocaleString()} · revision ${state?.revision ?? '?'}` : '서버 상태를 아직 확인하지 못했습니다.';
   $('headline').textContent = connectionStatus !== 'online' ? (state ? '마지막으로 확인한 상태입니다' : '코어 응답을 기다리고 있습니다') : state?.emergencyStop ? '전체 멈춤' : state?.jobs.some(job => ['queued', 'running'].includes(job.status)) ? '코어가 작업을 처리하고 있습니다' : '맡길 일을 기다리고 있습니다';
   $('stop').textContent = state?.emergencyStop ? '전체 멈춤 해제' : '전체 멈춤';
+  studio?.setState(state ? {...state, online: connectionStatus === 'online' && !disconnecting} : null);
+  void world.update(state?.world, connected && connectionStatus === 'online' && !state?.emergencyStop && state?.modules?.documents !== false && !commands?.pending && !submitting && !disconnecting);
 }
 function renderPending() {
   const pending = commands?.pending;
@@ -156,9 +182,10 @@ async function refresh() {
   const target = connection;
   refreshing = true;
   try {
-    const next = await api<State>('/state', {}, target);
+    const next = await api<State>('/state', {}, target), changed = state?.revision !== next.revision;
     if (target !== connection) return;
     state = next; lastSeen = new Date(); connectionStatus = 'online'; render();
+    if (changed && activeView === 'studio') await studio?.refresh();
   } catch (error) {
     if (target === connection) { connectionStatus = 'unavailable'; renderConnection(); $('seen').textContent += ` · ${errorText(error)}`; }
   } finally { refreshing = false; }
@@ -193,7 +220,7 @@ async function pair(event: SubmitEvent) {
     localStorage.setItem(vaultMarker, 'present');
     localStorage.removeItem(enrollmentKey);
     $<HTMLInputElement>('pairing').value = ''; $<HTMLInputElement>('vault-password').value = '';
-    activate(value); await refresh();
+    await activate(value); await refresh();
   } finally { pairing = false; $<HTMLButtonElement>('pair-button').disabled = false; }
 }
 async function submit(event?: SubmitEvent) {
@@ -225,17 +252,43 @@ async function jobAction(job: Job, action: string) {
 }
 async function openArtifact(id: string, name: string) {
   if (!connection) return;
-  const target = connection;
-  let text: string;
+  clearArtifact();
+  const target = connection, generation = artifactEpoch;
+  let file: VerifiedFile;
   try {
-    text = await request(`${target.origin}/api/v1/artifacts/${encodeURIComponent(id)}`, { headers: { authorization: `Bearer ${target.token}` } }, response => response.text());
+    file = await request(versionedUrl(target.origin, `/api/artifacts/${id}`), { headers: { authorization: `Bearer ${target.token}` } }, response => readVerifiedFile(response, name));
   } catch (error) {
     if (target === connection) { connectionStatus = 'unavailable'; renderConnection(); }
     throw error;
   }
-  if (target !== connection) return;
-  $('artifact-title').textContent = name; $('artifact-body').textContent = text; $('artifact-result').hidden = false;
+  if (target !== connection || generation !== artifactEpoch) return;
+  artifactFile = file;
+  const video = $<HTMLVideoElement>('artifact-video');
+  $('artifact-title').textContent = file.name;
+  $('artifact-meta').textContent = `${file.bytes.byteLength.toLocaleString()}바이트 · SHA-256 확인됨 · ${file.sha256.slice(0,16)}`;
+  const isVideo = file.mime === 'video/mp4', isText = file.mime.startsWith('text/') || file.mime === 'application/json';
+  video.hidden = !isVideo; $('artifact-body').hidden = isVideo; $('copy-artifact').hidden = !isText;
+  if (isVideo) { artifactUrl = URL.createObjectURL(new Blob([file.bytes], {type:file.mime})); video.src = artifactUrl; video.load(); }
+  else $('artifact-body').textContent = isText ? decoder.decode(file.bytes) : '미리보기가 없는 파일입니다. 파일 저장으로 내보낼 수 있습니다.';
+  $('artifact-result').hidden = false;
   $('artifact-result').scrollIntoView({ block: 'nearest' });
+}
+function clearArtifact() {
+  artifactEpoch++; artifactFile = null;
+  const video = $<HTMLVideoElement>('artifact-video'); video.pause(); video.removeAttribute('src'); video.load(); video.hidden = true;
+  if (artifactUrl) URL.revokeObjectURL(artifactUrl); artifactUrl = null;
+  $('artifact-result').hidden = true; $('artifact-body').textContent = ''; $('artifact-meta').textContent = '';
+}
+async function saveResult(file: VerifiedFile) {
+  if (savingFile || disconnecting || !connection) throw new Error('현재 파일 저장이 끝난 뒤 다시 시도하세요.');
+  savingFile = true; $<HTMLButtonElement>('save-artifact').disabled = true;
+  try {
+    const written = await saveVerifiedFile(file, {
+      choose: name => save({defaultPath:name, title:'BLACKHOLE 파일 저장'}),
+      write: (path, bytes) => writeFile(path, bytes), read: async path => new Uint8Array(await readFile(path)),
+    });
+    showMessage(written ? `${file.name} · 선택한 위치에 저장하고 파일 내용을 확인했습니다.` : '저장을 취소했습니다.');
+  } finally { savingFile = false; $<HTMLButtonElement>('save-artifact').disabled = false; }
 }
 async function copyArtifact() {
   try { await navigator.clipboard.writeText($('artifact-body').textContent || ''); showMessage('결과를 복사했습니다.'); }
@@ -253,13 +306,15 @@ async function unlock(event: SubmitEvent) {
   const value = JSON.parse(decoder.decode(new Uint8Array(bytes))) as Connection;
   if (!value.deviceId || !value.token || normalizeOrigin(value.origin) !== value.origin) throw new Error('저장된 연결 정보가 올바르지 않습니다.');
   $<HTMLInputElement>('unlock-password').value = '';
-  activate(value); await refresh();
+  await activate(value); await refresh();
 }
 async function forgetConnection() {
+  if (connection && studioStorage) { studioStorage.removeItem(studioStorageKey(connection)); await studioStorage.flush(); }
   await saveConnection(null);
   commands?.clearLocal();
   localStorage.removeItem(vaultMarker);
   connection = null; commands = null; state = null; lastSeen = null;
+  studio?.reset(); studio = null; studioStorage = null; world.reset(); clearArtifact();
   if (nativeVault) { await nativeVault.stronghold.unload(); nativeVault = null; }
   vaultPassword = null;
   $('receipt-body').replaceChildren(); $('artifact-body').textContent = ''; $<HTMLTextAreaElement>('text').value = '';
@@ -267,7 +322,7 @@ async function forgetConnection() {
 }
 async function disconnect(localOnly = false) {
   if (!connection || disconnecting) return;
-  if (submitting) throw new Error('명령 접수 확인이 끝난 뒤 연결을 해제하세요.');
+  if (submitting || studio?.sending || savingFile) throw new Error('진행 중인 접수 확인·파일 저장이 끝난 뒤 연결을 해제하세요.');
   if (localOnly && !window.confirm('이 폰의 연결 정보와 접수 대기 기록만 지웁니다. 서버의 기기 토큰 폐기는 확인되지 않았으며 맡긴 작업은 계속될 수 있습니다. 계속할까요?')) return;
   disconnecting = true; renderPending();
   try {
@@ -286,6 +341,26 @@ async function disconnect(localOnly = false) {
   } finally { disconnecting = false; renderPending(); }
 }
 function guard(task: () => Promise<void>) { void task().catch(error => showMessage(errorText(error))); }
+function showView(view: typeof activeView) {
+  activeView = view;
+  $('cockpit').hidden = view !== 'jobs'; $('native-studio').hidden = view !== 'studio'; $('tab-world').hidden = view !== 'world';
+  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-native-view]')) button.setAttribute('aria-pressed', String(button.dataset.nativeView === view));
+  if (view === 'studio' && connectionStatus === 'online') guard(async () => { await studio?.refresh(); });
+}
+const world = createWorldView({load: () => api('/world'), submit: async () => {
+  if (!commands || submitting || disconnecting || commands.pending) return;
+  submitting = true; render();
+  try { const current = commands; const receipt = await current.submit('세계 현황'); if (current === commands) { renderReceipt(receipt); await refresh(); } }
+  catch (error) { showMessage(errorText(error)); showView('jobs'); }
+  finally { submitting = false; render(); }
+}});
+$('world-land').setAttribute('href', worldLand);
+for (const button of document.querySelectorAll<HTMLButtonElement>('[data-native-view]')) button.onclick = () => showView(button.dataset.nativeView as typeof activeView);
+document.addEventListener('click', event => {
+  const link = (event.target as Element).closest<HTMLAnchorElement>('a[href]');
+  if (!link) return; event.preventDefault();
+  guard(async () => { const url = new URL(link.href); if (url.protocol !== 'https:' || url.username || url.password) throw new Error('HTTPS 외부 링크만 열 수 있습니다.'); await openUrl(url.href); });
+});
 $('unlock-form').addEventListener('submit', event => guard(() => unlock(event as SubmitEvent)));
 $('pair').addEventListener('submit', event => guard(() => pair(event as SubmitEvent)));
 $('command').addEventListener('submit', event => guard(() => submit(event as SubmitEvent)));
@@ -295,6 +370,8 @@ $('stop').onclick = () => guard(globalStop);
 $('disconnect').onclick = () => guard(() => disconnect());
 $('local-forget').onclick = () => guard(() => disconnect(true));
 $('copy-artifact').onclick = () => guard(copyArtifact);
+$('save-artifact').onclick = () => guard(async () => { if (artifactFile) await saveResult(artifactFile); });
+$('artifact-video').addEventListener('error', () => { if (artifactFile?.mime === 'video/mp4') showMessage('이 기기의 영상 미리보기가 실패했습니다. 파일 저장으로 MP4를 내보내 기본 영상 앱에서 열어 주세요.'); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) guard(refresh); });
 render();
 window.setInterval(() => { if (!document.hidden) guard(refresh); }, 3000);
