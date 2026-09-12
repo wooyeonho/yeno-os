@@ -1,5 +1,13 @@
 # BLACKHOLE OS 인수인계 — 2026-09-12
 
+## 최신: 16:43Z 휴대폰 웹 운영실 실배포
+
+사용자는 이번 채팅에서 실사용까지 모두 처리하라고 요청했다. 웹의 탭 한정 원본 키 보관을 기기별 HttpOnly 쿠키로 바꾸고(개인 기기30일), 미확인 명령·운영실·목표·설정 요청의 영속 보관과 탭 간 잠금을 구현했다. APK를 삭제하지 않는다. 같은 로컬 실제 코어에서301검사 및 웹 UI의 종료·재개·응답 유실·같은 ID 재시도·로그아웃 복구를 통과했다.
+
+현재 운영 `1ecc2e9cecfe05ea31e4e1aab0eb654602b6c338`, 배포`7b72282e-1fdf-4bf4-b3b5-86ce30a93d9d` Healthy/Active/1replica, 인스턴스`4bd459d4`. 검증 트리`8c77f90cd668ff4c756030207153288f0c7491ec`, codex소스`642d49bb47d59c200ccfb0f64042231abc0021e6`. 실제 HTTPS 쿠키·권한/CSRF·기존 기록/MP4·브라우저만 폐기를 확인했다. 작업50·프로젝트70·자료110·기존활성기기1보존, AI5/20·자동검토off·이번호출0. [증거](WEB_LIVE_VERIFICATION_20260912.json), [사용법](WEB_OPERATING_ROOM_20260912.md).
+
+실제 운영 스크립트 `node scripts/verify-web-live.mjs`의 고정검사ID는 `blackhole-web-20260912-v1`. 완료한 테스트 브라우저는 폐기했다. 이 스크립트를 새 ID로 반복해 기기나 작업을 만들지 않는다. 비밀키·쿠키는 메모리/같은 코어의 인증 헤더에서만 사용했고 로그/소스에 남기지 않았다. 원본 APK 서명키 부재는 여전하므로 웹을 즉시 사용 경로로 제공한다. 물리 Android·Grok Bot 로그인/실행·외부게시/메시지·생성형영상/음성·독립 지속백업은 미완료다. 원본49개 전부 완성으로 주장하지 않는다.
+
 ## 가장 최근 인계 — 15:33Z Android 운영실 APK
 
 앱 소스 `94f6258695e5e914ff36037246548f2e1934db93`, [Actions34702041819](https://github.com/wooyeonho/yeno-os/actions/runs/34702041819) success. 0.2.0·versionCode2000·`kr.yeno.controller`·ARM64 APK 59,455,729바이트, SHA-256 `d41b31814cb5862ded83af0fed311f5d36c7dbcdffa00901185af6a402b55a55`. artifact10300339810의 ZIP과 내부 APK를 내려받아 해시 대조, ARM64 라이브러리와 v2 공개 서명 인증서 확인, 설치 파일 보관까지 완료했다. 로컬 경로는 `/workspace/scratch/87919c3606ef/native-delivery/BLACKHOLE-Android-0.2.0.apk`다.

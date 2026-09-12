@@ -1,0 +1,145 @@
+{
+  "at": "2026-09-12T16:43:32.024Z",
+  "checkId": "blackhole-web-20260912-v1",
+  "origin": "https://global-iris-gyeol-98386a17.koyeb.app",
+  "before": {
+    "collections": {
+      "jobs": {
+        "count": 50,
+        "idsSha256": "e7c3d63254db63503d4c6950abf92b81e514a327fe0512198357939469b67346"
+      },
+      "projects": {
+        "count": 70,
+        "idsSha256": "bcef4fb464495d236677bfcbdcf4a75f4d342a11b13839a529176f71310d99da"
+      },
+      "sources": {
+        "count": 110,
+        "idsSha256": "290f325a8d32c642bc952ca28bade5cfa421b2ae126d31d0ab55261bd4a048f8"
+      },
+      "memories": {
+        "count": 0,
+        "idsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "snapshots": {
+        "count": 0,
+        "idsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "aiAttempts": 5,
+    "aiLimit": 20,
+    "automaticReviews": false,
+    "emergencyStop": false
+  },
+  "checks": [
+    "public HTTPS secure HttpOnly cookie, login replay and independent session read",
+    "cookie cannot use native or owner administration; missing Origin/header mutation blocked",
+    "existing studio collections/capabilities and exact prior MP4 readable with browser cookie",
+    "install manifest/icons, new client, service worker and offline page served",
+    "browser session revoked; prior cookie rejected"
+  ],
+  "studio": {
+    "places": {
+      "count": 1,
+      "idsSha256": "3fb3159acf290131b30338346c372d90a50ea305a8ce8a9da170f0dee80dee7c"
+    },
+    "contacts": {
+      "count": 1,
+      "idsSha256": "86d35ef49ddc17e98976efed7db4a1babe129ec983da514a200c22b9c998b9f9"
+    },
+    "checkins": {
+      "count": 1,
+      "idsSha256": "1c7b207f94acb7d035fbf8b84ebdfa8619b08f9e5cde9891bb5743340ba1232a"
+    },
+    "series": {
+      "count": 1,
+      "idsSha256": "337f8237bd1ac0e8f3f2f1a44f77756383f3b1da7e9c24d7adb8ca352edb8216"
+    },
+    "chapters": {
+      "count": 1,
+      "idsSha256": "ccc8894f406c343658f3db57258a05fc3a002a1dc24ce1311bc77af3e2e6628a"
+    }
+  },
+  "capabilities": [
+    {
+      "id": "world",
+      "status": "available"
+    },
+    {
+      "id": "forai",
+      "status": "available"
+    },
+    {
+      "id": "yeogie",
+      "status": "available"
+    },
+    {
+      "id": "hankki",
+      "status": "available"
+    },
+    {
+      "id": "novels",
+      "status": "available"
+    },
+    {
+      "id": "video",
+      "status": "available"
+    },
+    {
+      "id": "grok-bot",
+      "status": "connection_required"
+    }
+  ],
+  "video": {
+    "bytes": 111360,
+    "sha256": "92d4f7ec9dce2612ca895e9649e1fed798283c137592132b30f66e17abd68bdc"
+  },
+  "after": {
+    "collections": {
+      "jobs": {
+        "count": 50,
+        "idsSha256": "e7c3d63254db63503d4c6950abf92b81e514a327fe0512198357939469b67346"
+      },
+      "projects": {
+        "count": 70,
+        "idsSha256": "bcef4fb464495d236677bfcbdcf4a75f4d342a11b13839a529176f71310d99da"
+      },
+      "sources": {
+        "count": 110,
+        "idsSha256": "290f325a8d32c642bc952ca28bade5cfa421b2ae126d31d0ab55261bd4a048f8"
+      },
+      "memories": {
+        "count": 0,
+        "idsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "snapshots": {
+        "count": 0,
+        "idsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "aiAttempts": 5,
+    "aiLimit": 20,
+    "automaticReviews": false,
+    "emergencyStop": false
+  },
+  "preservedActiveDevices": 1,
+  "newModelCalls": 0,
+  "deployment": {
+    "service": "global-iris/yeno-core",
+    "serviceId": "7fb597dd-726e-45ee-bfde-7f695f6dc8ba",
+    "deploymentId": "7b72282e-1fdf-4bf4-b3b5-86ce30a93d9d",
+    "sourceCommit": "1ecc2e9cecfe05ea31e4e1aab0eb654602b6c338",
+    "sourceTree": "8c77f90cd668ff4c756030207153288f0c7491ec",
+    "state": "Healthy / Active / 1 of 1 running",
+    "instance": "4bd459d4"
+  },
+  "localVerification": {
+    "tests": 301,
+    "passed": 301,
+    "failed": 0,
+    "skipped": 0,
+    "durationMs": 28851.811338,
+    "realKoreanVideo": true,
+    "webUiProof": "WEB_UI_VERIFICATION_20260912.json",
+    "physicalAndroidVerified": false
+  }
+}
