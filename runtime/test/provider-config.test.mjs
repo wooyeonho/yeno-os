@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {createServer} from 'node:http';
 import {agentConfig, agentProfiles, AGENT_ENDPOINTS} from '../lib/provider-config.mjs';
 import {runAgent} from '../lib/agent.mjs';
 import {initialState, openStore, digest} from '../lib/store.mjs';
@@ -12,6 +13,33 @@ import {start} from '../server.mjs';
 const base={YENO_AGENT_PROVIDER:'auto',YENO_AGENT_DAILY_CALL_LIMIT:'4'};
 const configured=provider=>({[`YENO_${provider.toUpperCase()}_MODEL`]:'synthetic-model', [`YENO_${provider.toUpperCase()}_API_KEY`]:`synthetic-${provider}-key`});
 const reply=()=>new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:'합성 제공자 결과',tool_calls:[]}}],usage:{prompt_tokens:10,completion_tokens:5}}),{headers:{'Content-Type':'application/json'}});
+
+for(const outcome of ['settled','unknown'])test(`AI writing with both configurations keeps primary limits after ${outcome} response and restart`,async t=>{
+  let legacyCalls=0,primaryCalls=0;
+  const legacy=createServer((req,res)=>{legacyCalls++;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({choices:[{message:{content:'legacy result'}}]}));});
+  await new Promise(resolve=>legacy.listen(0,'127.0.0.1',resolve));
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'blackhole-draft-routing-')),token='synthetic-routing-owner-token';
+  const env={...base,...configured('openai'),YENO_AGENT_DAILY_CALL_LIMIT:'1',YENO_AI_BASE_URL:`http://127.0.0.1:${legacy.address().port}/v1`,YENO_AI_MODEL:'legacy-model',YENO_AI_API_KEY:'synthetic-legacy-key'};
+  const options={dataDir:dir,token,host:'127.0.0.1',port:0,env,agentFetch:async()=>{primaryCalls++;if(outcome==='unknown')throw Error('synthetic transport uncertainty');return reply();}};
+  let runtime=await start(options);
+  t.after(async()=>{runtime.shutdown();legacy.closeAllConnections();await new Promise(resolve=>legacy.close(resolve));fs.rmSync(dir,{recursive:true,force:true});});
+  const post=async(route,body)=>{const res=await fetch(`http://127.0.0.1:${runtime.server.address().port}${route}`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(body)});return {status:res.status,body:await res.json()};};
+  const terminal=async id=>{for(let i=0;i<150;i++){const job=runtime.state().jobs.find(j=>j.id===id);if(['completed','failed'].includes(job.status))return job;await new Promise(resolve=>setTimeout(resolve,20));}assert.fail('AI writing did not finish');};
+  assert.equal(runtime.state().ai.model,'synthetic-model','display must identify the provider used by AI writing');
+  assert.equal((await post('/api/settings',{modules:{ai:true},requestId:randomUUID()})).status,200);
+  const body={type:'ai',text:'공개 합성 자료로 짧은 문장을 써줘',requestId:randomUUID()};
+  const accepted=await post('/api/jobs',body);assert.equal(accepted.status,201);assert.equal(accepted.body.job.type,'agent');
+  const first=await terminal(accepted.body.job.id);assert.equal(first.status,outcome==='settled'?'completed':'failed');
+  assert.equal(primaryCalls,1);assert.equal(legacyCalls,0,'legacy is never a fallback for a primary result');
+  assert.equal(openStore(dir).state.jobs.find(j=>j.id===first.id).agentJournal.calls[0].status,outcome);
+  assert.equal((await post('/api/jobs',body)).body.job.id,first.id);assert.equal(primaryCalls,1);
+  runtime.shutdown();runtime=await start(options);
+  assert.equal(runtime.state().agent.usage.attempts,1);assert.equal(runtime.state().agent.usage.unknown,outcome==='unknown'?1:0);
+  assert.equal((await post('/api/jobs',body)).body.job.id,first.id);
+  const overLimit=await post('/api/jobs',{...body,requestId:randomUUID()});assert.equal(overLimit.status,201);assert.equal(overLimit.body.job.type,'agent');
+  const denied=await terminal(overLimit.body.job.id);assert.equal(denied.status,'failed');assert.match(denied.error,/daily_call_limit/);
+  assert.equal(primaryCalls,1,'persisted daily limit prevents another provider request');assert.equal(legacyCalls,0,'daily limit must not fall through to legacy');
+});
 
 test('each provider works without NVIDIA and never borrows a generic or another provider key',()=>{
   for(const provider of Object.keys(AGENT_ENDPOINTS)){

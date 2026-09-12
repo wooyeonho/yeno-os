@@ -1,0 +1,35 @@
+{
+  "date": "2026-09-12",
+  "baseCommit": "1e235076f187748c02d132ffec214c4b2db96d73",
+  "node": "24.19.0",
+  "baseline": {
+    "passed": 172,
+    "failed": 0
+  },
+  "final": {
+    "passed": 174,
+    "failed": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "durationMs": 19647.506886
+  },
+  "scope": "local HTTP and synthetic providers",
+  "before": {
+    "dailyCallLimit": 1,
+    "legacyCalls": 2,
+    "primaryCalls": 0,
+    "agentAttempts": 0
+  },
+  "actualProviderCalls": 0,
+  "deployed": false,
+  "apkBuilt": false,
+  "phoneVerified": false,
+  "files": {
+    "runtime/server.mjs": "a891ae8677389112e378895587817a9f4c333ab825baf992dc3fbc477dc72fe4",
+    "runtime/test/provider-config.test.mjs": "01d66cce2f81c0b321652748f6ce685e93402409642a53f2b2c63937719c4df1"
+  },
+  "targetedAfterAssertionReview": {
+    "passed": 6,
+    "failed": 0
+  }
+}
