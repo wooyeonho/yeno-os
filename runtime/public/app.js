@@ -10,6 +10,22 @@ let token = sessionStorage.getItem('yeno-token') || '';
 let current = null, online = false, loading = false, lastRevision = null, selectedSnapshot = null, artifact = null;
 let toastTimer, activeTab = 'control', commandRequests, commandStorageError, projectRequests, projectStorageError, editingProject = null;
 let sourceRequests, sourceStorageError, editingSource = null, sourceImportPreview = null, sourceFileGeneration = 0;
+let questRequests, questStorageError, questData = null, questLoading = false, questEpoch = 0, questLoadedRevision = null, questError = '';
+let questDrive = 'greed', questProjectOptions = '', questProviderOptions = '';
+let questDriveOptions = '';
+let questRenderedHTML = '';
+let questOutcomeId = null;
+const questReviewProviders = new Map();
+const providerNames = {openai:'OpenAI · GPT',gemini:'Google · Gemini',moonshot:'Moonshot · Kimi',xai:'xAI · Grok',anthropic:'Anthropic · Claude',nvidia:'NVIDIA'};
+const fallbackDrives = [
+  {id:'greed',label:'강욕',description:'수익과 소유 자산을 늘릴 구체적인 결과를 만듭니다.'},
+  {id:'gluttony',label:'폭식',description:'목표에 부족한 능력과 자료를 찾고 검증합니다.'},
+  {id:'envy',label:'질투',description:'비교 대상의 강점을 분석하고 개선점을 찾습니다.'},
+  {id:'pride',label:'긍지',description:'품질과 신뢰를 외부에서 확인할 기준을 세웁니다.'},
+  {id:'lust',label:'매혹',description:'사용자가 자발적으로 찾는 매력과 이용 경험을 만듭니다.'},
+  {id:'wrath',label:'분노',description:'오류와 반복되는 불편을 줄입니다.'},
+  {id:'sloth',label:'나태',description:'같은 품질을 유지하면서 직접 해야 할 일을 줄입니다.'},
+];
 const names = {queued:'대기',running:'실행 중',paused:'멈춤',completed:'완료',failed:'실패',cancelled:'종료'};
 const projectNames = {active:'진행',paused:'보류',archived:'보관'};
 const readingNames = {unread:'아직 읽지 않음',partial:'일부 확인',read:'본문 확인',unavailable:'접근 불가'};
@@ -29,7 +45,7 @@ async function api(path, data, options={}) {
   if(options.raw && response.ok)return response;
   let result;
   try {result=await response.json();} catch(error) {if(response.ok)throw new Error('본체의 접수 응답을 읽지 못했습니다.');result={};}
-  if(!response.ok){if(response.status===401){worldView.reset();token='';sessionStorage.removeItem('yeno-token');$('pair-screen').hidden=false;$('project-dialog').close();$('source-dialog').close();$('source-import-dialog').close();connection(false);}const error=new Error(friendly(result.error?.message || result.error || result.message || `응답 ${response.status}`));error.status=response.status;error.project=result.project;error.source=result.source;throw error;}
+  if(!response.ok){if(response.status===401){worldView.reset();resetQuests();token='';sessionStorage.removeItem('yeno-token');$('pair-screen').hidden=false;$('project-dialog').close();$('source-dialog').close();$('source-import-dialog').close();connection(false);}const error=new Error(friendly(result.error?.message || result.error || result.message || `응답 ${response.status}`));error.status=response.status;error.project=result.project;error.source=result.source;throw error;}
   return result;
 }
 const worldView=createWorldView({load:()=>api('/api/world'),submit:()=>submitCommand('/api/commands',{text:'세계 현황'})});
@@ -55,6 +71,17 @@ try {
       return result;
     }});
 } catch(error) {sourceStorageError=error;}
+try {
+  questRequests=createCommandRequest({storage:sessionStorage,key:'yeno-pending-quest-v1',
+    allowPath:path=>path==='/api/quests' || path==='/api/outcomes' || /^\/api\/quests\/[a-zA-Z0-9-]+\/(run|review)$/.test(path) || /^\/api\/jobs\/[a-zA-Z0-9-]+\/action$/.test(path),
+    transport:async(path,body)=>{
+      const result=await api(path,body);
+      const action=path.endsWith('/action');
+      const valid=path==='/api/outcomes'?typeof result?.outcome?.id==='string':action?typeof result?.job?.id==='string':typeof result?.quest?.id==='string' && (path==='/api/quests' || typeof result?.job?.id==='string');
+      if(!valid)throw new Error('목표 요청의 접수 응답을 확인하지 못했습니다.');
+      return result;
+    }});
+} catch(error) {questStorageError=error;}
 function renderCommandRequest() {
   const pending=commandRequests?.pending, busy=commandRequests?.sending;
   $('command').readOnly=Boolean(pending || commandStorageError);
@@ -94,21 +121,22 @@ async function submitCommand(path,body) {
 }
 function connection(ok) {
   online=ok; $('connection-dot').classList.toggle('online',ok);$('connection-text').textContent=ok?'실행 본체 연결됨':'연결 확인 필요';
-  $('offline-banner').hidden=ok || !token; renderCommandRequest();renderProjectRequest();renderSourceRequest(); $('global-stop').disabled=!ok;
+  $('offline-banner').hidden=ok || !token; renderCommandRequest();renderProjectRequest();renderSourceRequest();renderQuestRequest(); $('global-stop').disabled=!ok;
   if(ok)$('last-seen').textContent=`마지막 확인 ${new Date().toLocaleTimeString('ko-KR')}`;
   if(!ok && token){$('core-title').textContent='연결을 확인하고 있어요.';$('core-subtitle').textContent='마지막 상태를 표시합니다. 새 명령은 확인 후 실행하세요.';$('core-signal').className='core-signal';}
 }
 async function refresh(force=false) {
   if(!token || loading)return;
   loading=true;
-  try {const s=await api('/api/state'); const wasOnline=online;current=s;connection(true);void worldView.update(s.world, !s.emergencyStop && s.modules.documents && !commandRequests?.pending && !commandRequests?.sending);$('pair-screen').hidden=true;if(force || !wasOnline || lastRevision!==s.revision){render(s);lastRevision=s.revision;}}
+  try {const s=await api('/api/state'); const wasOnline=online;current=s;connection(true);void worldView.update(s.world, !s.emergencyStop && s.modules.documents && !commandRequests?.pending && !commandRequests?.sending);$('pair-screen').hidden=true;if(force || !wasOnline || lastRevision!==s.revision){render(s);lastRevision=s.revision;}if(!questData || activeTab==='quests')void refreshQuests(force);}
   catch(e){connection(false);if(force)notify(e.message);}
   finally{loading=false;}
 }
 function showTab(tab) {
   activeTab=tab;for(const el of document.querySelectorAll('.tab-panel'))el.hidden=el.id!==`tab-${tab}`;
   for(const el of document.querySelectorAll('.nav')){el.classList.toggle('active',el.dataset.tab===tab);el.setAttribute('aria-current',el.dataset.tab===tab?'page':'false');}
-  $('page-title').textContent={control:'조종석',world:'세계 현황',projects:'프로젝트',sources:'자료',memory:'기억',recovery:'복구',settings:'능력·설정'}[tab];
+  $('page-title').textContent={control:'조종석',quests:'목표 실행',world:'세계 현황',projects:'프로젝트',sources:'자료',memory:'기억',recovery:'복구',settings:'능력·설정'}[tab];
+  if(tab==='quests')void refreshQuests(true);
 }
 function render(s) {
   const jobs=s.jobs || [], running=jobs.filter(j=>j.status==='running').length;
@@ -123,7 +151,7 @@ function render(s) {
   $('jobs-list').innerHTML=jobs.length?jobs.map(jobHTML).join(''):'<div class="empty">첫 작업을 맡겨보세요.<br>본체 진단은 입력 없이 바로 실행할 수 있어요.</div>';
   $('events-list').innerHTML=(s.events||[]).slice(0,12).map(e=>`<li><time>${esc(date(e.at || e.createdAt))}</time>${esc(e.text || e.message)}</li>`).join('') || '<li class="muted">아직 실행 기록이 없습니다.</li>';
   $('memory-count').textContent=(s.memories||[]).length;renderMemories();
-  renderProjects();renderSources();
+  renderProjects();renderSources();renderQuests();
   $('snapshots-list').innerHTML=(s.snapshots||[]).map(sn=>`<article class="snapshot-item"><div><strong>${esc(sn.label)}</strong><small>${esc(date(sn.createdAt))}</small></div><button class="button subtle" data-restore="${esc(sn.id)}">이 시점으로</button></article>`).join('') || '<div class="empty">기억과 설정을 저장해 두면 이곳에서 돌아갈 수 있어요.</div>';
   $('concurrency').value=s.concurrency;
   $('module-settings').innerHTML=Object.entries(moduleInfo).map(([key,[name,desc]])=>`<div class="setting-row"><div><h3>${name}</h3><p>${desc}</p></div><input class="switch" type="checkbox" role="switch" aria-label="${name}" data-module="${key}" ${s.modules?.[key]?'checked':''} ${key==='ai'&&!s.ai?.configured?'disabled':''}></div>`).join('');
@@ -135,6 +163,143 @@ function jobHTML(j) {
   const controls=[...(canPause?[['pause','멈춤']]:[]),...(canResume?[['resume','이어하기']]:[]),...(['queued','running','paused'].includes(j.status)?[['cancel','종료']]:[])].map(([action,label])=>`<button class="button subtle" data-job="${esc(j.id)}" data-action="${action}" data-version="${esc(j.version)}" ${action==='resume'&&current?.emergencyStop?'disabled':''}>${label}</button>`).join('');
   const project=(current?.projects||[]).find(project=>project.id===j.projectId);
   return `<article class="job"><div class="job-top"><h3 class="job-title">${esc(j.title || j.type)}</h3><span class="status ${esc(j.status)}">${esc(names[j.status]||j.status)}</span></div>${project?`<p class="job-project">프로젝트 · ${esc(project.name)}</p>`:''}<div class="job-meta"><span>${esc(date(j.createdAt))}</span><span>${j.step||0} / ${j.totalSteps||0} 단계</span></div><progress class="job-progress" aria-label="작업 진행" value="${p}" max="100"></progress>${j.error?`<p class="job-error">${esc(friendly(typeof j.error==='string'?j.error:j.error.message))}</p>`:''}<div class="job-actions">${controls}${(j.artifacts||[]).map(a=>`<button class="button subtle" data-artifact="${esc(a.id)}" data-name="${esc(a.name)}">결과 열기 ↗</button>`).join('')}</div></article>`;
+}
+function resetQuests() {
+  questEpoch+=1;questData=null;questLoadedRevision=null;questError='';questLoading=false;
+  questProjectOptions='';questProviderOptions='';questDriveOptions='';questReviewProviders.clear();questOutcomeId=null;$('quest-outcome-dialog').close();
+}
+async function refreshQuests(force=false) {
+  if(!token || !online || questLoading || (!force && questLoadedRevision===current?.revision))return;
+  const epoch=questEpoch, revision=current?.revision, requestToken=token;
+  questLoading=true;renderQuestRequest();
+  try {
+    const result=await api('/api/quests');
+    if(epoch!==questEpoch || token!==requestToken)return;
+    if(!Array.isArray(result?.quests) || !Array.isArray(result?.drives) || !Array.isArray(result?.providers))throw new Error('목표 목록의 응답을 읽을 수 없습니다.');
+    questData=result;questError='';questLoadedRevision=revision;
+  } catch(error) {
+    if(epoch!==questEpoch || token!==requestToken)return;
+    questError=error.status===404?'연결한 본체에 목표 실행 업데이트가 아직 반영되지 않았습니다.':error.message;
+    if(error.status===404)questLoadedRevision=revision;
+  } finally {
+    if(epoch===questEpoch){questLoading=false;renderQuests();}
+  }
+}
+function questProviders() {return Array.isArray(questData?.providers)?questData.providers:[];}
+function questProviderId(quest,job) {return job?.agent?.provider || quest.actualProvider || (quest.provider==='auto'?questData?.selectedProvider:quest.provider);}
+function questCanExecute(provider) {
+  const chosen=provider==='auto'?questData?.selectedProvider:provider;
+  return online && !current?.emergencyStop && questProviders().some(p=>p.provider===chosen && p.configured);
+}
+function renderQuestRequest() {
+  const pending=questRequests?.pending,busy=questRequests?.sending,locked=Boolean(pending || busy || questStorageError),available=Boolean(questData);
+  for(const field of document.querySelectorAll('#quest-form input, #quest-form textarea, #quest-form select'))field.disabled=locked || !online || !available;
+  $('save-quest').disabled=!online || !available || locked;
+  $('save-quest').textContent=busy && pending?.path==='/api/quests'?'접수 확인 중…':'목표 저장 ↗';
+  $('refresh-quests').disabled=!online || questLoading;
+  for(const button of document.querySelectorAll('[data-quest-run], [data-quest-action], [data-quest-review], [data-quest-outcome]'))button.disabled=!online || locked || button.dataset.executionBlocked==='true';
+  for(const select of document.querySelectorAll('[data-quest-review-provider]'))select.disabled=!online || locked;
+  for(const field of document.querySelectorAll('#quest-outcome-form input, #quest-outcome-form textarea, #quest-outcome-form select'))field.disabled=locked;
+  $('save-quest-outcome').disabled=!online || locked;
+  $('quest-request-status').hidden=!pending && !questStorageError;
+  $('retry-quest').hidden=!pending;$('retry-quest').disabled=!online || Boolean(busy || questStorageError);
+  if(questStorageError)$('quest-request-message').textContent='보관한 목표 요청을 읽을 수 없어 새 요청을 멈췄습니다. 이 브라우저 탭의 저장 공간 접근을 확인해 주세요.';
+  else if(pending)$('quest-request-message').textContent=busy?'본체의 접수 응답을 확인하고 있습니다.':`이전 ${pending.path==='/api/quests'?'목표 저장':pending.path==='/api/outcomes'?'성과 기록':pending.path.endsWith('/run')?'실행':pending.path.endsWith('/review')?'교차 검토':'작업 제어'}의 응답을 확인하지 못했습니다. ‘같은 요청 확인’으로 원래 요청의 접수 여부를 확인하세요.`;
+}
+function renderQuestForm() {
+  const drives=questData?.drives?.length?questData.drives:fallbackDrives;
+  if(!drives.some(drive=>drive.id===questDrive))questDrive=drives[0]?.id||'greed';
+  const driveHTML=drives.map(drive=>`<label class="quest-drive"><input type="radio" name="quest-drive" value="${esc(drive.id)}"><span>${esc(drive.label||drive.name||drive.id)}</span></label>`).join('');
+  if(questDriveOptions!==driveHTML){$('quest-drives').innerHTML=driveHTML;questDriveOptions=driveHTML;}
+  for(const input of $('quest-drives').querySelectorAll('input'))input.checked=input.value===questDrive;
+  const drive=drives.find(drive=>drive.id===questDrive);
+  $('quest-drive-description').textContent=drive?.description||drive?.goal||'';
+  const projectHTML='<option value="">공통 목표</option>'+(current?.projects||[]).filter(project=>project.status!=='archived').map(project=>`<option value="${esc(project.id)}">${esc(project.name)}</option>`).join('');
+  if(questProjectOptions!==projectHTML){const selected=$('quest-project').value;$('quest-project').innerHTML=projectHTML;questProjectOptions=projectHTML;if([...$('quest-project').options].some(option=>option.value===selected))$('quest-project').value=selected;}
+  const primary=questData?.selectedProvider;
+  const providerHTML=`<option value="auto">현재 기본${primary?` · ${esc(providerNames[primary]||primary)}`:''}</option>`+Object.entries(providerNames).map(([id,label])=>`<option value="${id}">${esc(label)}${questProviders().some(p=>p.provider===id && p.configured)?' · 설정됨':' · 연결 필요'}</option>`).join('');
+  if(questProviderOptions!==providerHTML){const selected=$('quest-provider').value;$('quest-provider').innerHTML=providerHTML;questProviderOptions=providerHTML;$('quest-provider').value=selected||'auto';}
+}
+function renderQuestProviders() {
+  const usage=questData?.usage||current?.agent?.usage,limit=questData?.dailyCallLimit??current?.agent?.dailyCallLimit;
+  $('quest-budget').textContent=usage && Number.isFinite(limit)?`오늘 모델 호출 시도 ${usage.attempts||0} / ${limit}회 · 응답 미확인 ${usage.unknown||0}회`:'모델 호출 기록은 본체 연결 후 표시됩니다.';
+  $('quest-provider-status').innerHTML=Object.entries(providerNames).map(([id,label])=>{
+    const provider=questProviders().find(p=>p.provider===id),confirmed=Boolean(provider?.lastSuccessfulAt),configured=provider?.configured===true;
+    const missing=(provider?.missing||[]).map(reason=>({api_key:'API 키',apiKey:'API 키',key:'API 키',model:'모델 이름',daily_call_limit:'호출 상한',dailyCallLimit:'호출 상한'}[reason]||'연결 설정'));
+    return `<div class="quest-provider-row"><div><strong>${esc(label)}</strong><small>${esc(provider?.model||'모델 연결 대기')}</small></div><span class="quest-provider-state ${configured?(confirmed?'verified':'configured'):''}">${configured?(confirmed?'응답 확인':'설정됨'):'연결 필요'}</span>${confirmed?`<p>마지막 성공 ${esc(date(provider.lastSuccessfulAt))}${Number.isInteger(provider.successfulCalls)?` · ${provider.successfulCalls}회`:''}</p>`:configured?'<p>실제 모델 응답은 아직 확인되지 않았습니다.</p>':missing.length?`<p>${esc([...new Set(missing)].join(' · '))} 필요</p>`:''}</div>`;
+  }).join('');
+}
+function questHTML(quest) {
+  const job=(current?.jobs||[]).find(job=>job.id===quest.jobId),status=job?.status||quest.status||'planned';
+  const statusLabel={planned:'저장됨',proposed:'저장됨',assigned:'배정됨',draft:'저장됨',ready:'저장됨',missing_job:'작업 확인 필요',...names,completed:'결과 생성 완료'}[status]||status;
+  const drive=(questData?.drives||fallbackDrives).find(drive=>drive.id===(quest.driveId||quest.drive));
+  const project=(current?.projects||[]).find(project=>project.id===quest.projectId),provider=questProviderId(quest,job),providerLabel=providerNames[provider]||'현재 기본 제공자';
+  const artifacts=job?.artifacts||quest.artifacts||[],usage=quest.executionUsage||{},active=['queued','running','paused'].includes(status);
+  const controls=[];
+  if(!quest.jobId)controls.push(`<button class="button primary" data-quest-run="${esc(quest.id)}" data-execution-blocked="${!questCanExecute(quest.provider||'auto')}">실행 ↗</button>`);
+  if(job && active){
+    if(status!=='paused')controls.push(`<button class="button subtle" data-quest-action="pause" data-quest-job="${esc(job.id)}" data-version="${esc(job.version)}">멈춤</button>`);
+    if(status==='paused')controls.push(`<button class="button subtle" data-quest-action="resume" data-quest-job="${esc(job.id)}" data-version="${esc(job.version)}" data-execution-blocked="${!questCanExecute(provider) || (usage.unknown??job.agent?.unknownCalls??0)>0}">이어하기</button>`);
+    controls.push(`<button class="button subtle" data-quest-action="cancel" data-quest-job="${esc(job.id)}" data-version="${esc(job.version)}">종료</button>`);
+  }
+  for(const item of artifacts)controls.push(`<button class="button ${status==='completed'?'primary':'subtle'}" data-artifact="${esc(item.id)}" data-name="${esc(item.name)}">결과 열기 ↗</button>`);
+  if(status==='completed' && quest.artifacts?.length && !quest.outcomeUnknown)controls.push(`<button class="button subtle" data-quest-outcome="${esc(quest.id)}">성과 기록</button>`);
+  const reviewProviders=questProviders().filter(item=>item.configured && item.provider!==provider),reviewSelection=questReviewProviders.get(quest.id);
+  const review= status==='completed' && !quest.reviewOf && artifacts.length ? reviewProviders.length?`<div class="quest-review"><label for="quest-review-${esc(quest.id)}">다른 모델로 결과 검토<select id="quest-review-${esc(quest.id)}" data-quest-review-provider="${esc(quest.id)}">${reviewProviders.map(item=>`<option value="${esc(item.provider)}" ${reviewSelection===item.provider?'selected':''}>${esc(providerNames[item.provider]||item.provider)}</option>`).join('')}</select></label><button class="button subtle" data-quest-review="${esc(quest.id)}" data-execution-blocked="${!questCanExecute(reviewSelection||reviewProviders[0].provider)}">교차 검토 · 최대 2회</button><small>원본 결과를 읽는 별도 목표로 저장됩니다. 검토에도 모델 호출이 발생합니다.</small></div>`:'<p class="muted quest-review-note">두 번째 제공자를 연결하면 이 결과를 다른 모델로 교차 검토할 수 있습니다.</p>':'';
+  const error=job?.error||quest.error;
+  const pendingNote=!quest.jobId?current?.emergencyStop?'전체 멈춤을 해제하면 실행할 수 있습니다.':!questCanExecute(quest.provider||'auto')?'선택한 제공자의 API 연결이 필요합니다. 목표는 저장되어 있습니다.':'저장된 기준과 호출 한도 안에서 이 목표만 실행합니다.':'';
+  return `<article class="quest-card" id="quest-card-${esc(quest.id)}"><div class="quest-card-top"><div class="quest-card-label"><span>${esc(drive?.label||drive?.name||quest.driveId||quest.drive)}</span><small>${esc(project?.name||'공통 목표')}${quest.reviewOf?' · 교차 검토':''}</small></div><span class="status ${esc(status)}">${esc(status==='completed'?'결과 생성 완료':statusLabel)}</span></div><h3>${esc(quest.goal)}</h3><div class="quest-success"><small>완료 기준</small><p>${esc(quest.successCriterion)}</p></div><details class="quest-contract"><summary>현재 상태와 실행 조건</summary><p>${esc(quest.baseline)}</p><dl><div><dt>제공자</dt><dd>${esc(providerLabel)}</dd></div><div><dt>최대 호출</dt><dd>${esc(quest.maxCalls)}회</dd></div><div><dt>시간 상한</dt><dd>${esc(quest.durationMinutes)}분</dd></div><div><dt>저장 시각</dt><dd>${esc(date(quest.createdAt))}</dd></div></dl><small class="quest-id">목표 ${esc(quest.id)}</small></details>${quest.jobId?`<div class="quest-usage"><span>모델 호출 <strong>${esc(usage.attempts??job?.agent?.calls??0)} / ${esc(quest.maxCalls)}</strong></span><span>응답 미확인 <strong>${esc(usage.unknown??job?.agent?.unknownCalls??0)}</strong></span>${Number.isFinite(usage.inputTokens)&&Number.isFinite(usage.outputTokens)?`<span>입력 / 출력 토큰 <strong>${esc(usage.inputTokens)} / ${esc(usage.outputTokens)}</strong></span>`:''}<small>사용량이 누락된 응답 ${esc(usage.usageMissing||0)}회 · 실제 비용: 청구 내역 확인 필요</small></div>`:''}${error?`<p class="job-error">${esc(friendly(typeof error==='string'?error:error.message))}</p>`:''}${pendingNote?`<p class="muted quest-pending-note">${esc(pendingNote)}</p>`:''}<div class="quest-actions">${controls.join('')}</div>${status==='completed'?'<p class="muted quest-result-note">결과 파일이 생성되었습니다. 완료 기준 충족 여부와 실제 성과는 내용을 확인해 판단하세요.</p>':''}${review}</article>`;
+}
+function renderQuests() {
+  renderQuestForm();renderQuestProviders();
+  $('quest-ledgers').innerHTML=Object.entries({wealth:'부',honor:'명예',fame:'인지도'}).map(([key,label])=>{const ledger=questData?.ledgers?.[key];return `<article class="quest-ledger"><div><h3>${label}</h3><span>${esc(ledger?.selfReported||0)}건 <small>사용자 보고</small></span></div>${ledger?.records?.length?`<ol>${ledger.records.slice(-5).reverse().map(record=>`<li><p>${esc(record.summary)}</p><small>${record.value!==null&&record.value!==undefined?`${esc(record.value)} ${esc(record.unit)} · `:''}${esc(date(record.createdAt))}</small></li>`).join('')}</ol>`:'<p class="muted">아직 기록한 실제 성과가 없습니다.</p>'}</article>`;}).join('');
+  const available=Boolean(questData);
+  $('quest-availability').hidden=available && !current?.emergencyStop;
+  $('quest-availability').textContent=available?'전체 멈춤 상태입니다. 상단에서 정지를 해제한 뒤 원하는 작업을 개별 실행하거나 재개하세요.':questError||'본체에 연결하면 목표 실행 기능을 확인합니다.';
+  $('quest-list-error').textContent=available && questError?`목표의 최신 상태를 확인하지 못했습니다. ${questError}`:'';
+  const all=questData?.quests||[],filter=$('quest-filter').value;
+  const quests=all.filter(quest=>{const status=(current?.jobs||[]).find(job=>job.id===quest.jobId)?.status||quest.status;return filter==='all'||filter==='active'&&!['completed','failed','cancelled'].includes(status)||filter==='completed'&&status==='completed'||filter==='attention'&&['failed','cancelled'].includes(status);});
+  $('quest-count').textContent=`${all.length}개`;
+  const html=quests.map(questHTML).join('')||`<div class="empty">${!available?'본체 연결 후 저장된 목표를 확인합니다.':filter!=='all'?'이 상태의 목표가 없습니다.':'첫 목표를 저장하면 실행과 결과를 여기서 이어갈 수 있습니다.'}</div>`;
+  if(questRenderedHTML!==html){
+    const expanded=[...$('quests-list').querySelectorAll('.quest-card details[open]')].map(details=>details.closest('.quest-card').id);
+    const focused=document.activeElement,focusId=$('quests-list').contains(focused)?focused.id:null;
+    $('quests-list').innerHTML=html;questRenderedHTML=html;
+    for(const id of expanded){const details=document.getElementById(id)?.querySelector('details');if(details)details.open=true;}
+    if(focusId)document.getElementById(focusId)?.focus({preventScroll:true});
+  }
+  renderQuestRequest();
+}
+async function submitQuest(path,body) {
+  if(!online){notify('먼저 실행 본체와 연결해 주세요.');return;}
+  if(!questRequests || questRequests.sending)return;
+  try {
+    if(!questRequests.pending)questRequests.stage(path,body);
+    const request=questRequests.send();renderQuestRequest();$('quest-form-error').textContent='';
+    const outcome=await request;
+    if(outcome.kind==='accepted') {
+      const saved=outcome.request.path==='/api/quests';
+      if(questData && outcome.result.quest){const found=questData.quests.findIndex(quest=>quest.id===outcome.result.quest.id);if(found===-1)questData.quests.unshift(outcome.result.quest);else questData.quests[found]=outcome.result.quest;}
+      if(current && outcome.result.job){const found=current.jobs.findIndex(job=>job.id===outcome.result.job.id);if(found===-1)current.jobs.unshift(outcome.result.job);else current.jobs[found]=outcome.result.job;}
+      renderQuests();
+      if(saved){$('quest-form').reset();questDrive='greed';notify('목표를 저장했습니다. 아래 목표에서 실행을 눌러 시작하세요.');}
+      else if(outcome.request.path==='/api/outcomes'){$('quest-outcome-dialog').close();questOutcomeId=null;notify('성과를 사용자 보고로 저장했습니다.');}
+      else notify(outcome.request.path.endsWith('/review')?'교차 검토를 별도 목표로 접수했습니다.':outcome.request.path.endsWith('/run')?'본체가 실행을 접수했습니다. 작업과 결과를 계속 보관합니다.':'본체가 작업 제어를 확인했습니다.');
+      questLoadedRevision=null;
+      await refresh(true);await refreshQuests(true);
+      if(saved || outcome.request.path.endsWith('/review'))document.getElementById(`quest-card-${outcome.result.quest.id}`)?.scrollIntoView({block:'center',behavior:'smooth'});
+    } else if(outcome.kind==='rejected') {$('quest-form-error').textContent=outcome.error.message;$('quest-outcome-error').textContent=outcome.error.message;notify(outcome.error.message);await refresh(true);}
+    else {$('quest-outcome-dialog').close();notify('접수 여부를 확인하지 못했습니다. 같은 요청 확인으로 이어가세요.');}
+  } catch(error) {$('quest-form-error').textContent=error.message;$('quest-outcome-error').textContent=error.message;notify(`목표 요청을 보내지 못했습니다. ${error.message}`);}
+  finally {renderQuestRequest();}
+}
+function openQuestOutcome(id) {
+  if(!online || questRequests?.pending || questRequests?.sending || questStorageError)return;
+  const quest=questData?.quests.find(quest=>quest.id===id);
+  if(!quest?.artifacts?.length || quest.outcomeUnknown)return;
+  questOutcomeId=id;$('quest-outcome-form').reset();$('quest-outcome-error').textContent='';$('quest-outcome-goal').textContent=quest.goal;
+  $('quest-outcome-artifact').innerHTML=quest.artifacts.map(item=>`<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('');
+  renderQuestRequest();$('quest-outcome-dialog').showModal();$('quest-outcome-summary').focus();
 }
 function repositoryLink(value) {
   try {
@@ -344,6 +509,29 @@ async function perform(fn,button) {
 }
 $('pair-form').addEventListener('submit',async(e)=>{e.preventDefault();const b=e.submitter;b.disabled=true;$('pair-error').textContent='';token=$('pair-token').value.trim();try{current=await api('/api/state');sessionStorage.setItem('yeno-token',token);$('pair-token').value='';$('pair-screen').hidden=true;connection(true);render(current);lastRevision=current.revision;}catch(err){token='';$('pair-error').textContent=err.message || '연결할 수 없습니다.';}finally{b.disabled=false;}});
 $('command-form').addEventListener('submit',e=>{e.preventDefault();if(commandRequests?.pending){void submitCommand();return;}const text=$('command').value.trim(),type=$('command-type').value;if(!text)return;void submitCommand(type==='command'?'/api/commands':'/api/jobs',type==='command'?{text}:{type,text});});
+$('quest-form').addEventListener('submit',e=>{
+  e.preventDefault();
+  if(questRequests?.pending){void submitQuest();return;}
+  const body={goal:$('quest-goal').value.trim(),drive:questDrive,successCriterion:$('quest-success').value.trim(),baseline:$('quest-baseline').value.trim(),projectId:$('quest-project').value||null,provider:$('quest-provider').value,maxCalls:Number($('quest-max-calls').value),durationMinutes:Number($('quest-duration').value)};
+  if(!body.goal || !body.successCriterion || !body.baseline){$('quest-form-error').textContent='목표, 완료 기준, 현재 상태를 입력해 주세요.';return;}
+  if(!Number.isInteger(body.durationMinutes) || body.durationMinutes<1 || body.durationMinutes>120){$('quest-form-error').textContent='실행 시간은 1~120분 사이의 정수로 입력해 주세요.';return;}
+  void submitQuest('/api/quests',body);
+});
+$('quest-drives').addEventListener('change',e=>{if(e.target.name==='quest-drive'){questDrive=e.target.value;renderQuestForm();renderQuestRequest();}});
+$('quest-filter').addEventListener('change',renderQuests);
+$('quest-outcome-form').addEventListener('submit',e=>{
+  e.preventDefault();
+  if(questRequests?.pending){void submitQuest();return;}
+  if(!questOutcomeId)return;
+  const summary=$('quest-outcome-summary').value.trim(),valueText=$('quest-outcome-value').value.trim(),unit=$('quest-outcome-unit').value.trim();
+  if(!summary){$('quest-outcome-error').textContent='직접 확인한 성과와 근거를 입력해 주세요.';return;}
+  if(valueText && (!Number.isFinite(Number(valueText)) || !unit)){$('quest-outcome-error').textContent='측정값과 단위를 함께 입력해 주세요.';return;}
+  const body={questId:questOutcomeId,ledger:$('quest-outcome-ledger').value,summary,artifactId:$('quest-outcome-artifact').value,...(valueText?{value:Number(valueText)}:{}),...(unit?{unit}:{})};
+  void submitQuest('/api/outcomes',body);
+});
+$('retry-quest').addEventListener('click',()=>void submitQuest());
+$('refresh-quests').addEventListener('click',async()=>{await refresh(true);await refreshQuests(true);});
+$('quests-list').addEventListener('change',e=>{if(e.target.dataset.questReviewProvider)questReviewProviders.set(e.target.dataset.questReviewProvider,e.target.value);});
 $('project-search').addEventListener('input',renderProjects);
 $('project-filter').addEventListener('change',renderProjects);
 $('add-project').addEventListener('click',()=>openProject());
@@ -397,7 +585,7 @@ $('global-stop').addEventListener('click',e=>perform(async()=>{const action=curr
 $('concurrency').addEventListener('change',e=>perform(()=>api('/api/settings',{concurrency:Number(e.target.value),requestId:requestId()})));
 $('module-settings').addEventListener('change',e=>{if(e.target.dataset.module)perform(()=>api('/api/settings',{modules:{[e.target.dataset.module]:e.target.checked},requestId:requestId()}));});
 $('compact-toggle').addEventListener('click',()=>{const compact=document.body.classList.toggle('compact');$('compact-toggle').textContent=compact?'펼치기':'작게';$('compact-toggle').setAttribute('aria-pressed',String(compact));});
-function disconnect(){worldView.reset();token='';current=null;sessionStorage.removeItem('yeno-token');connection(false);$('pair-screen').hidden=false;}
+function disconnect(){worldView.reset();resetQuests();token='';current=null;sessionStorage.removeItem('yeno-token');connection(false);$('pair-screen').hidden=false;}
 $('disconnect').addEventListener('click',disconnect);$('disconnect-mobile').addEventListener('click',disconnect);
 $('reconnect').addEventListener('click',()=>refresh(true));
 document.addEventListener('click',e=>{
@@ -406,6 +594,10 @@ document.addEventListener('click',e=>{
   if(b.dataset.close)$(b.dataset.close).close();
   if(b.dataset.example && !b.disabled){$('command').value=b.dataset.example;$('command-type').value='command';$('command').focus();}
   if(b.dataset.quick && !b.disabled)void submitCommand('/api/jobs',{type:b.dataset.quick});
+  if(b.dataset.questRun && !b.disabled)void submitQuest(`/api/quests/${encodeURIComponent(b.dataset.questRun)}/run`,{});
+  if(b.dataset.questAction && !b.disabled)void submitQuest(`/api/jobs/${encodeURIComponent(b.dataset.questJob)}/action`,{action:b.dataset.questAction,revision:Number(b.dataset.version)});
+  if(b.dataset.questReview && !b.disabled){const provider=document.getElementById(`quest-review-${b.dataset.questReview}`)?.value;if(provider)void submitQuest(`/api/quests/${encodeURIComponent(b.dataset.questReview)}/review`,{provider,maxCalls:2});}
+  if(b.dataset.questOutcome && !b.disabled)openQuestOutcome(b.dataset.questOutcome);
   if(b.dataset.projectEdit && !b.disabled)openProject((current?.projects||[]).find(project=>project.id===b.dataset.projectEdit));
   if(b.dataset.projectBrief && !b.disabled)prepareProject(b.dataset.projectBrief,'brief');
   if(b.dataset.projectWork && !b.disabled)prepareProject(b.dataset.projectWork,'work');
@@ -422,5 +614,5 @@ $('confirm-restore').addEventListener('click',e=>perform(async()=>{await api(`/a
 $('download-artifact').addEventListener('click',()=>{if(!artifact)return;const url=URL.createObjectURL(new Blob([artifact.text],{type:'text/markdown;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=artifact.name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh(true);});
 window.addEventListener('online',()=>refresh(true));window.addEventListener('offline',()=>connection(false));
-showTab(sourceRequests?.pending?'sources':projectRequests?.pending?'projects':'control');renderCommandRequest();renderProjectRequest();renderSourceRequest();if(token)refresh(true);setInterval(()=>{if(!document.hidden)refresh();},1500);
+showTab(questRequests?.pending?'quests':sourceRequests?.pending?'sources':projectRequests?.pending?'projects':'control');renderCommandRequest();renderProjectRequest();renderSourceRequest();renderQuests();if(token)refresh(true);setInterval(()=>{if(!document.hidden)refresh();},1500);
 })().catch(error=>{const result=document.getElementById('command-result');if(result){result.hidden=false;result.textContent=`조종석을 시작하지 못했습니다. 새로고침해 주세요. ${error.message}`;}});

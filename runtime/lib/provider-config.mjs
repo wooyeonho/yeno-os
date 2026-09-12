@@ -39,6 +39,21 @@ export function agentConfig(env) {
     providers: choices.map(c => ({provider:c.provider, model:c.model || null, eligible:order.includes(c.provider), configured:c.ready, missing:c.missing}))};
 }
 
+// An owner-selected provider is pinned to this job. A missing credential does
+// not fall through to another configured model, including the primary model.
+export function agentConfigForProvider(env, provider) {
+  if (provider === undefined || provider === 'auto') return agentConfig(env);
+  if (typeof provider !== 'string' || !Object.hasOwn(AGENT_ENDPOINTS, provider)) throw new AgentError('invalid_provider');
+  const selectedEnv = {...env, YENO_AGENT_PROVIDER:provider};
+  // Only the original explicitly selected provider may retain its legacy pair.
+  // Generic credentials have no provider identity when the primary is auto.
+  if (provider !== (env.YENO_AGENT_PROVIDER || 'anthropic')) {
+    delete selectedEnv.YENO_AGENT_MODEL;
+    delete selectedEnv.YENO_AGENT_API_KEY;
+  }
+  return agentConfig(selectedEnv);
+}
+
 export function agentProfiles(env) {
   const primary = agentConfig(env);
   const grok = agentConfig({YENO_AGENT_PROVIDER:'xai',

@@ -1,3 +1,5 @@
+> 새 기능: **목표 실행** 탭에서 목표 저장→실행→결과 열기·교차 검토·성과 기록을 사용한다. 기존 앱은 `목표: 할 일`과 `목표 현황` 명령을 지원한다. [사용법](docs/QUEST_EXECUTION_20260912.md), 실제 운영 상태는 [STATUS](docs/STATUS.md)를 따른다.
+
 > 최신: 기존 앱의 **작업과 결과 → 블랙홀 전체 작업표 · 원본49 + 신규1 · 자료103**에서 전체 범위를 확인한다. 새 V11 플레이본은 `projects/blackhole-casebook/BLACKHOLE_CASEBOOK.html`이다. [전체 작업표](docs/ALL_PROJECTS_AND_SOURCES_20260911.md). 이는 전체 제품의 개발 완료를 뜻하지 않는다.
 
 > 최신: 세계 현황·흡수 분류는 코드/검사 완료, 운영 배포 승인 대기다. 아래 새 명령은 서버 반영 후 사용할 수 있다. [검증 기록](docs/WORLD_VERIFICATION_20260911.json).

@@ -10,6 +10,7 @@ import {initialDiscovery,validateDiscovery} from './discovery.mjs';
 import {initialEcosystem,validateEcosystem} from './ecosystem.mjs';
 import {validateAgentJournal} from './agent.mjs';
 import {validateBotAssignment} from './project-bots.mjs';
+import {validateQuestState} from './quests.mjs';
 
 export const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 export const uid = () => crypto.randomUUID();
@@ -25,7 +26,15 @@ export function atomicWrite(file, content) {
 export function initialState() {
  return {revision:0, emergencyStop:false, concurrency:1,
  modules:{memory:true,documents:true,diagnostics:true,ai:false},
- jobs:[], memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem()};
+ jobs:[], quests:[], outcomes:[], memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem()};
+}
+function initializeQuestCollections(state) {
+ // Missing collections identify older stores. Present malformed data must fail
+ // validation rather than silently discarding goal or outcome evidence.
+ if(!Object.hasOwn(state,'quests'))state.quests=[];
+ if(!Object.hasOwn(state,'outcomes'))state.outcomes=[];
+ validateQuestState(state);
+ return state;
 }
 function sanitizeEnrollmentReceipts(state) {
  // Early 0.2.0 candidates cached the complete enrollment response. Preserve
@@ -49,7 +58,7 @@ export function openStore(directory) {
  fs.mkdirSync(directory,{recursive:true,mode:0o700});
  const file=path.join(directory,'state.json');
  let state, recovered=false;
- const decode = file => {const envelope=JSON.parse(fs.readFileSync(file,'utf8')); if(digest(envelope.payload)!==envelope.sha256)throw new Error('checksum mismatch'); const data=JSON.parse(envelope.payload); if(!Array.isArray(data.jobs)||!Array.isArray(data.memories)||!Array.isArray(data.snapshots)||!Array.isArray(data.events)||!data.modules||!data.requests||!data.artifacts||!Number.isInteger(data.revision))throw new Error('invalid state schema');if(Object.hasOwn(data,'projects'))validateProjectRegistry(data.projects);if(Object.hasOwn(data,'sources'))validateSourceRegistry(data.sources,data.projects??[]);if(Object.hasOwn(data,'discovery'))validateDiscovery(data.discovery);if(Object.hasOwn(data,'ecosystem'))validateEcosystem(data.ecosystem);for(const job of data.jobs){if(job.worldSnapshot)validateWorldSnapshot(job.worldSnapshot);if(job.type==='world'&&job.step>=2&&!job.worldSnapshot)throw new Error('missing world checkpoint');if(job.agentJournal)validateAgentJournal(job.agentJournal);validateBotAssignment(job);}sanitizeEnrollmentReceipts(data);validateRequestLedger(data);return data;};
+ const decode = file => {const envelope=JSON.parse(fs.readFileSync(file,'utf8')); if(digest(envelope.payload)!==envelope.sha256)throw new Error('checksum mismatch'); const data=JSON.parse(envelope.payload); if(!Array.isArray(data.jobs)||!Array.isArray(data.memories)||!Array.isArray(data.snapshots)||!Array.isArray(data.events)||!data.modules||!data.requests||!data.artifacts||!Number.isInteger(data.revision))throw new Error('invalid state schema');if(Object.hasOwn(data,'projects'))validateProjectRegistry(data.projects);if(Object.hasOwn(data,'sources'))validateSourceRegistry(data.sources,data.projects??[]);if(Object.hasOwn(data,'discovery'))validateDiscovery(data.discovery);if(Object.hasOwn(data,'ecosystem'))validateEcosystem(data.ecosystem);for(const job of data.jobs){if(job.worldSnapshot)validateWorldSnapshot(job.worldSnapshot);if(job.type==='world'&&job.step>=2&&!job.worldSnapshot)throw new Error('missing world checkpoint');if(job.agentJournal)validateAgentJournal(job.agentJournal);validateBotAssignment(job);}initializeQuestCollections(data);sanitizeEnrollmentReceipts(data);validateRequestLedger(data);return data;};
  if(fs.existsSync(file)) {try{state=decode(file);}catch{try{state=decode(`${file}.bak`);recovered=true;}catch{throw new Error('Both state and backup are unreadable. Original data has been preserved.');}}}
  else if(fs.existsSync(`${file}.bak`)){state=decode(`${file}.bak`);recovered=true;}
  else state=initialState();
@@ -64,6 +73,7 @@ export function openStore(directory) {
  if(!Object.hasOwn(state,'sources'))state.sources=[];
  if(!Object.hasOwn(state,'discovery'))state.discovery=initialDiscovery();
  if(!Object.hasOwn(state,'ecosystem'))state.ecosystem=initialEcosystem();
+ initializeQuestCollections(state);
  if(recovered){state.discovery.enabled=false;state.ecosystem.enabled=false;}
  // Keep accepted identities independently of the bounded response cache.
  // Existing hashes migrate unchanged; IDs evicted by older runtimes cannot

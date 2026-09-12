@@ -13,6 +13,7 @@ COPY runtime/server.mjs runtime/service.mjs runtime/package.json ./runtime/
 COPY runtime/lib/ ./runtime/lib/
 COPY runtime/public/ ./runtime/public/
 COPY scripts/start-koyeb.sh ./scripts/
+COPY scripts/verify-quest-live.mjs ./scripts/
 
 ENV NODE_ENV=production \
     YENO_HOST=0.0.0.0 \

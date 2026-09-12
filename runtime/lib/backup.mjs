@@ -10,6 +10,7 @@ import { validateDiscovery } from './discovery.mjs';
 import { validateEcosystem } from './ecosystem.mjs';
 import { validateAgentJournal, recoverAgentJournals } from './agent.mjs';
 import {validateBotAssignment} from './project-bots.mjs';
+import {validateQuestState} from './quests.mjs';
 
 export const BACKUP_MAX_PLAINTEXT_BYTES = 16 * 1024 * 1024;
 export const BACKUP_MAX_ARCHIVE_BYTES = BACKUP_MAX_PLAINTEXT_BYTES + 36;
@@ -18,7 +19,7 @@ const MAGIC = Buffer.from('YENOBK1\n');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const HASH = /^[a-f0-9]{64}$/;
 const STATE_KEYS = ['revision', 'emergencyStop', 'concurrency', 'modules', 'jobs', 'memories', 'snapshots', 'events', 'requests', 'artifacts', 'devices', 'projects', 'sources'];
-const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'worldSnapshot'];
+const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt'];
 const fail = message => { throw new Error(`Backup: ${message}`); };
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = (value, min, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value) && value >= min && value <= max;
@@ -43,7 +44,10 @@ function memories(value) {
   }
 }
 function validateState(state) {
-  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem'], STATE_KEYS);
+  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes'], STATE_KEYS);
+  if (!Object.hasOwn(state, 'quests')) state.quests = [];
+  if (!Object.hasOwn(state, 'outcomes')) state.outcomes = [];
+  validateQuestState(state);
   validateRequestLedger(state);
   if (Object.hasOwn(state, 'ecosystem')) validateEcosystem(state.ecosystem);
   if (Object.hasOwn(state, 'discovery')) validateDiscovery(state.discovery);
@@ -56,6 +60,10 @@ function validateState(state) {
     keys(job, JOB_KEYS, ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts']);
     if (!UUID.test(job.id) || jobs.has(job.id) || !string(job.title, 160) || !string(job.input, 80000) || !['document', 'diagnostics', 'evolution', 'ai', 'agent', 'world'].includes(job.type) || !['queued', 'running', 'paused', 'completed', 'failed', 'cancelled'].includes(job.status) || !integer(job.step, 0, 3) || job.totalSteps !== 3 || !integer(job.version, 1, Number.MAX_SAFE_INTEGER - 1) || !Array.isArray(job.artifacts) || (job.error !== null && !string(job.error))) fail('invalid job');
     if (job.agentJournal) validateAgentJournal(job.agentJournal);
+    if (Object.hasOwn(job, 'selectedProvider') && !['openai', 'gemini', 'moonshot', 'xai', 'anthropic', 'nvidia'].includes(job.selectedProvider)) fail('invalid selected provider');
+    if (Object.hasOwn(job, 'questId') && (typeof job.questId !== 'string' || !UUID.test(job.questId))) fail('invalid job quest reference');
+    if (Object.hasOwn(job, 'callLimit') && !integer(job.callLimit, 1, 4)) fail('invalid job call limit');
+    if (Object.hasOwn(job, 'deadlineAt')) timestamp(job.deadlineAt);
     if (Object.hasOwn(job, 'worldSnapshot')) { if (job.type !== 'world') fail('invalid world job'); validateWorldSnapshot(job.worldSnapshot); }
     if (job.type === 'world' && job.step >= 2 && !job.worldSnapshot) fail('missing world checkpoint');
     validateBotAssignment(job);

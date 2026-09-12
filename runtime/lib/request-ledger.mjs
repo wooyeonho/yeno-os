@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import {publicJob} from './job-view.mjs';
+import {publicQuest} from './quests.mjs';
 
 export const REQUEST_LEDGER_MAX_ENTRIES = 20000;
 export const REQUEST_CACHE_MAX_ENTRIES = 2000;
@@ -7,7 +8,7 @@ export const REQUEST_CACHE_MAX_BYTES = 2 * 1024 * 1024;
 
 const HASH = /^[a-f0-9]{64}$/;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
-const COLLECTIONS = { job: 'jobs', memory: 'memories', device: 'devices', project: 'projects', source: 'sources' };
+const COLLECTIONS = { job: 'jobs', memory: 'memories', device: 'devices', project: 'projects', source: 'sources', quest: 'quests', outcome: 'outcomes' };
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
   && [Object.prototype, null].includes(Object.getPrototypeOf(value));
 const own = (value, key) => Object.hasOwn(value, key);
@@ -132,6 +133,8 @@ function currentPayload(state, reference) {
   let value;
   if (reference.collection === 'jobs') {
     value = publicJob(item);
+  } else if (reference.collection === 'quests') {
+    value = publicQuest(item, state);
   } else if (reference.collection === 'devices') {
     const { id, name, platform, createdAt } = item;
     value = { id, name, platform, createdAt };
