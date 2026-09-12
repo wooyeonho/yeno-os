@@ -31,6 +31,7 @@
     </aside>
     <main>
       <header class="topbar"><div><span class="eyebrow">연호님의 작업 공간</span><h1 id="page-title">조종석</h1></div><div class="top-actions"><button id="compact-toggle" class="button subtle" aria-pressed="false">작게</button><button id="global-stop" class="button danger" disabled>모든 작업 멈춤</button></div></header>
+      <aside class="web-install"><button id="install-app" class="button subtle" hidden>홈 화면에 BLACKHOLE 추가</button><span id="install-hint">Chrome 메뉴 → 홈 화면에 추가로 앱처럼 열 수 있습니다.</span></aside>
       <div id="offline-banner" class="banner" hidden>본체의 최신 상태를 확인하지 못했습니다. 명령 완료 여부를 확인해 주세요. <button id="reconnect" class="text-button">다시 연결</button></div>
       <section id="tab-control" class="tab-panel">
         <section class="core-panel">
@@ -99,7 +100,6 @@
     </main>
   </div>
   <div id="pair-screen" class="pair-screen"><div class="pair-card"><form id="pair-form"><div class="brand"><span class="brand-icon">●</span><span>BLACKHOLE<small>YOUR PERSONAL RUNTIME</small></span></div><h2>내 운영실을 여세요.</h2><p>영상·여기·한끼안부·소설·For-Ai를 한곳에서 이어갑니다. 기존 개인 연결 키로 처음 한 번 연결하세요.</p><label for="pair-token">개인 연결 키</label><input id="pair-token" type="password" autocomplete="off" required placeholder="기존에 전달받은 개인 연결 키"><label class="web-remember"><input id="remember-browser" type="checkbox" checked> 내 기기에서 30일 동안 연결 유지</label><small>개인 연결 키는 저장하지 않습니다. 선택을 끄면 8시간 연결됩니다. 미확인 작업은 이 브라우저에 보관되므로 개인 기기에서 사용하세요.</small><p id="pair-error" class="form-error" role="alert"></p><button class="button primary" type="submit">운영실 열기</button></form><button id="web-retry" class="button subtle" hidden>다른 탭을 닫았어요 · 다시 연결</button></div></div>
-  <aside class="web-install"><button id="install-app" class="button subtle" hidden>홈 화면에 BLACKHOLE 추가</button><span id="install-hint">Chrome 메뉴 → 홈 화면에 추가로 앱처럼 열 수 있습니다.</span></aside>
   <dialog id="project-dialog" aria-labelledby="project-form-title">
     <form id="project-form">
       <div class="dialog-top"><h2 id="project-form-title">프로젝트 추가</h2><button type="button" class="button subtle" data-close="project-dialog">닫기</button></div>
