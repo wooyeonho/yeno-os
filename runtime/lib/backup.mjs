@@ -11,6 +11,9 @@ import { validateEcosystem } from './ecosystem.mjs';
 import { validateAgentJournal, recoverAgentJournals } from './agent.mjs';
 import {validateBotAssignment} from './project-bots.mjs';
 import {validateQuestState} from './quests.mjs';
+import {emptyStudio,validateStudio} from './studio.mjs';
+import {validateVideoInput} from './video.mjs';
+import {validateForAiInput} from './forai.mjs';
 
 export const BACKUP_MAX_PLAINTEXT_BYTES = 16 * 1024 * 1024;
 export const BACKUP_MAX_ARCHIVE_BYTES = BACKUP_MAX_PLAINTEXT_BYTES + 36;
@@ -19,7 +22,7 @@ const MAGIC = Buffer.from('YENOBK1\n');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const HASH = /^[a-f0-9]{64}$/;
 const STATE_KEYS = ['revision', 'emergencyStop', 'concurrency', 'modules', 'jobs', 'memories', 'snapshots', 'events', 'requests', 'artifacts', 'devices', 'projects', 'sources'];
-const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt'];
+const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt', 'productionEvidence', 'studioSeriesId', 'studioChapterId'];
 const fail = message => { throw new Error(`Backup: ${message}`); };
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = (value, min, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value) && value >= min && value <= max;
@@ -44,9 +47,11 @@ function memories(value) {
   }
 }
 function validateState(state) {
-  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes'], STATE_KEYS);
+  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio'], STATE_KEYS);
   if (!Object.hasOwn(state, 'quests')) state.quests = [];
   if (!Object.hasOwn(state, 'outcomes')) state.outcomes = [];
+  if (!Object.hasOwn(state, 'studio')) state.studio = emptyStudio();
+  validateStudio(state.studio);
   validateQuestState(state);
   validateRequestLedger(state);
   if (Object.hasOwn(state, 'ecosystem')) validateEcosystem(state.ecosystem);
@@ -58,7 +63,12 @@ function validateState(state) {
   const jobs = new Map(), references = new Set();
   for (const job of state.jobs) {
     keys(job, JOB_KEYS, ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts']);
-    if (!UUID.test(job.id) || jobs.has(job.id) || !string(job.title, 160) || !string(job.input, 80000) || !['document', 'diagnostics', 'evolution', 'ai', 'agent', 'world'].includes(job.type) || !['queued', 'running', 'paused', 'completed', 'failed', 'cancelled'].includes(job.status) || !integer(job.step, 0, 3) || job.totalSteps !== 3 || !integer(job.version, 1, Number.MAX_SAFE_INTEGER - 1) || !Array.isArray(job.artifacts) || (job.error !== null && !string(job.error))) fail('invalid job');
+    if (!UUID.test(job.id) || jobs.has(job.id) || !string(job.title, 160) || !string(job.input, job.type==='forai'?160000:80000) || !['document', 'diagnostics', 'evolution', 'ai', 'agent', 'world', 'video', 'forai'].includes(job.type) || !['queued', 'running', 'paused', 'completed', 'failed', 'cancelled'].includes(job.status) || !integer(job.step, 0, 3) || job.totalSteps !== 3 || !integer(job.version, 1, Number.MAX_SAFE_INTEGER - 1) || !Array.isArray(job.artifacts) || (job.error !== null && !string(job.error))) fail('invalid job');
+    if(job.type==='video')validateVideoInput(JSON.parse(job.input));
+    if(job.type==='forai')validateForAiInput(JSON.parse(job.input));
+    if(Object.hasOwn(job,'productionEvidence')&&(job.type!=='forai'||!record(job.productionEvidence)||Buffer.byteLength(JSON.stringify(job.productionEvidence))>65536))fail('invalid production evidence');
+    if(Object.hasOwn(job,'studioSeriesId')&&(job.type!=='agent'||!state.studio.series.some(item=>item.id===job.studioSeriesId)))fail('invalid novel series reference');
+    if(Object.hasOwn(job,'studioChapterId')&&(!job.studioSeriesId||!state.studio.chapters.some(item=>item.id===job.studioChapterId&&item.seriesId===job.studioSeriesId)))fail('invalid novel chapter reference');
     if (job.agentJournal) validateAgentJournal(job.agentJournal);
     if (Object.hasOwn(job, 'selectedProvider') && !['openai', 'gemini', 'moonshot', 'xai', 'anthropic', 'nvidia'].includes(job.selectedProvider)) fail('invalid selected provider');
     if (Object.hasOwn(job, 'questId') && (typeof job.questId !== 'string' || !UUID.test(job.questId))) fail('invalid job quest reference');
@@ -89,8 +99,11 @@ function validateState(state) {
   const artifactEntries = Object.entries(state.artifacts);
   if (artifactEntries.length > BACKUP_MAX_ARTIFACTS || artifactEntries.length !== references.size) fail('invalid artifact count or references');
   for (const [id, artifact] of artifactEntries) {
-    keys(artifact, ['id', 'name', 'filename', 'sha256', 'bytes', 'jobId']);
-    if (!UUID.test(id) || artifact.id !== id || artifact.filename !== `${id}.md` || !HASH.test(artifact.sha256) || !integer(artifact.bytes, 0, BACKUP_MAX_PLAINTEXT_BYTES) || !string(artifact.name, 160) || !jobs.has(artifact.jobId) || !jobs.get(artifact.jobId).artifacts.some(item => item.id === id && item.name === artifact.name)) fail('invalid artifact metadata');
+    keys(artifact, ['id', 'name', 'filename', 'sha256', 'bytes', 'jobId','mimeType'], ['id','name','filename','sha256','bytes','jobId']);
+    const extension=artifact.mimeType==='video/mp4'?'mp4':artifact.mimeType==='application/json'?'json':'md';
+    if(Object.hasOwn(artifact,'mimeType')&&!['video/mp4','application/json'].includes(artifact.mimeType))fail('invalid artifact media type');
+    if (!UUID.test(id) || artifact.id !== id || artifact.filename !== `${id}.${extension}` || !HASH.test(artifact.sha256) || !integer(artifact.bytes, 0, BACKUP_MAX_PLAINTEXT_BYTES) || !string(artifact.name, 160) || !jobs.has(artifact.jobId) || !jobs.get(artifact.jobId).artifacts.some(item => item.id === id && item.name === artifact.name)) fail('invalid artifact metadata');
+    if(extension==='mp4'&&jobs.get(artifact.jobId).type!=='video')fail('video artifact on non-video job');
   }
   for (const id of references) if (!Object.hasOwn(state.artifacts, id)) fail('missing artifact metadata');
   const snapshotIds = new Set();
@@ -154,8 +167,9 @@ function validateArchive(payload) {
   const seen = new Set();
   for (const file of payload.artifacts) {
     keys(file, ['filename', 'content']);
-    if (typeof file.filename !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.md$/.test(file.filename) || seen.has(file.filename)) fail('unsafe or duplicate archive path');
-    const metadata = payload.state.artifacts[file.filename.slice(0, -3)];
+    if (typeof file.filename !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.(?:md|json|mp4)$/.test(file.filename) || seen.has(file.filename)) fail('unsafe or duplicate archive path');
+    const metadata = payload.state.artifacts[path.parse(file.filename).name];
+    if(metadata?.filename!==file.filename)fail('artifact extension mismatch');
     if (!metadata || typeof file.content !== 'string' || file.content.length !== 4 * Math.ceil(metadata.bytes / 3)) fail('invalid artifact encoding or metadata');
     const content = Buffer.from(file.content, 'base64');
     if (content.length !== metadata.bytes || content.toString('base64') !== file.content || digest(content) !== metadata.sha256) fail('archive artifact checksum mismatch');

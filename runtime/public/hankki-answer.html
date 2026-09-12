@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'">
+  <title>한끼안부 · 식사 응답</title>
+  <link rel="stylesheet" href="/hankki-answer.css">
+  <script type="module" src="/hankki-answer.mjs"></script>
+</head>
+<body>
+  <main class="answer-shell">
+    <div class="brand"><span aria-hidden="true" class="brand-mark">●</span> 한끼안부</div>
+    <section class="answer-card" aria-labelledby="answer-heading">
+      <p class="eyebrow">따뜻한 한 끼, 짧은 안부</p>
+      <h1 id="answer-heading">식사하셨나요?</h1>
+      <p id="answer-description" class="description">식사 확인 내용을 불러오고 있어요.</p>
+      <dl id="answer-details" hidden>
+        <div><dt>식사</dt><dd id="answer-meal"></dd></div>
+        <div><dt>응답 기한</dt><dd id="answer-due"></dd></div>
+      </dl>
+      <p id="answer-status" class="status" role="status" aria-live="polite"></p>
+      <div id="answer-buttons" class="answer-buttons" hidden>
+        <button id="answer-ate" type="button" class="primary">먹었어요</button>
+        <button id="answer-not-yet" type="button" class="secondary">아직이에요</button>
+      </div>
+      <button id="answer-retry" class="refresh" type="button" hidden>다시 확인</button>
+      <p id="answer-consent" class="privacy" hidden>버튼을 누르면 식사 응답과 시각이 링크를 만든 사람의 블랙홀에 저장됩니다. 이 링크를 가진 사람이 응답할 수 있어요.</p>
+    </section>
+    <p class="footer">별도 가입 없이, 이 식사 한 번만 응답해요.</p>
+  </main>
+</body>
+</html>

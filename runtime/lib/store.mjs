@@ -11,6 +11,7 @@ import {initialEcosystem,validateEcosystem} from './ecosystem.mjs';
 import {validateAgentJournal} from './agent.mjs';
 import {validateBotAssignment} from './project-bots.mjs';
 import {validateQuestState} from './quests.mjs';
+import {emptyStudio,validateStudio} from './studio.mjs';
 
 export const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 export const uid = () => crypto.randomUUID();
@@ -26,13 +27,15 @@ export function atomicWrite(file, content) {
 export function initialState() {
  return {revision:0, emergencyStop:false, concurrency:1,
  modules:{memory:true,documents:true,diagnostics:true,ai:false},
- jobs:[], quests:[], outcomes:[], memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem()};
+ jobs:[], quests:[], outcomes:[], studio:emptyStudio(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem()};
 }
 function initializeQuestCollections(state) {
  // Missing collections identify older stores. Present malformed data must fail
  // validation rather than silently discarding goal or outcome evidence.
  if(!Object.hasOwn(state,'quests'))state.quests=[];
  if(!Object.hasOwn(state,'outcomes'))state.outcomes=[];
+ if(!Object.hasOwn(state,'studio'))state.studio=emptyStudio();
+ validateStudio(state.studio);
  validateQuestState(state);
  return state;
 }

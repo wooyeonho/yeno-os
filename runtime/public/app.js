@@ -3,6 +3,7 @@ const {createCommandRequest} = await import('/command-request.mjs');
 const {sourceMatches,sourceReferenceNames} = await import('/source-reference-labels.mjs');
 const {sourceDestination,sourceCoverage} = await import('/absorption-routing.mjs');
 const {createWorldView} = await import('/world-view.mjs');
+const {createStudioView} = await import('/studio-view.mjs');
 const $ = (id) => document.getElementById(id);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const date = (value) => value ? new Date(value).toLocaleString('ko-KR', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
@@ -45,10 +46,11 @@ async function api(path, data, options={}) {
   if(options.raw && response.ok)return response;
   let result;
   try {result=await response.json();} catch(error) {if(response.ok)throw new Error('본체의 접수 응답을 읽지 못했습니다.');result={};}
-  if(!response.ok){if(response.status===401){worldView.reset();resetQuests();token='';sessionStorage.removeItem('yeno-token');$('pair-screen').hidden=false;$('project-dialog').close();$('source-dialog').close();$('source-import-dialog').close();connection(false);}const error=new Error(friendly(result.error?.message || result.error || result.message || `응답 ${response.status}`));error.status=response.status;error.project=result.project;error.source=result.source;throw error;}
+  if(!response.ok){if(response.status===401){worldView.reset();studioView.reset();resetQuests();token='';current=null;sessionStorage.removeItem('yeno-token');$('pair-screen').hidden=false;$('project-dialog').close();$('source-dialog').close();$('source-import-dialog').close();connection(false);}const error=new Error(friendly(result.error?.message || result.error || result.message || `응답 ${response.status}`));error.status=response.status;error.project=result.project;error.source=result.source;throw error;}
   return result;
 }
 const worldView=createWorldView({load:()=>api('/api/world'),submit:()=>submitCommand('/api/commands',{text:'세계 현황'})});
+const studioView=createStudioView({root:$('studio-root'),api,notify,onJobCreated:()=>{showTab('control');void refresh(true);}});
 const requestId=()=>crypto.randomUUID();
 try {commandRequests=createCommandRequest({storage:sessionStorage,transport:(path,body)=>api(path,body)});}
 catch(error) {commandStorageError=error;}
@@ -120,6 +122,7 @@ async function submitCommand(path,body) {
   finally {renderCommandRequest();await refresh(true);}
 }
 function connection(ok) {
+  studioView.setState(current?{...current,online:ok}:{online:ok});
   online=ok; $('connection-dot').classList.toggle('online',ok);$('connection-text').textContent=ok?'실행 본체 연결됨':'연결 확인 필요';
   $('offline-banner').hidden=ok || !token; renderCommandRequest();renderProjectRequest();renderSourceRequest();renderQuestRequest(); $('global-stop').disabled=!ok;
   if(ok)$('last-seen').textContent=`마지막 확인 ${new Date().toLocaleTimeString('ko-KR')}`;
@@ -135,13 +138,14 @@ async function refresh(force=false) {
 function showTab(tab) {
   activeTab=tab;for(const el of document.querySelectorAll('.tab-panel'))el.hidden=el.id!==`tab-${tab}`;
   for(const el of document.querySelectorAll('.nav')){el.classList.toggle('active',el.dataset.tab===tab);el.setAttribute('aria-current',el.dataset.tab===tab?'page':'false');}
-  $('page-title').textContent={control:'조종석',quests:'목표 실행',world:'세계 현황',projects:'프로젝트',sources:'자료',memory:'기억',recovery:'복구',settings:'능력·설정'}[tab];
+  $('page-title').textContent={control:'조종석',quests:'목표 실행',studio:'운영실',world:'세계 현황',projects:'프로젝트',sources:'자료',memory:'기억',recovery:'복구',settings:'능력·설정'}[tab];
   if(tab==='quests')void refreshQuests(true);
+  if(tab==='studio')void studioView.refresh();
 }
 function render(s) {
   const jobs=s.jobs || [], running=jobs.filter(j=>j.status==='running').length;
   $('core-title').textContent=s.emergencyStop?'모든 작업을 멈췄어요.':running?`${running}개의 일을 진행하고 있어요.`:'명령을 기다리고 있어요.';
-  $('core-subtitle').textContent=s.emergencyStop?'정지를 해제한 뒤 원하는 작업을 개별 재개하세요.':'기억·문서·진단부터 바로 맡길 수 있어요.';
+  $('core-subtitle').textContent=s.emergencyStop?'정지를 해제한 뒤 원하는 작업을 개별 재개하세요.':'운영실에서 영상 제작·소설 집필·장소 기록·한끼안부·For-Ai를 사용하세요.';
   $('core-signal').className=`core-signal ${s.emergencyStop?'stopped':running?'running':''}`;
   $('global-stop').textContent=s.emergencyStop?'전체 정지 해제':'모든 작업 멈춤';
   $('running-count').textContent=running;$('pending-count').textContent=jobs.filter(j=>['queued','paused'].includes(j.status)).length;$('done-count').textContent=jobs.filter(j=>j.status==='completed').length;$('slot-count').textContent=s.concurrency;
@@ -585,7 +589,7 @@ $('global-stop').addEventListener('click',e=>perform(async()=>{const action=curr
 $('concurrency').addEventListener('change',e=>perform(()=>api('/api/settings',{concurrency:Number(e.target.value),requestId:requestId()})));
 $('module-settings').addEventListener('change',e=>{if(e.target.dataset.module)perform(()=>api('/api/settings',{modules:{[e.target.dataset.module]:e.target.checked},requestId:requestId()}));});
 $('compact-toggle').addEventListener('click',()=>{const compact=document.body.classList.toggle('compact');$('compact-toggle').textContent=compact?'펼치기':'작게';$('compact-toggle').setAttribute('aria-pressed',String(compact));});
-function disconnect(){worldView.reset();resetQuests();token='';current=null;sessionStorage.removeItem('yeno-token');connection(false);$('pair-screen').hidden=false;}
+function disconnect(){worldView.reset();studioView.reset();resetQuests();token='';current=null;sessionStorage.removeItem('yeno-token');connection(false);$('pair-screen').hidden=false;}
 $('disconnect').addEventListener('click',disconnect);$('disconnect-mobile').addEventListener('click',disconnect);
 $('reconnect').addEventListener('click',()=>refresh(true));
 document.addEventListener('click',e=>{
@@ -608,10 +612,11 @@ document.addEventListener('click',e=>{
   if(b.dataset.sourceProject && !b.disabled){showTab('projects');const card=[...document.querySelectorAll('[data-project-edit]')].find(button=>button.dataset.projectEdit===b.dataset.sourceProject)?.closest('article');card?.scrollIntoView({block:'center'});}
   if(b.dataset.job)perform(()=>api(`/api/jobs/${encodeURIComponent(b.dataset.job)}/action`,{action:b.dataset.action,...(b.dataset.version&&b.dataset.version!=='undefined'?{revision:Number(b.dataset.version)}:{}),requestId:requestId()}),b);
   if(b.dataset.restore){selectedSnapshot=b.dataset.restore;$('restore-label').textContent=current.snapshots.find(s=>s.id===selectedSnapshot)?.label||'';$('restore-dialog').showModal();}
-  if(b.dataset.artifact)perform(async()=>{const r=await api(`/api/artifacts/${encodeURIComponent(b.dataset.artifact)}`,undefined,{raw:true});const text=await r.text();artifact={text,name:b.dataset.name||'YENO-result.md'};$('artifact-title').textContent=artifact.name;$('artifact-content').textContent=text;$('artifact-dialog').showModal();},b);
+  if(b.dataset.artifact)perform(async()=>{const r=await api(`/api/artifacts/${encodeURIComponent(b.dataset.artifact)}`,undefined,{raw:true});const blob=await r.blob();if(artifact?.url)URL.revokeObjectURL(artifact.url);artifact={blob,name:b.dataset.name||'BLACKHOLE-result.md',url:URL.createObjectURL(blob)};const video=blob.type.startsWith('video/mp4');$('artifact-title').textContent=artifact.name;$('artifact-video').hidden=!video;$('artifact-content').hidden=video;if(video){$('artifact-video').src=artifact.url;$('artifact-content').textContent='';}else{$('artifact-video').removeAttribute('src');$('artifact-content').textContent=await blob.text();}$('artifact-dialog').showModal();},b);
 });
 $('confirm-restore').addEventListener('click',e=>perform(async()=>{await api(`/api/snapshots/${encodeURIComponent(selectedSnapshot)}/restore`,{confirm:true,requestId:requestId()});$('restore-dialog').close();notify('기억과 설정을 복원했습니다. 이전 상태도 보관했습니다.');},e.currentTarget));
-$('download-artifact').addEventListener('click',()=>{if(!artifact)return;const url=URL.createObjectURL(new Blob([artifact.text],{type:'text/markdown;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=artifact.name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+$('download-artifact').addEventListener('click',()=>{if(!artifact)return;const a=document.createElement('a');a.href=artifact.url;a.download=artifact.name;a.click();});
+$('artifact-dialog').addEventListener('close',()=>{$('artifact-video').pause();$('artifact-video').removeAttribute('src');if(artifact?.url)URL.revokeObjectURL(artifact.url);artifact=null;});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh(true);});
 window.addEventListener('online',()=>refresh(true));window.addEventListener('offline',()=>connection(false));
 showTab(questRequests?.pending?'quests':sourceRequests?.pending?'sources':projectRequests?.pending?'projects':'control');renderCommandRequest();renderProjectRequest();renderSourceRequest();renderQuests();if(token)refresh(true);setInterval(()=>{if(!document.hidden)refresh();},1500);
