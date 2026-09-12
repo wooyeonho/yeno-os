@@ -12,7 +12,7 @@
     "ui": 7
   },
   "existingWebFlow": "npm run verify:web passed; JSDOM cookies/locks simulated",
-  "liveResearch": "pending existing Koyeb deployment and one bounded model verification",
+  "liveResearch": "Completed actual Europe PMC/Crossref retrieval and one Gemini call; see RESEARCH_LIVE_VERIFICATION_20260912.json",
   "finalResearchRegression": {
     "passed": 16,
     "failed": 0,
@@ -20,5 +20,12 @@
     "durationMs": 4096.255407,
     "includes": "Crossref bibliography/journal-article filter and canonical track validation"
   },
-  "fullResearchWebFlow": "Passed actual temporary HTTP + JSDOM; see RESEARCH_UI_VERIFICATION_20260912.json"
+  "fullResearchWebFlow": "Passed actual temporary HTTP + JSDOM; see RESEARCH_UI_VERIFICATION_20260912.json",
+  "groupedCitationRegression": {
+    "passed": 16,
+    "failed": 0,
+    "skipped": 0,
+    "durationMs": 4094.253276,
+    "case": "[S1] plus [S1, S99] must fail without additional model calls"
+  }
 }

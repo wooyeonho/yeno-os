@@ -1,3 +1,5 @@
+> **최신(2026-09-12 17:57Z): [BLACKHOLE 열기](https://global-iris-gyeol-98386a17.koyeb.app/)** → **문제의 답 · EUREKA** → 연구 트랙과 질문 → **근거 수집·답안 만들기**. 기존 E01~E09 연결, 공개 근거·답안 보관, 작업당 모델1회. 실제 Long COVID 답안이 저장되어 있다. [사용법](docs/RESEARCH_20260912.md) · [실제 실행 증거](docs/RESEARCH_LIVE_VERIFICATION_20260912.json). 연구 초안과 과학적 해결 입증은 구분한다.
+
 > **최신(2026-09-12 16:43Z): [BLACKHOLE 운영실 열기](https://global-iris-gyeol-98386a17.koyeb.app/)** → 기존 개인 연결 키로 처음 한 번 연결 → 운영실. 개인 기기의 연결 유지에 체크하면 최대30일 다시 열 수 있다. Chrome 메뉴에서 홈 화면에 추가할 수 있다. 기존 APK는 그대로 둔다. [실사용 방법](docs/WEB_OPERATING_ROOM_20260912.md) · [실제 운영 검증](docs/WEB_LIVE_VERIFICATION_20260912.json).
 
 > 새 웹 운영실은 작업 접수 기록을 보관하므로 창을 닫아도 같은 요청으로 이어서 확인한다. 실제 서버의 기존 영상·원고·장소·안부·프로젝트 기록과 폰 기기 인증을 보존했다. 운영 소스`1ecc2e9c`, 배포`7b72282e` Healthy/Active. 검사301/301, 신규 AI 호출0. Grok Bot 제품, 외부 자동 게시/발송, 생성형 영상/음성과 폰 실기기는 연결·검증 대기다. 아래는 이전 이력이다.
