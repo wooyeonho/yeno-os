@@ -1,20 +1,25 @@
 {
   "name": "@yeno/controller",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "verify:ui": "node verify-ui.mjs",
     "tauri": "tauri"
   },
   "dependencies": {
     "@tauri-apps/api": "2.8.0",
+    "@tauri-apps/plugin-dialog": "2.4.0",
+    "@tauri-apps/plugin-fs": "2.4.2",
     "@tauri-apps/plugin-http": "2.5.2",
+    "@tauri-apps/plugin-opener": "2.4.0",
     "@tauri-apps/plugin-stronghold": "2.3.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.8.4",
+    "jsdom": "26.1.0",
     "typescript": "5.9.2",
     "vite": "7.1.4"
   }

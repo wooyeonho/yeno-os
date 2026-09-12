@@ -4,10 +4,14 @@ const {sourceMatches,sourceReferenceNames} = await import('/source-reference-lab
 const {sourceDestination,sourceCoverage} = await import('/absorption-routing.mjs');
 const {createWorldView} = await import('/world-view.mjs');
 const {createStudioView} = await import('/studio-view.mjs');
+const {connectBrowser,enableInstall} = await import('/web-client.mjs');
 const $ = (id) => document.getElementById(id);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const date = (value) => value ? new Date(value).toLocaleString('ko-KR', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
-let token = sessionStorage.getItem('yeno-token') || '';
+enableInstall({button:$('install-app'),hint:$('install-hint')});
+const browserSession = await connectBrowser();
+const requestStorage = browserSession.storage;
+let token = 'cookie-session', authEpoch = 0;
 let current = null, online = false, loading = false, lastRevision = null, selectedSnapshot = null, artifact = null;
 let toastTimer, activeTab = 'control', commandRequests, commandStorageError, projectRequests, projectStorageError, editingProject = null;
 let sourceRequests, sourceStorageError, editingSource = null, sourceImportPreview = null, sourceFileGeneration = 0;
@@ -42,20 +46,33 @@ function friendly(message) {
   return String(message || '요청을 처리하지 못했습니다.');
 }
 async function api(path, data, options={}) {
-  const response=await fetch(path,{method:data===undefined?'GET':'POST',headers:{Authorization:`Bearer ${token}`,...(data===undefined?{}:{'Content-Type':'application/json'})},...(data===undefined?{}:{body:JSON.stringify(data)}),signal:AbortSignal.timeout(options.timeout || 12000),cache:'no-store'});
+  const epoch=authEpoch;
+  const response=await browserSession.fetch(path,{method:data===undefined?'GET':'POST',headers:{...(data===undefined?{}:{'Content-Type':'application/json'})},...(data===undefined?{}:{body:JSON.stringify(data)}),signal:AbortSignal.timeout(options.timeout || 12000)});
+  if(epoch!==authEpoch||!token)throw new Error('연결이 바뀌어 이전 응답을 닫았습니다.');
   if(options.raw && response.ok)return response;
   let result;
   try {result=await response.json();} catch(error) {if(response.ok)throw new Error('본체의 접수 응답을 읽지 못했습니다.');result={};}
-  if(!response.ok){if(response.status===401){worldView.reset();studioView.reset();resetQuests();token='';current=null;sessionStorage.removeItem('yeno-token');$('pair-screen').hidden=false;$('project-dialog').close();$('source-dialog').close();$('source-import-dialog').close();connection(false);}const error=new Error(friendly(result.error?.message || result.error || result.message || `응답 ${response.status}`));error.status=response.status;error.project=result.project;error.source=result.source;throw error;}
+  if(epoch!==authEpoch||!token)throw new Error('연결이 바뀌어 이전 응답을 닫았습니다.');
+  if(!response.ok){if(response.status===401){clearConnection();location.reload();}const error=new Error(friendly(result.error?.message || result.error || result.message || `응답 ${response.status}`));error.status=response.status;error.project=result.project;error.source=result.source;throw error;}
   return result;
 }
 const worldView=createWorldView({load:()=>api('/api/world'),submit:()=>submitCommand('/api/commands',{text:'세계 현황'})});
-const studioView=createStudioView({root:$('studio-root'),api,notify,onJobCreated:()=>{showTab('control');void refresh(true);}});
+const studioView=createStudioView({root:$('studio-root'),api,storage:requestStorage,notify,onJobCreated:()=>{showTab('control');void refresh(true);}});
 const requestId=()=>crypto.randomUUID();
-try {commandRequests=createCommandRequest({storage:sessionStorage,transport:(path,body)=>api(path,body)});}
+let otherRequests,otherStorageError;
+try{otherRequests=createCommandRequest({storage:requestStorage,key:'blackhole-pending-other-v1',allowPath:path=>['/api/memory','/api/snapshots','/api/settings','/api/control'].includes(path)||/^\/api\/(jobs|snapshots)\/[a-f0-9-]+\/(action|restore)$/.test(path),transport:(path,body)=>api(path,body)});}catch(error){otherStorageError=error;}
+function renderOtherRequest(){const pending=otherRequests?.pending;$('other-request').hidden=!pending&&!otherStorageError;$('other-request-message').textContent=otherStorageError?'작업 보관함을 읽지 못해 새 저장을 멈췄습니다.':pending?'이전 저장·설정 변경의 접수 여부를 확인해야 합니다. 같은 요청으로 확인하세요.':'';$('retry-other').disabled=!online||!!otherStorageError||!!otherRequests?.sending;}
+async function durableMutation(path,body){
+  if(otherStorageError)throw otherStorageError;
+  if(otherRequests.pending)throw new Error('상단의 같은 요청 확인을 눌러 이전 접수를 확인해 주세요.');
+  otherRequests.stage(path,body);return retryOther();
+}
+async function retryOther(){const promise=otherRequests.send();renderOtherRequest();try{const outcome=await promise;if(outcome.kind==='accepted')return outcome.result;throw outcome.error;}finally{renderOtherRequest();}}
+$('retry-other').addEventListener('click',()=>perform(async()=>{await retryOther();notify('이전 요청의 접수를 확인했습니다.');}));
+try {commandRequests=createCommandRequest({storage:requestStorage,transport:(path,body)=>api(path,body)});}
 catch(error) {commandStorageError=error;}
 try {
-  projectRequests=createCommandRequest({storage:sessionStorage,key:'yeno-pending-project-v1',
+  projectRequests=createCommandRequest({storage:requestStorage,key:'yeno-pending-project-v1',
     allowPath:path=>path==='/api/projects' || /^\/api\/projects\/[a-zA-Z0-9-]+\/update$/.test(path),
     transport:async(path,body)=>{
       const result=await api(path,body);
@@ -64,7 +81,7 @@ try {
     }});
 } catch(error) {projectStorageError=error;}
 try {
-  sourceRequests=createCommandRequest({storage:sessionStorage,key:'yeno-pending-source-v1',
+  sourceRequests=createCommandRequest({storage:requestStorage,key:'yeno-pending-source-v1',
     allowPath:path=>path==='/api/sources' || path==='/api/sources/import' || /^\/api\/sources\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/update$/i.test(path),
     transport:async(path,body)=>{
       const result=await api(path,body);
@@ -74,7 +91,7 @@ try {
     }});
 } catch(error) {sourceStorageError=error;}
 try {
-  questRequests=createCommandRequest({storage:sessionStorage,key:'yeno-pending-quest-v1',
+  questRequests=createCommandRequest({storage:requestStorage,key:'yeno-pending-quest-v1',
     allowPath:path=>path==='/api/quests' || path==='/api/outcomes' || /^\/api\/quests\/[a-zA-Z0-9-]+\/(run|review)$/.test(path) || /^\/api\/jobs\/[a-zA-Z0-9-]+\/action$/.test(path),
     transport:async(path,body)=>{
       const result=await api(path,body);
@@ -123,7 +140,7 @@ async function submitCommand(path,body) {
 }
 function connection(ok) {
   studioView.setState(current?{...current,online:ok}:{online:ok});
-  online=ok; $('connection-dot').classList.toggle('online',ok);$('connection-text').textContent=ok?'실행 본체 연결됨':'연결 확인 필요';
+  online=ok;renderOtherRequest(); $('connection-dot').classList.toggle('online',ok);$('connection-text').textContent=ok?'실행 본체 연결됨':'연결 확인 필요';
   $('offline-banner').hidden=ok || !token; renderCommandRequest();renderProjectRequest();renderSourceRequest();renderQuestRequest(); $('global-stop').disabled=!ok;
   if(ok)$('last-seen').textContent=`마지막 확인 ${new Date().toLocaleTimeString('ko-KR')}`;
   if(!ok && token){$('core-title').textContent='연결을 확인하고 있어요.';$('core-subtitle').textContent='마지막 상태를 표시합니다. 새 명령은 확인 후 실행하세요.';$('core-signal').className='core-signal';}
@@ -131,8 +148,8 @@ function connection(ok) {
 async function refresh(force=false) {
   if(!token || loading)return;
   loading=true;
-  try {const s=await api('/api/state'); const wasOnline=online;current=s;connection(true);void worldView.update(s.world, !s.emergencyStop && s.modules.documents && !commandRequests?.pending && !commandRequests?.sending);$('pair-screen').hidden=true;if(force || !wasOnline || lastRevision!==s.revision){render(s);lastRevision=s.revision;}if(!questData || activeTab==='quests')void refreshQuests(force);}
-  catch(e){connection(false);if(force)notify(e.message);}
+  try {const s=await api('/api/state'); const wasOnline=online;current=s;connection(true);void worldView.update(s.world, !s.emergencyStop && s.modules.documents && !commandRequests?.pending && !commandRequests?.sending);$('pair-screen').hidden=true;if(force || !wasOnline || lastRevision!==s.revision){render(s);lastRevision=s.revision;if(activeTab==='studio')void studioView.refresh();}if(!questData || activeTab==='quests')void refreshQuests(force);}
+  catch(e){if(browserSession.active){connection(false);if(force)notify(e.message);}}
   finally{loading=false;}
 }
 function showTab(tab) {
@@ -186,7 +203,7 @@ async function refreshQuests(force=false) {
     questError=error.status===404?'연결한 본체에 목표 실행 업데이트가 아직 반영되지 않았습니다.':error.message;
     if(error.status===404)questLoadedRevision=revision;
   } finally {
-    if(epoch===questEpoch){questLoading=false;renderQuests();}
+    if(epoch===questEpoch&&browserSession.active){questLoading=false;renderQuests();}
   }
 }
 function questProviders() {return Array.isArray(questData?.providers)?questData.providers:[];}
@@ -511,7 +528,6 @@ async function perform(fn,button) {
   if(button?.disabled)return;if(button)button.disabled=true;
   try{await fn();await refresh(true);}catch(e){notify(e.name==='TimeoutError'?'응답을 확인하지 못했습니다. 작업 목록을 확인한 뒤 다시 시도하세요.':e.message);await refresh();}finally{if(button)button.disabled=false;}
 }
-$('pair-form').addEventListener('submit',async(e)=>{e.preventDefault();const b=e.submitter;b.disabled=true;$('pair-error').textContent='';token=$('pair-token').value.trim();try{current=await api('/api/state');sessionStorage.setItem('yeno-token',token);$('pair-token').value='';$('pair-screen').hidden=true;connection(true);render(current);lastRevision=current.revision;}catch(err){token='';$('pair-error').textContent=err.message || '연결할 수 없습니다.';}finally{b.disabled=false;}});
 $('command-form').addEventListener('submit',e=>{e.preventDefault();if(commandRequests?.pending){void submitCommand();return;}const text=$('command').value.trim(),type=$('command-type').value;if(!text)return;void submitCommand(type==='command'?'/api/commands':'/api/jobs',type==='command'?{text}:{type,text});});
 $('quest-form').addEventListener('submit',e=>{
   e.preventDefault();
@@ -582,14 +598,18 @@ $('source-import-form').addEventListener('submit',e=>{
   catch(error){$('source-import-error').textContent=error.message;return;}
   void submitSource('/api/sources/import',{sources:sourceImportPreview});
 });
-$('memory-form').addEventListener('submit',e=>{e.preventDefault();perform(async()=>{await api('/api/memory',{text:$('memory-text').value.trim(),requestId:requestId()});$('memory-text').value='';notify('기억을 저장했습니다.');},e.submitter);});
-$('snapshot-form').addEventListener('submit',e=>{e.preventDefault();perform(async()=>{await api('/api/snapshots',{label:$('snapshot-label').value.trim(),requestId:requestId()});$('snapshot-label').value='';notify('돌아갈 지점을 저장했습니다.');},e.submitter);});
+$('memory-form').addEventListener('submit',e=>{e.preventDefault();perform(async()=>{await durableMutation('/api/memory',{text:$('memory-text').value.trim()});$('memory-text').value='';notify('기억을 저장했습니다.');},e.submitter);});
+$('snapshot-form').addEventListener('submit',e=>{e.preventDefault();perform(async()=>{await durableMutation('/api/snapshots',{label:$('snapshot-label').value.trim()});$('snapshot-label').value='';notify('돌아갈 지점을 저장했습니다.');},e.submitter);});
 $('memory-search').addEventListener('input',renderMemories);
-$('global-stop').addEventListener('click',e=>perform(async()=>{const action=current.emergencyStop?'resume':'stop';await api('/api/control',{action,...(action==='resume'?{revision:current.revision}:{}),requestId:requestId()});notify(action==='stop'?'본체가 전체 멈춤을 확인했습니다.':'정지를 해제했습니다. 필요한 작업을 개별 재개하세요.');},e.currentTarget));
-$('concurrency').addEventListener('change',e=>perform(()=>api('/api/settings',{concurrency:Number(e.target.value),requestId:requestId()})));
-$('module-settings').addEventListener('change',e=>{if(e.target.dataset.module)perform(()=>api('/api/settings',{modules:{[e.target.dataset.module]:e.target.checked},requestId:requestId()}));});
+$('global-stop').addEventListener('click',e=>perform(async()=>{const action=current.emergencyStop?'resume':'stop';if(action==='stop')await api('/api/control',{action,requestId:requestId()});else await durableMutation('/api/control',{action,revision:current.revision});notify(action==='stop'?'본체가 전체 멈춤을 확인했습니다.':'정지를 해제했습니다. 필요한 작업을 개별 재개하세요.');},e.currentTarget));
+$('concurrency').addEventListener('change',e=>perform(()=>durableMutation('/api/settings',{concurrency:Number(e.target.value)})));
+$('module-settings').addEventListener('change',e=>{if(e.target.dataset.module)perform(()=>durableMutation('/api/settings',{modules:{[e.target.dataset.module]:e.target.checked}}));});
 $('compact-toggle').addEventListener('click',()=>{const compact=document.body.classList.toggle('compact');$('compact-toggle').textContent=compact?'펼치기':'작게';$('compact-toggle').setAttribute('aria-pressed',String(compact));});
-function disconnect(){worldView.reset();studioView.reset();resetQuests();token='';current=null;sessionStorage.removeItem('yeno-token');connection(false);$('pair-screen').hidden=false;}
+function clearConnection(){authEpoch++;browserSession.invalidate();worldView.reset();studioView.reset();resetQuests();token='';current=null;if(artifact?.url)URL.revokeObjectURL(artifact.url);artifact=null;$('artifact-video').pause();$('artifact-video').removeAttribute('src');$('artifact-content').textContent='';document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());document.querySelector('.shell').hidden=true;$('pair-screen').hidden=false;}
+async function disconnect(){
+  if(commandRequests?.sending||projectRequests?.sending||sourceRequests?.sending||questRequests?.sending||otherRequests?.sending||studioView.sending){notify('접수 응답을 기다리고 있습니다. 잠시 후 연결을 해제하세요.');return;}
+  try{await browserSession.logout();clearConnection();location.reload();}catch(error){notify(`연결 해제를 확인하지 못했습니다. ${error.message}`);}
+}
 $('disconnect').addEventListener('click',disconnect);$('disconnect-mobile').addEventListener('click',disconnect);
 $('reconnect').addEventListener('click',()=>refresh(true));
 document.addEventListener('click',e=>{
@@ -610,14 +630,14 @@ document.addEventListener('click',e=>{
   if(b.dataset.sourceCandidate && !b.disabled)prepareSource(b.dataset.sourceCandidate,'candidate');
   if(b.hasAttribute('data-source-list') && !b.disabled){showTab('control');void submitCommand('/api/commands',{text:'자료 목록'});}
   if(b.dataset.sourceProject && !b.disabled){showTab('projects');const card=[...document.querySelectorAll('[data-project-edit]')].find(button=>button.dataset.projectEdit===b.dataset.sourceProject)?.closest('article');card?.scrollIntoView({block:'center'});}
-  if(b.dataset.job)perform(()=>api(`/api/jobs/${encodeURIComponent(b.dataset.job)}/action`,{action:b.dataset.action,...(b.dataset.version&&b.dataset.version!=='undefined'?{revision:Number(b.dataset.version)}:{}),requestId:requestId()}),b);
+  if(b.dataset.job)perform(()=>durableMutation(`/api/jobs/${encodeURIComponent(b.dataset.job)}/action`,{action:b.dataset.action,...(b.dataset.version&&b.dataset.version!=='undefined'?{revision:Number(b.dataset.version)}:{})}),b);
   if(b.dataset.restore){selectedSnapshot=b.dataset.restore;$('restore-label').textContent=current.snapshots.find(s=>s.id===selectedSnapshot)?.label||'';$('restore-dialog').showModal();}
-  if(b.dataset.artifact)perform(async()=>{const r=await api(`/api/artifacts/${encodeURIComponent(b.dataset.artifact)}`,undefined,{raw:true});const blob=await r.blob();if(artifact?.url)URL.revokeObjectURL(artifact.url);artifact={blob,name:b.dataset.name||'BLACKHOLE-result.md',url:URL.createObjectURL(blob)};const video=blob.type.startsWith('video/mp4');$('artifact-title').textContent=artifact.name;$('artifact-video').hidden=!video;$('artifact-content').hidden=video;if(video){$('artifact-video').src=artifact.url;$('artifact-content').textContent='';}else{$('artifact-video').removeAttribute('src');$('artifact-content').textContent=await blob.text();}$('artifact-dialog').showModal();},b);
+  if(b.dataset.artifact)perform(async()=>{const epoch=authEpoch;const r=await api(`/api/artifacts/${encodeURIComponent(b.dataset.artifact)}`,undefined,{raw:true});const blob=await r.blob();const text=blob.type.startsWith('video/mp4')?'':await blob.text();if(epoch!==authEpoch||!token)return;if(artifact?.url)URL.revokeObjectURL(artifact.url);artifact={blob,name:b.dataset.name||'BLACKHOLE-result.md',url:URL.createObjectURL(blob)};const video=blob.type.startsWith('video/mp4');$('artifact-title').textContent=artifact.name;$('artifact-video').hidden=!video;$('artifact-content').hidden=video;if(video){$('artifact-video').src=artifact.url;$('artifact-content').textContent='';}else{$('artifact-video').removeAttribute('src');$('artifact-content').textContent=text;}$('artifact-dialog').showModal();},b);
 });
-$('confirm-restore').addEventListener('click',e=>perform(async()=>{await api(`/api/snapshots/${encodeURIComponent(selectedSnapshot)}/restore`,{confirm:true,requestId:requestId()});$('restore-dialog').close();notify('기억과 설정을 복원했습니다. 이전 상태도 보관했습니다.');},e.currentTarget));
+$('confirm-restore').addEventListener('click',e=>perform(async()=>{await durableMutation(`/api/snapshots/${encodeURIComponent(selectedSnapshot)}/restore`,{confirm:true});$('restore-dialog').close();notify('기억과 설정을 복원했습니다. 이전 상태도 보관했습니다.');},e.currentTarget));
 $('download-artifact').addEventListener('click',()=>{if(!artifact)return;const a=document.createElement('a');a.href=artifact.url;a.download=artifact.name;a.click();});
 $('artifact-dialog').addEventListener('close',()=>{$('artifact-video').pause();$('artifact-video').removeAttribute('src');if(artifact?.url)URL.revokeObjectURL(artifact.url);artifact=null;});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh(true);});
 window.addEventListener('online',()=>refresh(true));window.addEventListener('offline',()=>connection(false));
-showTab(questRequests?.pending?'quests':sourceRequests?.pending?'sources':projectRequests?.pending?'projects':'control');renderCommandRequest();renderProjectRequest();renderSourceRequest();renderQuests();if(token)refresh(true);setInterval(()=>{if(!document.hidden)refresh();},1500);
-})().catch(error=>{const result=document.getElementById('command-result');if(result){result.hidden=false;result.textContent=`조종석을 시작하지 못했습니다. 새로고침해 주세요. ${error.message}`;}});
+showTab(questRequests?.pending?'quests':sourceRequests?.pending?'sources':projectRequests?.pending?'projects':commandRequests?.pending?'control':'studio');renderCommandRequest();renderProjectRequest();renderSourceRequest();renderQuests();if(token)refresh(true);setInterval(()=>{if(!document.hidden)refresh();},1500);
+})().catch(error=>{const result=document.getElementById('pair-error');if(result){document.getElementById('pair-screen').hidden=false;result.textContent=`운영실을 시작하지 못했습니다. ${error.message}`;}});

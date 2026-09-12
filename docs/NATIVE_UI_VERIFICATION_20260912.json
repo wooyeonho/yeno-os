@@ -1,0 +1,82 @@
+{
+  "apk": {
+    "archiveArtifactId": 10300339810,
+    "archiveBytes": 16563637,
+    "archiveSha256": "a921d495890b300ddf89f09308df3ce929d54e35975fafce81319bb65af8463f",
+    "bytes": 59455729,
+    "deliveryFilename": "BLACKHOLE-Android-0.2.0.apk",
+    "file": "yeno-android-debug-1.apk",
+    "localArchiveAndApkHashesVerified": true,
+    "localV2CertificateVerified": true,
+    "nativeAbis": [
+      "arm64-v8a"
+    ],
+    "package": "kr.yeno.controller",
+    "same_signer_as_original_apk": false,
+    "sha256": "d41b31814cb5862ded83af0fed311f5d36c7dbcdffa00901185af6a402b55a55",
+    "signature_verified": true,
+    "signer_sha256": [
+      "91bf7eadd8baf1604fa469d70a2785b86963390337afa3c5312c3f0e638b8046"
+    ],
+    "source": "apps/controller/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk",
+    "version_code": 2000,
+    "version_name": "0.2.0"
+  },
+  "apkWorkflow": {
+    "completedAt": "2026-09-12T15:33:05Z",
+    "conclusion": "success",
+    "deviceVerified": false,
+    "runId": 34702041819,
+    "status": "completed",
+    "url": "https://github.com/wooyeonho/yeno-os/actions/runs/34702041819"
+  },
+  "checkedAt": "2026-09-12T15:20:54.644Z",
+  "checks": [
+    "pairing, studio load, place create, encrypted-store adapter receipt clearing",
+    "series/chapter create, native save dialog adapter, identical file readback",
+    "For-Ai real core job, artifact open and checksum, clipboard adapter",
+    "real Korean MP4 rendering, video element blob source, identical native-save adapter output",
+    "God Eye tab and bundled map asset",
+    "UI close/reload, vault unlock adapter, same saved place",
+    "real server device revocation and cleared local UI"
+  ],
+  "ciRegression": {
+    "durationMs": 73377.963444,
+    "fail": 0,
+    "pass": 286,
+    "skipReason": "CI에는 영상 검사에 필요한 한글 렌더러 구성이 없어 7개를 생략했다. 로컬에서는 실제 영상 렌더링을 필수로 두고 293개 모두 통과했다.",
+    "skipped": 7,
+    "tests": 293
+  },
+  "ciUi": {
+    "nativeIpc": "simulated",
+    "passed": true,
+    "videoRendererAvailable": false
+  },
+  "compiledCargoLock": {
+    "artifactId": 10300469365,
+    "bytes": 171966,
+    "path": "docs/builds/android-94f62586-Cargo.lock",
+    "sha256": "2d1a48e85e18002149fefeee73cc647e2431a9a9f5cbc25683ae1c5b64336dd2"
+  },
+  "externalMessagesSent": 0,
+  "newPaidModelCalls": 0,
+  "ok": true,
+  "productionChanged": false,
+  "regression": {
+    "cancelled": 0,
+    "durationMs": 29011.583716,
+    "fail": 0,
+    "pass": 293,
+    "skipped": 0,
+    "tests": 293
+  },
+  "scope": "Built HTML/JS with real local core and simulated native IPC; not Android device verification",
+  "sourceCommit": "94f6258695e5e914ff36037246548f2e1934db93",
+  "video": {
+    "bytes": 38632,
+    "player": "source attached only; playback simulated",
+    "sha256": "8f25374f6db6676c945ae31a574ab23332bcad59299d74f7e9959da698772173"
+  },
+  "videoRendererAvailable": true
+}

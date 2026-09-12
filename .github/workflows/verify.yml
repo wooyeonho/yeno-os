@@ -19,3 +19,7 @@ jobs:
           node-version: '24'
       - name: Run runtime tests
         run: npm test
+      - name: Install locked UI verification dependencies
+        run: npm ci --prefix apps/controller --ignore-scripts --no-audit --no-fund
+      - name: Verify browser login and durable request recovery
+        run: npm run verify:web

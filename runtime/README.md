@@ -1,4 +1,10 @@
-# YENO OS runtime 0.1.1
+# YENO OS runtime
+
+Current operating-room release: see [production studio](../docs/PRODUCTION_STUDIO_20260912.md) and [live evidence](../docs/PRODUCTION_STUDIO_LIVE_20260912.json). The existing Koyeb deployment serves real MP4 rendering, For-Ai audits, private places, scoped meal responses, novel chapters and USGS/NASA feeds. Node24 is the verified runtime. `Dockerfile.koyeb` installs FFmpeg, Python3, Pillow, fontTools and Nanum; other local installations must supply these tools before video is available. No model key is needed for the deterministic video renderer or page-structure audit.
+
+New authenticated routes: `/api/studio`, `/api/studio/export`, `/api/studio/generate`, `/api/studio/import`, `/api/production/run`, `/api/capabilities`, `/api/hankki/invite`, `/api/hankki/revoke`. The public `/hankki/answer` page uses a scoped `Checkin` credential for `/api/hankki/checkins/:id`; it never receives owner contact details. Studio data and MP4/JSON artifacts participate in the existing encrypted backup and isolated restore workflow. Full-backup capacity is reserved before new production jobs are accepted.
+
+The following describes the original runtime foundation; current functionality and deployment evidence above take precedence.
 
 Start with [START_HERE_KO.md](START_HERE_KO.md). Mobile setup: [PHONE_SETUP.md](PHONE_SETUP.md).
 

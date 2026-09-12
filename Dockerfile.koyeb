@@ -15,6 +15,7 @@ COPY runtime/public/ ./runtime/public/
 COPY scripts/start-koyeb.sh ./scripts/
 COPY scripts/verify-quest-live.mjs ./scripts/
 COPY scripts/verify-production-live.mjs ./scripts/
+COPY scripts/verify-web-live.mjs ./scripts/
 COPY scripts/render-video-runtime.py ./scripts/
 
 ENV NODE_ENV=production \

@@ -17,10 +17,13 @@ export function createCommandRequest({storage, transport, key = DEFAULT_KEY,
   if (stored !== null && !validRequest(pending, allowPath)) throw new Error('보관된 명령 요청을 읽을 수 없습니다.');
   let inFlight = null;
   const copy = (value) => value === null ? null : structuredClone(value);
-  const clear = () => {
+  const clear = async () => {
     // Keep the in-memory request if storage cannot be cleared. Retrying the
     // same accepted request remains safe under the server's idempotency ledger.
+    const saved = storage.getItem(key);
     storage.removeItem(key);
+    try { if (storage.flush) await storage.flush(); }
+    catch (error) { if (saved !== null) storage.setItem(key, saved); throw error; }
     pending = null;
   };
 
@@ -44,8 +47,10 @@ export function createCommandRequest({storage, transport, key = DEFAULT_KEY,
       // Defer transport until inFlight is assigned, preventing duplicate sends.
       inFlight = Promise.resolve().then(async () => {
         try {
+          // Native storage encrypts the staged request before any network write.
+          if (storage.flush) await storage.flush();
           const result = await transport(request.path, copy(request.body));
-          clear();
+          await clear();
           return {kind: 'accepted', result, request};
         } catch (error) {
           // A timeout, lost response, invalid success body, or 5xx can all follow
@@ -58,7 +63,7 @@ export function createCommandRequest({storage, transport, key = DEFAULT_KEY,
           const definite = Number.isInteger(error?.status) && error.status >= 400 &&
             error.status < 500 && ![401, 403, 408, 410].includes(error.status);
           if (definite) {
-            try { clear(); }
+            try { await clear(); }
             catch (storageError) { return {kind: 'uncertain', error: storageError, request}; }
             return {kind: 'rejected', error, request};
           }
