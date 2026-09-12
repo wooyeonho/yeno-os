@@ -1,0 +1,194 @@
+{
+  "after": {
+    "aiAttempts": 6,
+    "jobs": 51,
+    "projects": 70,
+    "sources": 110
+  },
+  "answer": {
+    "bytes": 8434,
+    "id": "5c2773da-8884-4d39-bdf8-fe79b8fcd6eb",
+    "sha256": "9464944d7e39745b3ffa3108b1b8c6a33bc3d4a547e475270a9daaad76196781"
+  },
+  "at": "2026-09-12T17:57:10.631Z",
+  "before": {
+    "aiAttempts": 5,
+    "automaticReviews": false,
+    "dailyLimit": 20,
+    "emergencyStop": false,
+    "jobs": 50,
+    "projects": 70,
+    "sources": 110
+  },
+  "checkId": "blackhole-research-20260912-v1",
+  "checks": [
+    "one durable job for exact request replay",
+    "raw API response hashes verified",
+    "bounded literature evidence and one tool-free real model answer",
+    "canonical tracks and previous records preserved",
+    "prior Korean MP4 unchanged"
+  ],
+  "claimStatus": "research_draft_not_scientific_solution",
+  "deployment": {
+    "commit": "cab10ddcaa2dfe831fc9c93e01e54e6447280d68",
+    "instance": "13abfe46",
+    "serviceId": "7fb597dd-726e-45ee-bfde-7f695f6dc8ba",
+    "sourceCommit": "e2d9053a7fb5a2b0b0a1997e8544c9de0ea54d78",
+    "status": "Healthy / Active",
+    "tree": "5407b5170838df506555f092f3302f0d85737ba3",
+    "id": "e5fc0aad-8fb4-4883-b6a3-df7e2a5d6e92"
+  },
+  "evidence": {
+    "id": "b77a5a26-7521-4ec5-8b75-05bc892b026c",
+    "searches": [
+      {
+        "error": null,
+        "provider": "europepmc",
+        "resultCount": 2,
+        "status": "ok"
+      },
+      {
+        "error": null,
+        "provider": "crossref",
+        "resultCount": 2,
+        "status": "ok"
+      }
+    ],
+    "sha256": "c6efb37fe5bdf141d4982e3982c371c3d12b25b43559ed13f9f5c0593e1da039",
+    "sources": [
+      {
+        "id": "S1",
+        "readLevel": "metadata",
+        "title": "Methodological considerations for interpreting a scoping review of pediatric long COVID biomarkers.",
+        "url": "https://doi.org/10.1007/s00431-026-06991-7"
+      },
+      {
+        "id": "S2",
+        "readLevel": "metadata",
+        "title": "Response to letter: Methodological considerations for interpreting a scoping review of pediatric long COVID biomarkers.",
+        "url": "https://doi.org/10.1007/s00431-026-06992-6"
+      },
+      {
+        "id": "S3",
+        "readLevel": "abstract",
+        "title": "Exploring potential biomarkers and therapeutic targets of long COVID-associated inflammatory cardiomyopathy",
+        "url": "https://doi.org/10.3389/fmed.2023.1191354"
+      },
+      {
+        "id": "S4",
+        "readLevel": "metadata",
+        "title": "Investigating biomarkers: a path to understanding long-COVID?",
+        "url": "https://doi.org/10.5603/mrj.102231"
+      }
+    ]
+  },
+  "executionDeployment": {
+    "commit": "fec3f96ca387ed1a36e98826996d21ab4f083d64",
+    "id": "5ead60bb-e161-4f2f-b280-8a87aed69e9e",
+    "instance": "2c0e45d1",
+    "serviceId": "7fb597dd-726e-45ee-bfde-7f695f6dc8ba",
+    "sourceCommit": "608949aa61a5283b5417482a7b1e8c29d89a909a",
+    "status": "Healthy / Active",
+    "tree": "3cb69e30347ee4d946cf2fa05cd8f0728b8ff741"
+  },
+  "jobId": "2fe32fcc-163f-466a-8f1e-aa0b8d96b1d0",
+  "model": "gemini-3.8-flash",
+  "modelCalls": 1,
+  "newModelCalls": 1,
+  "origin": "https://global-iris-gyeol-98386a17.koyeb.app",
+  "provider": "gemini",
+  "questId": "f3b30aa0-6beb-47d5-8270-ae603df03d9a",
+  "raw": [
+    {
+      "bytes": 6004,
+      "provider": "europepmc",
+      "sha256": "1bd97c76aceef8e18edede96ec3fb9d96cd54394e61fd2d08ce25ac5c4e4bb63"
+    },
+    {
+      "bytes": 28555,
+      "provider": "crossref",
+      "sha256": "73e32c3219b04718132245f675aaf73463ddd4b0569e0c03bbdcc24c81bb5b8a"
+    }
+  ],
+  "redeploymentRecheck": {
+    "after": {
+      "aiAttempts": 6,
+      "jobs": 51,
+      "projects": 70,
+      "sources": 110
+    },
+    "answerSha256": "9464944d7e39745b3ffa3108b1b8c6a33bc3d4a547e475270a9daaad76196781",
+    "at": "2026-09-12T18:05:56.560Z",
+    "before": {
+      "aiAttempts": 6,
+      "automaticReviews": false,
+      "dailyLimit": 20,
+      "emergencyStop": false,
+      "jobs": 51,
+      "projects": 70,
+      "sources": 110
+    },
+    "checks": [
+      "one durable job for exact request replay",
+      "raw API response hashes verified",
+      "bounded literature evidence and one tool-free real model answer",
+      "canonical tracks and previous records preserved",
+      "prior Korean MP4 unchanged"
+    ],
+    "evidenceSha256": "c6efb37fe5bdf141d4982e3982c371c3d12b25b43559ed13f9f5c0593e1da039",
+    "jobId": "2fe32fcc-163f-466a-8f1e-aa0b8d96b1d0",
+    "newModelCalls": 0,
+    "raw": [
+      {
+        "bytes": 6004,
+        "provider": "europepmc",
+        "sha256": "1bd97c76aceef8e18edede96ec3fb9d96cd54394e61fd2d08ce25ac5c4e4bb63"
+      },
+      {
+        "bytes": 28555,
+        "provider": "crossref",
+        "sha256": "73e32c3219b04718132245f675aaf73463ddd4b0569e0c03bbdcc24c81bb5b8a"
+      }
+    ]
+  },
+  "status": "completed",
+  "tracks": [
+    {
+      "code": "E01",
+      "projectId": "bfb7d3b8-8716-42dc-8428-cb2cf06a8261"
+    },
+    {
+      "code": "E02",
+      "projectId": "7b482868-48ee-407d-aca5-e6232236e4b0"
+    },
+    {
+      "code": "E03",
+      "projectId": "f03d930a-f970-4cad-b3f8-449c7d39f750"
+    },
+    {
+      "code": "E04",
+      "projectId": "800cfca9-332e-4bd2-8952-a4820a1a11f0"
+    },
+    {
+      "code": "E05",
+      "projectId": "dbc92e0b-068e-4164-918b-02f85c55d4f2"
+    },
+    {
+      "code": "E06",
+      "projectId": "b8dec37b-6c83-4eee-8f40-48aa2f36ccd5"
+    },
+    {
+      "code": "E07",
+      "projectId": "380f0c60-7649-4261-a34f-405153a8d2a2"
+    },
+    {
+      "code": "E08",
+      "projectId": "94d1d724-2c7a-49ea-a2d7-8e871ba2af4b"
+    },
+    {
+      "code": "E09",
+      "projectId": "015299c2-97c0-44b6-8d36-85f87ce29d8d"
+    }
+  ],
+  "unknownCalls": 0
+}

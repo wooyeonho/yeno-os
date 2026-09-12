@@ -4,6 +4,7 @@ const {sourceMatches,sourceReferenceNames} = await import('/source-reference-lab
 const {sourceDestination,sourceCoverage} = await import('/absorption-routing.mjs');
 const {createWorldView} = await import('/world-view.mjs');
 const {createStudioView} = await import('/studio-view.mjs');
+const {createAutopilotView} = await import('/autopilot-view.mjs');
 const {createResearchView} = await import('/research-view.mjs');
 const {connectBrowser,enableInstall} = await import('/web-client.mjs');
 const $ = (id) => document.getElementById(id);
@@ -61,8 +62,9 @@ const worldView=createWorldView({load:()=>api('/api/world'),submit:()=>submitCom
 const studioView=createStudioView({root:$('studio-root'),api,storage:requestStorage,notify,onJobCreated:()=>{showTab('control');void refresh(true);}});
 const researchView=createResearchView({root:$('research-root'),api,storage:requestStorage,notify,onJobCreated:()=>{void refresh(true);},onOpenJob:()=>{showTab('control');void refresh(true);},onOpenArtifact:id=>perform(()=>openArtifact(id)),onJobAction:(id,action)=>perform(()=>durableMutation(`/api/jobs/${id}/action`,{action}))});
 const requestId=()=>crypto.randomUUID();
+const autopilotView=createAutopilotView({root:$('autopilot-root'),notify,onControl:async enabled=>{await durableMutation('/api/autopilot',{enabled});await refresh(true);},onOpenJob:()=>{showTab('control');void refresh(true);},onOpenArtifact:id=>perform(()=>openArtifact(id))});
 let otherRequests,otherStorageError;
-try{otherRequests=createCommandRequest({storage:requestStorage,key:'blackhole-pending-other-v1',allowPath:path=>['/api/memory','/api/snapshots','/api/settings','/api/control'].includes(path)||/^\/api\/(jobs|snapshots)\/[a-f0-9-]+\/(action|restore)$/.test(path),transport:(path,body)=>api(path,body)});}catch(error){otherStorageError=error;}
+try{otherRequests=createCommandRequest({storage:requestStorage,key:'blackhole-pending-other-v1',allowPath:path=>['/api/memory','/api/snapshots','/api/settings','/api/control','/api/autopilot'].includes(path)||/^\/api\/(jobs|snapshots)\/[a-f0-9-]+\/(action|restore)$/.test(path),transport:(path,body)=>api(path,body)});}catch(error){otherStorageError=error;}
 function renderOtherRequest(){const pending=otherRequests?.pending;$('other-request').hidden=!pending&&!otherStorageError;$('other-request-message').textContent=otherStorageError?'작업 보관함을 읽지 못해 새 저장을 멈췄습니다.':pending?'이전 저장·설정 변경의 접수 여부를 확인해야 합니다. 같은 요청으로 확인하세요.':'';$('retry-other').disabled=!online||!!otherStorageError||!!otherRequests?.sending;}
 async function durableMutation(path,body){
   if(otherStorageError)throw otherStorageError;
@@ -143,6 +145,7 @@ async function submitCommand(path,body) {
 function connection(ok) {
   studioView.setState(current?{...current,online:ok}:{online:ok});
   researchView.updateState(current?{...current,online:ok}:{online:ok});
+  autopilotView.updateState(current?{...current,online:ok}:{online:ok});
   online=ok;renderOtherRequest(); $('connection-dot').classList.toggle('online',ok);$('connection-text').textContent=ok?'실행 본체 연결됨':'연결 확인 필요';
   $('offline-banner').hidden=ok || !token; renderCommandRequest();renderProjectRequest();renderSourceRequest();renderQuestRequest(); $('global-stop').disabled=!ok;
   if(ok)$('last-seen').textContent=`마지막 확인 ${new Date().toLocaleTimeString('ko-KR')}`;
@@ -158,7 +161,7 @@ async function refresh(force=false) {
 function showTab(tab) {
   activeTab=tab;for(const el of document.querySelectorAll('.tab-panel'))el.hidden=el.id!==`tab-${tab}`;
   for(const el of document.querySelectorAll('.nav')){el.classList.toggle('active',el.dataset.tab===tab);el.setAttribute('aria-current',el.dataset.tab===tab?'page':'false');}
-  $('page-title').textContent={control:'조종석',quests:'목표 실행',studio:'운영실',research:'문제의 답 · EUREKA',world:'세계 현황',projects:'프로젝트',sources:'자료',memory:'기억',recovery:'복구',settings:'능력·설정'}[tab];
+  $('page-title').textContent={autopilot:'자동 운영',control:'조종석',quests:'목표 실행',studio:'운영실',research:'문제의 답 · EUREKA',world:'세계 현황',projects:'프로젝트',sources:'자료',memory:'기억',recovery:'복구',settings:'능력·설정'}[tab];
   if(tab==='quests')void refreshQuests(true);
   if(tab==='studio')void studioView.refresh();
   if(tab==='research')void researchView.refresh();
@@ -610,7 +613,7 @@ $('global-stop').addEventListener('click',e=>perform(async()=>{const action=curr
 $('concurrency').addEventListener('change',e=>perform(()=>durableMutation('/api/settings',{concurrency:Number(e.target.value)})));
 $('module-settings').addEventListener('change',e=>{if(e.target.dataset.module)perform(()=>durableMutation('/api/settings',{modules:{[e.target.dataset.module]:e.target.checked}}));});
 $('compact-toggle').addEventListener('click',()=>{const compact=document.body.classList.toggle('compact');$('compact-toggle').textContent=compact?'펼치기':'작게';$('compact-toggle').setAttribute('aria-pressed',String(compact));});
-function clearConnection(){authEpoch++;browserSession.invalidate();worldView.reset();studioView.reset();researchView.reset();resetQuests();token='';current=null;if(artifact?.url)URL.revokeObjectURL(artifact.url);artifact=null;$('artifact-video').pause();$('artifact-video').removeAttribute('src');$('artifact-content').textContent='';document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());document.querySelector('.shell').hidden=true;$('pair-screen').hidden=false;}
+function clearConnection(){authEpoch++;browserSession.invalidate();worldView.reset();studioView.reset();researchView.reset();autopilotView.reset();resetQuests();token='';current=null;if(artifact?.url)URL.revokeObjectURL(artifact.url);artifact=null;$('artifact-video').pause();$('artifact-video').removeAttribute('src');$('artifact-content').textContent='';document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());document.querySelector('.shell').hidden=true;$('pair-screen').hidden=false;}
 async function disconnect(){
   if(commandRequests?.sending||projectRequests?.sending||sourceRequests?.sending||questRequests?.sending||otherRequests?.sending||studioView.sending||researchView.sending){notify('접수 응답을 기다리고 있습니다. 잠시 후 연결을 해제하세요.');return;}
   try{await browserSession.logout();clearConnection();location.reload();}catch(error){notify(`연결 해제를 확인하지 못했습니다. ${error.message}`);}
@@ -644,5 +647,5 @@ $('download-artifact').addEventListener('click',()=>{if(!artifact)return;const a
 $('artifact-dialog').addEventListener('close',()=>{$('artifact-video').pause();$('artifact-video').removeAttribute('src');if(artifact?.url)URL.revokeObjectURL(artifact.url);artifact=null;});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh(true);});
 window.addEventListener('online',()=>refresh(true));window.addEventListener('offline',()=>connection(false));
-showTab(researchView.pending?'research':questRequests?.pending?'quests':sourceRequests?.pending?'sources':projectRequests?.pending?'projects':commandRequests?.pending?'control':'studio');renderCommandRequest();renderProjectRequest();renderSourceRequest();renderQuests();if(token)refresh(true);setInterval(()=>{if(!document.hidden)refresh();},1500);
+showTab(studioView.pending?'studio':researchView.pending?'research':questRequests?.pending?'quests':sourceRequests?.pending?'sources':projectRequests?.pending?'projects':commandRequests?.pending?'control':'autopilot');renderCommandRequest();renderProjectRequest();renderSourceRequest();renderQuests();if(token)refresh(true);setInterval(()=>{if(!document.hidden)refresh();},1500);
 })().catch(error=>{const result=document.getElementById('pair-error');if(result){document.getElementById('pair-screen').hidden=false;result.textContent=`운영실을 시작하지 못했습니다. ${error.message}`;}});

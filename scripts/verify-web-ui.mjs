@@ -54,10 +54,25 @@ async function close(page){page.window.dispatchEvent(new page.window.Event('page
 const proof={at:new Date().toISOString(),scope:'temporary actual HTTP core; JSDOM/cookies/locks simulated; no provider calls',checks:[]};
 try{
   dom=openDom();await until(()=>reads.includes('/api/web/session'),'login form ready');submit('#pair-form',{'pair-token':owner});
-  await until(()=>$('#pair-screen').hidden&&$('.studio-status')?.textContent.includes('본체 확인'),'cookie login and studio');
-  assert.equal($('#tab-studio').hidden,false);assert.equal(dom.window.document.cookie,'');assert.ok(![...persisted.values()].join('').includes(owner));
-  proof.checks.push('owner key exchanged for HttpOnly cookie; no owner key in web storage; operating studio default');
-  click('[data-studio-tab="places"]');await until(()=>$('form[data-studio-form="place"] button[type="submit"]')&&!$('form[data-studio-form="place"] button[type="submit"]').disabled,'place form');
+  await until(()=>$('#pair-screen').hidden&&$('.autopilot-status')?.textContent.includes('자동'),'cookie login and automatic operation');
+  assert.equal($('#tab-autopilot').hidden,false);assert.equal(dom.window.document.cookie,'');assert.ok(![...persisted.values()].join('').includes(owner));
+  proof.checks.push('owner key exchanged for HttpOnly cookie; no owner key in web storage; automatic operation default');
+  const settings=async(modules,id)=>{const r=await dom.window.fetch('/api/settings',{method:'POST',headers:{'X-Yeno-Browser':'1','Content-Type':'application/json'},body:JSON.stringify({modules,requestId:id})});assert.equal(r.status,200);};
+  await settings({documents:false},'web-autopilot-documents-off');
+  losePath='/api/autopilot';click('[data-autopilot-action="control"]');
+  await until(()=>!$('#other-request').hidden&&!$('#retry-other').disabled,'autopilot lost reply retained');
+  const autoRequest=calls.filter(call=>call.path==='/api/autopilot').at(-1);
+  await close(dom);dom=openDom();
+  await until(()=>$('#pair-screen').hidden&&!$('#other-request').hidden&&!$('#retry-other').disabled,'autopilot pending after reopen');
+  click('#retry-other');await until(()=>$('#other-request').hidden,'autopilot same request confirmed');
+  assert.deepEqual(calls.filter(call=>call.path==='/api/autopilot').at(-1),autoRequest);
+  await until(()=>$('[data-autopilot-action="control"]').textContent==='자동 운영 멈춤'&&!$('[data-autopilot-action="control"]').disabled,'server confirms autopilot enabled');
+  click('[data-autopilot-action="control"]');
+  await until(()=>$('[data-autopilot-action="control"]').textContent==='자동 운영 시작'&&!$('[data-autopilot-action="control"]').disabled,'server confirms autopilot disabled');
+  await settings({documents:true},'web-autopilot-documents-on');
+  proof.checks.push('autopilot UI control committed; reply lost; browser reopened and same ID confirmed; stop confirmed; no task/model calls');
+
+  click('[data-tab="studio"]');click('[data-studio-tab="places"]');await until(()=>$('form[data-studio-form="place"] button[type="submit"]')&&!$('form[data-studio-form="place"] button[type="submit"]').disabled,'place form');
   submit('form[data-studio-form="place"]',{title:'브라우저에서 저장한 장소',address:'',note:'처음 메모',url:'',latitude:'',longitude:''});
   await until(()=>$('.studio-pane').textContent.includes('처음 메모'),'place saved');
   const first=dom;dom=openDom();await until(()=>$('#pair-error').textContent.includes('다른 탭'),'second tab denied');await close(dom);dom=first;
@@ -79,7 +94,7 @@ try{
   losePath='/api/web/logout';click('#disconnect');await until(()=>$('#toast').textContent.includes('연결 해제를 확인하지 못했습니다'),'lost logout response');assert.equal(jar.getCookieStringSync(origin),'');
   const firstLogout=calls.filter(call=>call.path==='/api/web/logout').at(-1);
   await close(dom);const readsBefore=reads.length;dom=openDom();await until(()=>reads.length>readsBefore,'logged-out session read');await new Promise(resolve=>setTimeout(resolve,40));assert.equal($('#pair-screen').hidden,false);
-  submit('#pair-form',{'pair-token':owner});await until(()=>$('#pair-screen').hidden&&$('.studio-status')?.textContent.includes('본체 확인'),'new browser login after uncertain logout');
+  submit('#pair-form',{'pair-token':owner});await until(()=>$('#pair-screen').hidden&&$('.autopilot-status')?.textContent.includes('자동'),'new browser login after uncertain logout');
   click('#disconnect');await until(()=>!$('#pair-screen').hidden,'new device logout');
   const secondLogout=calls.filter(call=>call.path==='/api/web/logout').at(-1);assert.notEqual(secondLogout.body.deviceId,firstLogout.body.deviceId);assert.notEqual(secondLogout.body.requestId,firstLogout.body.requestId);assert.equal(jar.getCookieStringSync(origin),'');
   assert.equal(errors.length,0,errors.join(';'));proof.checks.push('lost logout response then new login; per-device logout identity; cookie removed and private UI hidden');

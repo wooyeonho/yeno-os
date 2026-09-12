@@ -12,6 +12,7 @@ import {validateAgentJournal} from './agent.mjs';
 import {validateBotAssignment} from './project-bots.mjs';
 import {validateQuestState} from './quests.mjs';
 import {emptyStudio,validateStudio} from './studio.mjs';
+import {initialAutopilot,validateAutopilot,validateAutopilotJob} from './autopilot.mjs';
 
 export const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 export const uid = () => crypto.randomUUID();
@@ -27,7 +28,7 @@ export function atomicWrite(file, content) {
 export function initialState() {
  return {revision:0, emergencyStop:false, concurrency:1,
  modules:{memory:true,documents:true,diagnostics:true,ai:false},
- jobs:[], quests:[], outcomes:[], studio:emptyStudio(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem()};
+ jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem()};
 }
 function initializeQuestCollections(state) {
  // Missing collections identify older stores. Present malformed data must fail
@@ -35,6 +36,9 @@ function initializeQuestCollections(state) {
  if(!Object.hasOwn(state,'quests'))state.quests=[];
  if(!Object.hasOwn(state,'outcomes'))state.outcomes=[];
  if(!Object.hasOwn(state,'studio'))state.studio=emptyStudio();
+ if(!Object.hasOwn(state,'autopilot'))state.autopilot=initialAutopilot();
+ validateAutopilot(state.autopilot);
+ for(const job of state.jobs)validateAutopilotJob(job,state);
  validateStudio(state.studio);
  validateQuestState(state);
  return state;
@@ -77,7 +81,7 @@ export function openStore(directory) {
  if(!Object.hasOwn(state,'discovery'))state.discovery=initialDiscovery();
  if(!Object.hasOwn(state,'ecosystem'))state.ecosystem=initialEcosystem();
  initializeQuestCollections(state);
- if(recovered){state.discovery.enabled=false;state.ecosystem.enabled=false;}
+ if(recovered){state.discovery.enabled=false;state.ecosystem.enabled=false;state.autopilot.enabled=false;}
  // Keep accepted identities independently of the bounded response cache.
  // Existing hashes migrate unchanged; IDs evicted by older runtimes cannot
  // be reconstructed from a job alone and are not claimed as recovered.

@@ -1,0 +1,73 @@
+{
+  "at": "2026-09-12T21:09:42.419736+00:00",
+  "scope": "local verification; provider/public feeds synthetic unless explicitly stated; not physical phone acceptance",
+  "tests": {
+    "passed": 365,
+    "failed": 0,
+    "skipped": 0,
+    "durationMs": 30631.65664
+  },
+  "web": {
+    "at": "2026-09-12T21:05:18.949Z",
+    "scope": "temporary actual HTTP core; JSDOM/cookies/locks simulated; no provider calls",
+    "checks": [
+      "owner key exchanged for HttpOnly cookie; no owner key in web storage; automatic operation default",
+      "autopilot UI control committed; reply lost; browser reopened and same ID confirmed; stop confirmed; no task/model calls",
+      "second tab blocked; accepted write response lost; close/reopen; same request ID replay; exactly two places",
+      "memory mutation survives browser close; exact ID replay without duplicate",
+      "lost logout response then new login; per-device logout identity; cookie removed and private UI hidden"
+    ]
+  },
+  "researchUiRegression": {
+    "at": "2026-09-12T21:06:55.782Z",
+    "scope": "shipped web app and actual temporary HTTP core; JSDOM/cookies/locks and external API replies simulated; zero paid calls",
+    "checks": [
+      "cookie login; research navigation; canonical nine tracks; actual POST committed before simulated reply loss; scoped pending request persisted",
+      "close/reopen with same cookie and exact question; pending research opens automatically; same request ID replay; one job, one quest and one simulated model call",
+      "root artifact dialog opens answer with [S1] and source links; answer download matches; both raw JSON dialogs/downloads preserve exact source bytes",
+      "execution-record callback navigates correctly; settled result survives another tab close/reopen without another research submission or model call"
+    ],
+    "modelCalls": 1,
+    "evidenceCalls": 2,
+    "paidCalls": 0,
+    "jobs": 1,
+    "quests": 1,
+    "preservedProjects": 9,
+    "artifacts": 4,
+    "rawFiles": [
+      {
+        "name": "research-europepmc.json",
+        "sha256": "e32bf0cadeb8a6472af4afd5bb7d8f920a6fed728af7500cc201309d0c36d936"
+      },
+      {
+        "name": "research-crossref.json",
+        "sha256": "901c2194c3e64236ac3dca93d2d6fb09477c7b69730ced73125a9eaf501a6f49"
+      }
+    ]
+  },
+  "actualRender": {
+    "status": "rendered",
+    "checkedAt": "2026-09-12T21:00:34.949Z",
+    "source": "mock literature metadata; actual Korean renderer",
+    "sceneCount": 5,
+    "seconds": 25,
+    "result": {
+      "durationSeconds": 25,
+      "width": 720,
+      "height": 1280,
+      "fps": 24,
+      "bytes": 363486,
+      "mimeType": "video/mp4",
+      "sha256": "0e9a3bcea922f78b4f0b979bba1a7c4d0d0ef18f44bf6626a478f17fba2feaf7",
+      "codec": "h264",
+      "audio": false,
+      "providerCalls": 0,
+      "published": false,
+      "inputSha256": "a9bd2021de36a2cdf760df8642e507c81dd06420a2ad4251bbc3bf749b1e1b68",
+      "fontFamily": "NanumGothic",
+      "fontSha256": "76f45ef4a6bcff344c837c95a7dcc26e017e38b5846d5ae0cdcb5b86be2e2d31",
+      "fontLicense": "https://github.com/google/fonts/blob/main/ofl/nanumgothic/OFL.txt"
+    }
+  },
+  "newPaidCalls": 0
+}

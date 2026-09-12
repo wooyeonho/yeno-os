@@ -15,6 +15,7 @@ import {emptyStudio,validateStudio} from './studio.mjs';
 import {validateVideoInput} from './video.mjs';
 import {validateForAiInput} from './forai.mjs';
 import {validateResearchRequest,validateResearchBundle} from './research.mjs';
+import {initialAutopilot,validateAutopilot,validateAutopilotJob} from './autopilot.mjs';
 
 export const BACKUP_MAX_PLAINTEXT_BYTES = 16 * 1024 * 1024;
 export const BACKUP_MAX_ARCHIVE_BYTES = BACKUP_MAX_PLAINTEXT_BYTES + 36;
@@ -23,7 +24,7 @@ const MAGIC = Buffer.from('YENOBK1\n');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const HASH = /^[a-f0-9]{64}$/;
 const STATE_KEYS = ['revision', 'emergencyStop', 'concurrency', 'modules', 'jobs', 'memories', 'snapshots', 'events', 'requests', 'artifacts', 'devices', 'projects', 'sources'];
-const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt', 'productionEvidence', 'studioSeriesId', 'studioChapterId', 'researchRequest', 'researchEvidenceId'];
+const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt', 'productionEvidence', 'studioSeriesId', 'studioChapterId', 'researchRequest', 'researchEvidenceId', 'autopilot'];
 const fail = message => { throw new Error(`Backup: ${message}`); };
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = (value, min, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value) && value >= min && value <= max;
@@ -48,7 +49,9 @@ function memories(value) {
   }
 }
 function validateState(state) {
-  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio'], STATE_KEYS);
+  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot'], STATE_KEYS);
+  if(!Object.hasOwn(state,'autopilot'))state.autopilot=initialAutopilot();
+  validateAutopilot(state.autopilot);
   if (!Object.hasOwn(state, 'quests')) state.quests = [];
   if (!Object.hasOwn(state, 'outcomes')) state.outcomes = [];
   if (!Object.hasOwn(state, 'studio')) state.studio = emptyStudio();
@@ -63,6 +66,7 @@ function validateState(state) {
   if (!Array.isArray(state.jobs) || !Array.isArray(state.snapshots) || !Array.isArray(state.events) || !record(state.requests) || !record(state.devices) || !record(state.artifacts)) fail('invalid state collections');
   const jobs = new Map(), references = new Set();
   for (const job of state.jobs) {
+    validateAutopilotJob(job,state);
     keys(job, JOB_KEYS, ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts']);
     if (!UUID.test(job.id) || jobs.has(job.id) || !string(job.title, 160) || !string(job.input, job.type==='forai'?160000:80000) || !['document', 'diagnostics', 'evolution', 'ai', 'agent', 'world', 'video', 'forai'].includes(job.type) || !['queued', 'running', 'paused', 'completed', 'failed', 'cancelled'].includes(job.status) || !integer(job.step, 0, 3) || job.totalSteps !== 3 || !integer(job.version, 1, Number.MAX_SAFE_INTEGER - 1) || !Array.isArray(job.artifacts) || (job.error !== null && !string(job.error))) fail('invalid job');
     if(job.type==='video')validateVideoInput(JSON.parse(job.input));
@@ -110,8 +114,8 @@ function validateState(state) {
   if (artifactEntries.length > BACKUP_MAX_ARTIFACTS || artifactEntries.length !== references.size) fail('invalid artifact count or references');
   for (const [id, artifact] of artifactEntries) {
     keys(artifact, ['id', 'name', 'filename', 'sha256', 'bytes', 'jobId','mimeType'], ['id','name','filename','sha256','bytes','jobId']);
-    const extension=artifact.mimeType==='video/mp4'?'mp4':artifact.mimeType==='application/json'?'json':'md';
-    if(Object.hasOwn(artifact,'mimeType')&&!['video/mp4','application/json'].includes(artifact.mimeType))fail('invalid artifact media type');
+    const extension=artifact.mimeType==='video/mp4'?'mp4':artifact.mimeType==='application/json'?'json':artifact.mimeType==='text/csv; charset=utf-8'?'csv':artifact.mimeType==='text/html; charset=utf-8'?'html':'md';
+    if(Object.hasOwn(artifact,'mimeType')&&!['video/mp4','application/json','text/csv; charset=utf-8','text/html; charset=utf-8'].includes(artifact.mimeType))fail('invalid artifact media type');
     if (!UUID.test(id) || artifact.id !== id || artifact.filename !== `${id}.${extension}` || !HASH.test(artifact.sha256) || !integer(artifact.bytes, 0, BACKUP_MAX_PLAINTEXT_BYTES) || !string(artifact.name, 160) || !jobs.has(artifact.jobId) || !jobs.get(artifact.jobId).artifacts.some(item => item.id === id && item.name === artifact.name)) fail('invalid artifact metadata');
     if(extension==='mp4'&&jobs.get(artifact.jobId).type!=='video')fail('video artifact on non-video job');
   }
@@ -177,7 +181,7 @@ function validateArchive(payload) {
   const seen = new Set();
   for (const file of payload.artifacts) {
     keys(file, ['filename', 'content']);
-    if (typeof file.filename !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.(?:md|json|mp4)$/.test(file.filename) || seen.has(file.filename)) fail('unsafe or duplicate archive path');
+    if (typeof file.filename !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.(?:md|json|mp4|csv|html)$/.test(file.filename) || seen.has(file.filename)) fail('unsafe or duplicate archive path');
     const metadata = payload.state.artifacts[path.parse(file.filename).name];
     if(metadata?.filename!==file.filename)fail('artifact extension mismatch');
     if (!metadata || typeof file.content !== 'string' || file.content.length !== 4 * Math.ceil(metadata.bytes / 3)) fail('invalid artifact encoding or metadata');
@@ -263,6 +267,7 @@ export function restoreBackup({ archive, key, targetDir }) {
   const state = payload.state, restoredAt = new Date().toISOString();
   let pausedJobCount = 0, revokedDeviceCount = 0;
   state.emergencyStop = true; state.modules.ai = false; state.revision++;
+  state.autopilot.enabled = false;
   recoverAgentJournals(state.jobs);
   if(state.ecosystem){state.ecosystem.enabled=false;if(state.ecosystem.lastRun?.status==='running'){state.ecosystem.lastRun.status='interrupted';state.ecosystem.lastRun.finishedAt=restoredAt;}}
   if (state.discovery) {
