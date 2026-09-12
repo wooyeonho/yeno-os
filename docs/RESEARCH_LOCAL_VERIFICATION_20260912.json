@@ -1,0 +1,24 @@
+{
+  "at": "2026-09-12T17:46:17Z",
+  "scope": "Node24 local real HTTP and synthetic provider tests; real FFmpeg Korean video required",
+  "tests": 324,
+  "passed": 324,
+  "failed": 0,
+  "skipped": 0,
+  "durationMs": 29367.110964,
+  "researchTests": {
+    "evidence": 10,
+    "httpAndBackup": 6,
+    "ui": 7
+  },
+  "existingWebFlow": "npm run verify:web passed; JSDOM cookies/locks simulated",
+  "liveResearch": "pending existing Koyeb deployment and one bounded model verification",
+  "finalResearchRegression": {
+    "passed": 16,
+    "failed": 0,
+    "skipped": 0,
+    "durationMs": 4096.255407,
+    "includes": "Crossref bibliography/journal-article filter and canonical track validation"
+  },
+  "fullResearchWebFlow": "Passed actual temporary HTTP + JSDOM; see RESEARCH_UI_VERIFICATION_20260912.json"
+}

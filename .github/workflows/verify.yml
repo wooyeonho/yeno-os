@@ -23,3 +23,5 @@ jobs:
         run: npm ci --prefix apps/controller --ignore-scripts --no-audit --no-fund
       - name: Verify browser login and durable request recovery
         run: npm run verify:web
+      - name: Verify research evidence and answer across browser restart
+        run: node scripts/verify-research-ui.mjs
