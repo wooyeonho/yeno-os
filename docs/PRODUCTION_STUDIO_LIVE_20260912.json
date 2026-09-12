@@ -1,12 +1,15 @@
 {
-  "checkedAt": "2026-09-12T14:01:36.141Z",
-  "status": "partial_pending_import_fix",
+  "status": "verified_implemented_scope",
+  "checkedAt": "2026-09-12T14:11:04.440Z",
   "deployment": {
-    "id": "51fa15e4-e1b0-454c-9925-d801a36e72c7",
-    "sourceCommit": "82d3ba8896ef4a26398c01afd26d637aab4ace5b",
+    "id": "acfba09c-f55f-4e55-aa42-39753b417301",
+    "sourceCommit": "018ac0adb7c1699b7d756786bbfa699060858bbc",
     "healthy": true,
+    "active": true,
+    "previousDeploymentStopped": "51fa15e4-e1b0-454c-9925-d801a36e72c7",
     "instance": "Micro",
     "region": "Frankfurt",
+    "replicas": 1,
     "dailyCallLimit": 20
   },
   "before": {
@@ -115,8 +118,8 @@
       "unknown": 1
     }
   },
-  "phases": [
-    {
+  "phases": {
+    "video": {
       "artifact": {
         "artifactId": "0884a814-b933-49b1-bf81-3054a0811bf4",
         "bytes": 111360,
@@ -126,12 +129,11 @@
       "audio": false,
       "durationSeconds": 12,
       "jobId": "b6373606-de4b-46d6-8387-c85207d6852e",
-      "phase": "video",
       "replaySameJob": true,
       "reused": false,
       "status": "verified"
     },
-    {
+    "forai": {
       "artifacts": [
         {
           "artifactId": "bf17e051-a585-4c68-aafa-8b3d0dabf8f3",
@@ -148,7 +150,6 @@
       ],
       "jobId": "51363ce7-a216-4ca7-9429-bcf1d5698940",
       "modelCalls": 0,
-      "phase": "forai",
       "replaySameJob": true,
       "reused": false,
       "sourceBytes": 28987,
@@ -157,7 +158,7 @@
       "sourceUrl": "https://global-iris-gyeol-98386a17.koyeb.app/",
       "status": "verified"
     },
-    {
+    "world": {
       "artifacts": [
         {
           "artifactId": "eecd1417-a800-4767-b88a-3e29020470da",
@@ -174,65 +175,169 @@
       "jobId": "febdbf08-5c08-49bb-87ab-46c89cec1590",
       "modelCalls": 0,
       "partial": false,
-      "phase": "world",
       "replaySameJob": true,
       "reused": false,
       "status": "verified"
     },
-    {
+    "yeogie": {
       "actualVisitClaimed": false,
       "export": {
         "bytes": 639,
         "mimeType": "application/json",
         "sha256": "5a1e133979f7ef193e6b64a1f6c0134055820544518bbe20a28d43f4b5159bbc"
       },
-      "phase": "yeogie",
       "placeId": "d145b2c3-ae3a-462a-b4b9-a1b40b6f4af3",
       "status": "verified",
       "syntheticExample": true
     },
-    {
+    "hankki": {
       "answer": "ate",
       "checkinId": "31150c33-c558-467c-b6a0-b0079eb80d2f",
       "contactId": "2315340f-f8a9-4d60-856b-6783e34955bf",
       "externalMessageSent": false,
-      "phase": "hankki",
       "recipientRoundTrip": true,
       "reused": false,
       "revoked": true,
       "status": "verified",
       "synthetic": true
+    },
+    "novel": {
+      "artifact": {
+        "bytes": 1997,
+        "mimeType": "text/markdown",
+        "sha256": "1df8bfd54a14fcc8bc54438c69c6b254b9f35a1f582a7a6633949d9ff3dd3b8f"
+      },
+      "chapterId": "2fcb06df-7043-47f3-8cf6-4820cc149081",
+      "contentCharacters": 811,
+      "contentSha256": "e34495817efd938308f146044ee23b8464dae293a98a711e0456a429e97c7208",
+      "externalPublishing": false,
+      "jobId": "4b3730be-49b8-4880-87ed-acba76d243cd",
+      "model": "gemini-3.8-flash",
+      "modelCalls": 1,
+      "provider": "gemini",
+      "replaySameChapter": true,
+      "replaySameJob": true,
+      "reused": true,
+      "seriesId": "13cb555e-75e1-4872-b26f-ea131a238510",
+      "unknownCalls": 0
     }
-  ],
-  "novel": {
-    "jobId": "4b3730be-49b8-4880-87ed-acba76d243cd",
-    "artifactId": "d6299851-0551-4833-8bc6-c813ce2307cf",
-    "status": "completed",
-    "provider": "gemini",
-    "model": "gemini-3.8-flash",
-    "calls": 1,
-    "unknownCalls": 0,
-    "importStatus": "blocked_409_inline_marker_mentions",
-    "fix": "Accept one pair of standalone marker lines and ignore inline checklist mentions"
+  },
+  "retry": {
+    "checkedAt": "2026-09-12T14:09:04.590Z",
+    "status": "verified",
+    "additionalModelCalls": 0,
+    "sameJobsAndArtifacts": true,
+    "sameChapterOnReplay": true
+  },
+  "preservation": {
+    "collections": {
+      "jobs": {
+        "count": 50,
+        "idsSha256": "e7c3d63254db63503d4c6950abf92b81e514a327fe0512198357939469b67346"
+      },
+      "memories": {
+        "count": 0,
+        "idsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "projects": {
+        "count": 70,
+        "idsSha256": "bcef4fb464495d236677bfcbdcf4a75f4d342a11b13839a529176f71310d99da"
+      },
+      "snapshots": {
+        "count": 0,
+        "idsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "sources": {
+        "count": 110,
+        "idsSha256": "290f325a8d32c642bc952ca28bade5cfa421b2ae126d31d0ab55261bd4a048f8"
+      }
+    },
+    "controlsPreserved": true,
+    "existingDataPreserved": true,
+    "usage": {
+      "attempts": 5,
+      "date": "2026-09-12",
+      "inputTokens": 3157,
+      "outputTokens": 2434,
+      "unknown": 1
+    }
+  },
+  "backupAndPublicHttps": {
+    "backupBytes": 2585454,
+    "backupSha256": "a87c2040c8ebd4b65d958c383285551a25b78d84c38963c19280b0943cc4193e",
+    "checkedAt": "2026-09-12T14:11:04.440Z",
+    "dailyCallLimit": 20,
+    "jobs": 50,
+    "productionStateReplaced": false,
+    "publicStateStatus": 200,
+    "publicVideoSha256": "92d4f7ec9dce2612ca895e9649e1fed798283c137592132b30f66e17abd68bdc",
+    "publicVideoStatus": 200,
+    "restore": {
+      "aiEnabled": false,
+      "artifacts": 30,
+      "createdAt": "2026-09-12T14:11:04.096Z",
+      "emergencyStop": true,
+      "format": 1,
+      "jobs": 50,
+      "memories": 0,
+      "pairingSecretImported": false,
+      "pausedJobCount": 0,
+      "projects": 70,
+      "restoredAt": "2026-09-12T14:11:04.332Z",
+      "revision": 329,
+      "revokedDeviceCount": 1,
+      "serverStarted": false,
+      "sources": 110
+    },
+    "restoredServerStarted": false,
+    "restoredStudioCounts": {
+      "chapters": 1,
+      "checkins": 1,
+      "contacts": 1,
+      "places": 1,
+      "series": 1
+    },
+    "restoredVideoMatches": true,
+    "revision": 328,
+    "usage": {
+      "attempts": 5,
+      "date": "2026-09-12",
+      "inputTokens": 3157,
+      "outputTokens": 2434,
+      "unknown": 1,
+      "usageMissing": 0
+    }
+  },
+  "actualModelCallsAcrossBothAttempts": 1,
+  "newUnknownCalls": 0,
+  "resolvedIssue": {
+    "initialHttpStatus": 409,
+    "reason": "Provider repeated manuscript delimiters in inline checklist code",
+    "fix": "Recognize exactly one pair of standalone delimiter lines",
+    "originalPaidArtifactPreserved": true,
+    "modelRerun": false
   },
   "validation": {
-    "fullSuite": {
+    "fullSuiteBeforeImportFix": {
       "passed": 285,
       "failed": 0,
       "skipped": 0,
       "durationMs": 28531.410214
     },
-    "importFixSuite": {
+    "productionRegressionAfterImportFix": {
       "passed": 7,
       "failed": 0,
       "skipped": 0,
       "durationMs": 5878.046774
-    }
+    },
+    "liveProvidersAreReal": true,
+    "localProviderResponsesAreSynthetic": true
   },
-  "unverified": [
-    "Grok Bot product account connection: x.ai login access blocked",
-    "External publishing and messaging",
-    "Phone physical-device acceptance",
-    "Generative video and audio"
-  ]
+  "remaining": {
+    "grokBot": "Official product login reaches x.ai access-block page; user account login and entitlement confirmation required",
+    "video": "Implemented silent Korean text-card MP4; generative footage/audio and external posting are not connected",
+    "publishingAndMessaging": "External publication, automated sending, and notification channel connections are not implemented",
+    "physicalPhone": "New web operating room and native APK have not been accepted on the physical phone; existing APK text result view cannot play MP4",
+    "offsiteBackup": "Export and isolated restore verified; durable offsite backup was not saved"
+  }
 }
