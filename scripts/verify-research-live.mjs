@@ -2,7 +2,7 @@
 // reused on subsequent checks. No automation, external messages or new keys.
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
-import {RESEARCH_TRACKS,validateResearchBundle} from '../runtime/lib/research.mjs';
+import {RESEARCH_TRACKS,validateResearchBundle,researchCitationIds} from '../runtime/lib/research.mjs';
 const ORIGIN='https://global-iris-gyeol-98386a17.koyeb.app';
 const CHECK_ID='blackhole-research-20260912-v1';
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -43,7 +43,7 @@ export async function verifyResearch({env=process.env,fetchImpl=fetch,run=false,
   }
   const answer=await http(`/api/artifacts/${answerFile.id}`),text=answer.bytes.toString('utf8');
   assert(text.includes('검증 전 AI 초안')&&text.includes('[S1]'),'answer_scope_or_citations_missing');
-  for(const [_,id]of text.matchAll(/\[(S\d+)\]/g))assert(bundle.sources.some(source=>source.citationId===id),'invented_citation');
+  for(const id of researchCitationIds(text))assert(bundle.sources.some(source=>source.citationId===id),'invented_citation');
   const after=(await http('/api/state')).json();
   for(const key of ['projects','sources','memories','snapshots'])assert(before[key].every(old=>after[key].some(next=>next.id===old.id)),`lost_${key}`);
   assert(after.agent.automaticReviews===before.agent.automaticReviews&&after.agent.dailyCallLimit===before.agent.dailyCallLimit&&after.emergencyStop===before.emergencyStop,'settings_changed');

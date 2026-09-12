@@ -24,7 +24,7 @@ import {VideoError,validateVideoInput,renderVideo} from './lib/video.mjs';
 import {PRODUCTION_PROJECTS,productionAvailability,productionCapabilities} from './lib/production.mjs';
 import {issueHankkiInvite,revokeHankkiInvite,getHankkiRecipientView,respondToHankkiInvite,createHankkiRateLimiter} from './lib/hankki-sharing.mjs';
 import {assertProductionCapacity,productionCapacity,ProductionCapacityError,RESEARCH_RESERVED_ARTIFACT_BYTES} from './lib/production-capacity.mjs';
-import {RESEARCH_TRACKS,ResearchError,validateResearchInput,validateResearchBundle,collectResearchEvidence,createResearchPrompt} from './lib/research.mjs';
+import {RESEARCH_TRACKS,ResearchError,validateResearchInput,validateResearchBundle,collectResearchEvidence,createResearchPrompt,researchCitationIds} from './lib/research.mjs';
 import {createWebSessions,WebSessionError} from './lib/web-session.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
@@ -303,7 +303,7 @@ export function createYenoServer(options={}) {
    return bundle;
  }
  function researchAnswer(job,draft,bundle){
-   const cited=[...draft.matchAll(/\[(S\d+)\]/g)].map(match=>match[1]);
+   const cited=researchCitationIds(draft);
    if(!cited.length||cited.some(id=>!bundle.sources.some(source=>source.citationId===id)))throw new AgentError('research_citation_check_failed');
    const clean=value=>String(value??'').replace(/[\r\n|\[\]<>]/g,' ');
    return `# 연구 답안 · 검증 전 AI 초안\n\n질문: ${clean(bundle.question)}\n수집: ${bundle.collectedAt} · 모델 호출 상한1회\n\n${draft}\n\n## 실제 수집 근거\n\n${bundle.sources.map(source=>`- [${source.citationId}] ${clean(source.title)} — ${source.url}\n  읽은 범위: ${source.readLevel==='abstract'?'초록 발췌':'서지정보만'} · 원 응답 SHA-256: ${source.rawSha256}`).join('\n')}\n\n검색 실패: ${bundle.searches.filter(search=>search.status==='error').map(search=>search.provider).join(', ')||'없음'}. 최대4건의 제한된 검색이며 체계적 문헌고찰이 아닙니다.\n원 응답 JSON과 근거표 JSON을 같은 작업에 보관했습니다. 초록·서지정보의 해시는 수집 증거이며 가설·치료 효과·난제 해결의 증명이 아닙니다.\n`;
