@@ -1,0 +1,238 @@
+{
+  "checkedAt": "2026-09-12T14:01:36.141Z",
+  "status": "partial_pending_import_fix",
+  "deployment": {
+    "id": "51fa15e4-e1b0-454c-9925-d801a36e72c7",
+    "sourceCommit": "82d3ba8896ef4a26398c01afd26d637aab4ace5b",
+    "healthy": true,
+    "instance": "Micro",
+    "region": "Frankfurt",
+    "dailyCallLimit": 20
+  },
+  "before": {
+    "active": 0,
+    "capabilities": [
+      {
+        "completedOutputs": 1,
+        "id": "world",
+        "status": "available"
+      },
+      {
+        "completedOutputs": 0,
+        "id": "forai",
+        "status": "available"
+      },
+      {
+        "completedOutputs": 0,
+        "id": "yeogie",
+        "status": "available"
+      },
+      {
+        "completedOutputs": 0,
+        "id": "hankki",
+        "status": "available"
+      },
+      {
+        "completedOutputs": 0,
+        "id": "novels",
+        "status": "available"
+      },
+      {
+        "completedOutputs": 0,
+        "id": "video",
+        "status": "available"
+      },
+      {
+        "completedOutputs": 0,
+        "id": "grok-bot",
+        "status": "connection_required"
+      }
+    ],
+    "checkId": "blackhole-studio-20260912-v1",
+    "checkedAt": "2026-09-12T14:00:28.850Z",
+    "collections": {
+      "jobs": {
+        "count": 46,
+        "idsSha256": "0a298f5c1147ed81c30fa09e6d96ea7b3e6eb962ebf9a0ea66b52a4e72f5a273"
+      },
+      "memories": {
+        "count": 0,
+        "idsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "projects": {
+        "count": 70,
+        "idsSha256": "bcef4fb464495d236677bfcbdcf4a75f4d342a11b13839a529176f71310d99da"
+      },
+      "snapshots": {
+        "count": 0,
+        "idsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "sources": {
+        "count": 110,
+        "idsSha256": "290f325a8d32c642bc952ca28bade5cfa421b2ae126d31d0ab55261bd4a048f8"
+      }
+    },
+    "dailyCallLimit": 20,
+    "globalStop": false,
+    "mode": "read_only",
+    "model": "gemini-3.8-flash",
+    "provider": "gemini",
+    "revision": 296,
+    "storage": {
+      "canCreateForAi": true,
+      "canCreateVideo": true,
+      "estimatedBytes": 3392078,
+      "maxBytes": 16777216,
+      "remainingBytes": 13385138
+    },
+    "studio": {
+      "chapters": {
+        "count": 0,
+        "idsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "checkins": {
+        "count": 0,
+        "idsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "contacts": {
+        "count": 0,
+        "idsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "places": {
+        "count": 0,
+        "idsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "series": {
+        "count": 0,
+        "idsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "usage": {
+      "attempts": 4,
+      "date": "2026-09-12",
+      "inputTokens": 1918,
+      "outputTokens": 1462,
+      "unknown": 1
+    }
+  },
+  "phases": [
+    {
+      "artifact": {
+        "artifactId": "0884a814-b933-49b1-bf81-3054a0811bf4",
+        "bytes": 111360,
+        "mimeType": "video/mp4",
+        "sha256": "92d4f7ec9dce2612ca895e9649e1fed798283c137592132b30f66e17abd68bdc"
+      },
+      "audio": false,
+      "durationSeconds": 12,
+      "jobId": "b6373606-de4b-46d6-8387-c85207d6852e",
+      "phase": "video",
+      "replaySameJob": true,
+      "reused": false,
+      "status": "verified"
+    },
+    {
+      "artifacts": [
+        {
+          "artifactId": "bf17e051-a585-4c68-aafa-8b3d0dabf8f3",
+          "bytes": 4059,
+          "mimeType": "text/plain",
+          "sha256": "7f75228fb4abfd2c1991d373026b271bf15bbcd1621beb90884c5809ea3e6ec1"
+        },
+        {
+          "artifactId": "2d842006-b54e-48ce-8479-4ea2c68fd354",
+          "bytes": 6109,
+          "mimeType": "application/json",
+          "sha256": "fc73e4471d7eb8e1a1b2595edb6aadd1387ba304fe8650f722adea0bec6ec842"
+        }
+      ],
+      "jobId": "51363ce7-a216-4ca7-9429-bcf1d5698940",
+      "modelCalls": 0,
+      "phase": "forai",
+      "replaySameJob": true,
+      "reused": false,
+      "sourceBytes": 28987,
+      "sourceReadMethod": "dns_pinned_https",
+      "sourceSha256": "77431d30f4226bf723272cc69515edf263a3bb34ad54eb991a9313f2f0dea04e",
+      "sourceUrl": "https://global-iris-gyeol-98386a17.koyeb.app/",
+      "status": "verified"
+    },
+    {
+      "artifacts": [
+        {
+          "artifactId": "eecd1417-a800-4767-b88a-3e29020470da",
+          "bytes": 11596,
+          "mimeType": "text/plain",
+          "sha256": "8054e40736b6db6f5a1de1923ff7056863e1aeb416c702dc7590543b4a8abc72"
+        }
+      ],
+      "earthquakeCount": 48,
+      "earthquakeSourceSha256": "3794e4a7d27ff5468ebc2de4e9f4bbba99dd1225b5e419f8cadd61fb7dc36cd6",
+      "hazardCount": 8,
+      "hazardSourceSha256": "206edfe9104f0fd65fca836c3801542276119e3c743f19d1581cc8763c47891b",
+      "hazardsStatus": "ok",
+      "jobId": "febdbf08-5c08-49bb-87ab-46c89cec1590",
+      "modelCalls": 0,
+      "partial": false,
+      "phase": "world",
+      "replaySameJob": true,
+      "reused": false,
+      "status": "verified"
+    },
+    {
+      "actualVisitClaimed": false,
+      "export": {
+        "bytes": 639,
+        "mimeType": "application/json",
+        "sha256": "5a1e133979f7ef193e6b64a1f6c0134055820544518bbe20a28d43f4b5159bbc"
+      },
+      "phase": "yeogie",
+      "placeId": "d145b2c3-ae3a-462a-b4b9-a1b40b6f4af3",
+      "status": "verified",
+      "syntheticExample": true
+    },
+    {
+      "answer": "ate",
+      "checkinId": "31150c33-c558-467c-b6a0-b0079eb80d2f",
+      "contactId": "2315340f-f8a9-4d60-856b-6783e34955bf",
+      "externalMessageSent": false,
+      "phase": "hankki",
+      "recipientRoundTrip": true,
+      "reused": false,
+      "revoked": true,
+      "status": "verified",
+      "synthetic": true
+    }
+  ],
+  "novel": {
+    "jobId": "4b3730be-49b8-4880-87ed-acba76d243cd",
+    "artifactId": "d6299851-0551-4833-8bc6-c813ce2307cf",
+    "status": "completed",
+    "provider": "gemini",
+    "model": "gemini-3.8-flash",
+    "calls": 1,
+    "unknownCalls": 0,
+    "importStatus": "blocked_409_inline_marker_mentions",
+    "fix": "Accept one pair of standalone marker lines and ignore inline checklist mentions"
+  },
+  "validation": {
+    "fullSuite": {
+      "passed": 285,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 28531.410214
+    },
+    "importFixSuite": {
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 5878.046774
+    }
+  },
+  "unverified": [
+    "Grok Bot product account connection: x.ai login access blocked",
+    "External publishing and messaging",
+    "Phone physical-device acceptance",
+    "Generative video and audio"
+  ]
+}

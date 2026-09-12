@@ -140,9 +140,13 @@ export function createYenoServer(options={}) {
    if(!body.requestId||Object.keys(body).some(k=>!['requestId','seriesId','jobId','number','title'].includes(k)))throw new HttpError(400,'회차 가져오기 입력을 확인하세요.');
    const job=s.jobs.find(j=>j.id===body.jobId);if(!job||job.studioSeriesId!==body.seriesId||!job.questId)throw new HttpError(409,'이 작품에서 생성한 완료 원고를 선택하세요.');
    const {content,item}=verifiedQuestArtifact(findQuest(job.questId));
-   const matches=[...content.matchAll(/<!-- BLACKHOLE_CHAPTER_START -->([\s\S]*?)<!-- BLACKHOLE_CHAPTER_END -->/g)];
-   if(matches.length!==1||!matches[0][1].trim())throw new HttpError(409,'원고 구간을 확인하지 못했습니다. 결과를 열어 검토한 뒤 직접 회차로 저장하세요.');
-   return studioMutation({action:'chapter.create',requestId:body.requestId,seriesId:body.seriesId,number:body.number,title:body.title,content:matches[0][1].trim(),notes:`AI 원고 초안 · 작업 ${job.id} · 결과 SHA-256 ${item.sha256} · 출판 전 소유자 검토 필요`});
+   // A provider may repeat the marker names inside its success checklist.
+   // Only standalone delimiter lines designate a manuscript boundary.
+   const starts=[...content.matchAll(/^[\t ]*<!-- BLACKHOLE_CHAPTER_START -->[\t ]*\r?$/gm)],ends=[...content.matchAll(/^[\t ]*<!-- BLACKHOLE_CHAPTER_END -->[\t ]*\r?$/gm)];
+   if(starts.length!==1||ends.length!==1||ends[0].index<=starts[0].index)throw new HttpError(409,'원고 구간을 확인하지 못했습니다. 결과를 열어 검토한 뒤 직접 회차로 저장하세요.');
+   const manuscript=content.slice(starts[0].index+starts[0][0].length,ends[0].index).trim();
+   if(!manuscript)throw new HttpError(409,'가져올 원고 본문이 비어 있습니다.');
+   return studioMutation({action:'chapter.create',requestId:body.requestId,seriesId:body.seriesId,number:body.number,title:body.title,content:manuscript,notes:`AI 원고 초안 · 작업 ${job.id} · 결과 SHA-256 ${item.sha256} · 출판 전 소유자 검토 필요`});
  }
  function questState(){return {...questsOverview(s),providers:providerStatus(),selectedProvider:agentSettings.provider,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs)};}
  function addQuest(body){const quest=planQuest(body,s,agentSettings);s.quests.unshift(quest);event('Goal contract saved.');return quest;}

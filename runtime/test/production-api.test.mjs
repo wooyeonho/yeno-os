@@ -174,7 +174,11 @@ test('SIGKILL during video work leaves the durable job paused after a fresh proc
 
 test('novel HTTP import uses a verified generated artifact and preserves originals on conflicting retries', { timeout: 15_000 }, async t => {
   let calls = 0, sentPrompt = '';
-  const app = await fixture(t, { env: { YENO_AGENT_PROVIDER: 'openai', YENO_AGENT_DAILY_CALL_LIMIT: '4', YENO_OPENAI_API_KEY: 'synthetic-key-only', YENO_OPENAI_MODEL: 'synthetic-model' }, agentFetch: async (_url, request) => { calls++; sentPrompt = request.body; return fakeResponse('<!-- BLACKHOLE_CHAPTER_START -->\n서윤은 빈 기록장을 펼쳤다. 사라졌던 이름이 첫 줄에 떠올랐다.\n<!-- BLACKHOLE_CHAPTER_END -->'); } });
+  const manuscript = '**기록이 켜지는 밤**\n\n서윤은 빈 기록장을 펼쳤다. 사라졌던 이름이 첫 줄에 떠올랐다.';
+  // Reproduces the live provider shape: standalone delimiters around the real
+  // manuscript, followed by inline quoted delimiter names in a self-checklist.
+  const providerOutput = `## 완성 원고\n\n<!-- BLACKHOLE_CHAPTER_START -->\n${manuscript}\n<!-- BLACKHOLE_CHAPTER_END -->\n\n## 성공 조건 점검\n- 원고 앞의 \`<!-- BLACKHOLE_CHAPTER_START -->\`와 뒤의 \`<!-- BLACKHOLE_CHAPTER_END -->\` 표식을 포함했습니다.\n- 위 체크리스트는 원고 본문에 포함하지 않습니다.`;
+  const app = await fixture(t, { env: { YENO_AGENT_PROVIDER: 'openai', YENO_AGENT_DAILY_CALL_LIMIT: '4', YENO_OPENAI_API_KEY: 'synthetic-key-only', YENO_OPENAI_MODEL: 'synthetic-model' }, agentFetch: async (_url, request) => { calls++; sentPrompt = request.body; return fakeResponse(providerOutput); } });
   const series = await app.post('/api/studio', { action: 'series.create', title: '테스트 연재', premise: '기록실의 이름을 찾는다.' }); const seriesId = series.json.result.id;
   const original = await app.post('/api/studio', { action: 'chapter.create', seriesId, number: 1, title: '소유자 원문', content: '절대로 덮어쓰면 안 되는 기존 원고' });
   const generation = { requestId: randomUUID(), seriesId, instructions: '다음 회차의 짧은 완결 장면을 써 주세요.' };
@@ -189,10 +193,28 @@ test('novel HTTP import uses a verified generated artifact and preserves origina
   assert.deepEqual((await app.post('/api/studio/import', importRequest)).json, imported.json);
   assert.equal((await app.post('/api/studio/import', { ...importRequest, requestId: randomUUID(), number: 1 })).status, 409);
   const chapters = (await app.api('/api/studio')).json.chapters; assert.equal(chapters.length, 2); assert.equal(chapters.find(chapter => chapter.id === original.json.result.id).content, '절대로 덮어쓰면 안 되는 기존 원고');
-  assert.match(chapters.find(chapter => chapter.id === imported.json.result.id).content, /서윤은 빈 기록장/);
+  assert.equal(chapters.find(chapter => chapter.id === imported.json.result.id).content, manuscript, 'only the standalone-delimited manuscript is imported, excluding the provider self-checklist');
   const metadata = openStore(app.core().dataDir).state.artifacts[completed.artifacts[0].id]; fs.writeFileSync(path.join(app.core().dataDir, 'artifacts', metadata.filename), 'corrupted after completion');
   assert.equal((await app.post('/api/studio/import', { ...importRequest, requestId: randomUUID(), number: 3 })).status, 409);
   assert.equal((await app.api('/api/studio')).json.chapters.length, 2); assert.equal(calls, 1);
+});
+
+test('novel import rejects multiple standalone manuscript blocks without adding a chapter or changing the original', { timeout: 15_000 }, async t => {
+  let calls = 0;
+  const ambiguous = '<!-- BLACKHOLE_CHAPTER_START -->\n첫 번째 별도 원고입니다.\n<!-- BLACKHOLE_CHAPTER_END -->\n\n<!-- BLACKHOLE_CHAPTER_START -->\n두 번째 별도 원고입니다.\n<!-- BLACKHOLE_CHAPTER_END -->';
+  const app = await fixture(t, { env: { YENO_AGENT_PROVIDER: 'openai', YENO_AGENT_DAILY_CALL_LIMIT: '4', YENO_OPENAI_API_KEY: 'synthetic-key-only', YENO_OPENAI_MODEL: 'synthetic-model' }, agentFetch: async () => { calls++; return fakeResponse(ambiguous); } });
+  const series = await app.post('/api/studio', { action: 'series.create', title: '다중 원고 구간 검사' }), seriesId = series.json.result.id;
+  const original = await app.post('/api/studio', { action: 'chapter.create', seriesId, number: 1, title: '기존 원고', content: '이 원고는 변경하지 않습니다.' });
+  const before = (await app.api('/api/studio')).json.chapters;
+  const generation = { requestId: randomUUID(), seriesId, instructions: '다음 원고를 작성하세요.' };
+  const created = await app.post('/api/studio/generate', generation); assert.equal(created.status, 201);
+  const completed = await app.wait(created.json.job.id); assert.equal(completed.status, 'completed', completed.error); assert.equal(calls, 1);
+  const importBody = { requestId: randomUUID(), seriesId, jobId: completed.id, number: 2, title: '모호한 원고' };
+  assert.equal((await app.post('/api/studio/import', importBody)).status, 409);
+  assert.equal((await app.post('/api/studio/import', importBody)).status, 409);
+  assert.deepEqual((await app.api('/api/studio')).json.chapters, before);
+  assert.equal(before[0].id, original.json.result.id);
+  assert.equal((await app.post('/api/studio/generate', generation)).json.job.id, completed.id); assert.equal(calls, 1);
 });
 
 test('a renderer result with an invalid hash fails without registering or leaking an orphan video', { timeout: 10_000 }, async t => {
