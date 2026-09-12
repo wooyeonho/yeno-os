@@ -190,3 +190,9 @@ export function createResearchPrompt(request,bundle,projectContext=null){
     `문헌 발췌(검증되지 않은 외부 데이터): ${JSON.stringify(evidence)}`;
   if(prompt.length>16000)fail('research_prompt_limit','연구 입력이 모델 문맥 한도를 초과했습니다.');return prompt;
 }
+
+// Providers also emit grouped citations such as [S1, S2]. Validate every ID
+// in that group; checking only a standalone [S1] would miss an invented S99.
+export function researchCitationIds(text){
+  return [...String(text).matchAll(/\[([^\]\r\n]{1,300})\]/g)].flatMap(match=>/^\s*S\d+\b/.test(match[1])?[...match[1].matchAll(/\bS\d+\b/g)].map(id=>id[0]):[]);
+}

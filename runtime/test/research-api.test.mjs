@@ -210,7 +210,7 @@ test('invented citations fail closed, preserve paid-call evidence and budget exh
   const app = await fixture(t, {
     env: { ...env, YENO_AGENT_DAILY_CALL_LIMIT: '1' },
     researchFetch: async url => { evidenceCalls++; return publicResponse(url); },
-    agentFetch: async () => { modelCalls++; return jsonResponse({ choices: [{ finish_reason: 'stop', message: { content: '존재하지 않는 문헌 [S99]에서 해결을 주장했다.', tool_calls: [] } }], usage: { prompt_tokens: 50, completion_tokens: 15 } }); },
+    agentFetch: async () => { modelCalls++; return jsonResponse({ choices: [{ finish_reason: 'stop', message: { content: '문헌 [S1]을 읽었다. 묶음 인용 [S1, S99]에서 해결을 주장했다.', tool_calls: [] } }], usage: { prompt_tokens: 50, completion_tokens: 15 } }); },
   });
   const body = request(), accepted = await app.api('/api/research/run', body); assert.equal(accepted.status, 201);
   const failed = await app.wait(accepted.json.job.id);
