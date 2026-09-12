@@ -1,0 +1,215 @@
+{
+  "after": {
+    "aiAttempts": 7,
+    "globalLimit": 20,
+    "jobs": 55,
+    "projects": 70,
+    "sources": 110
+  },
+  "at": "2026-09-12T21:14:50.947Z",
+  "autopilot": {
+    "activeJobId": null,
+    "aiUsedToday": 1,
+    "dailyAiLimit": 4,
+    "enabled": true,
+    "globalLimit": 20,
+    "globalUsedToday": 7,
+    "nextAt": "2026-09-13T03:14:51.251Z"
+  },
+  "autopilotBefore": {
+    "activeJobId": null,
+    "aiUsedToday": 0,
+    "dailyAiLimit": 4,
+    "enabled": false,
+    "globalLimit": 20,
+    "globalUsedToday": 6,
+    "nextAt": null
+  },
+  "before": {
+    "aiAttempts": 6,
+    "globalLimit": 20,
+    "jobs": 51,
+    "projects": 70,
+    "sources": 110
+  },
+  "checks": [
+    "only one durable scheduler control request submitted",
+    "core selected and completed world research private-page audit and derived video without task submissions",
+    "at most one autonomous task active during polling",
+    "evidence and generated files downloaded with matching hashes",
+    "existing canonical records and global model limit preserved"
+  ],
+  "claimStatus": "native_bounded_operations_research_draft_not_scientific_solution",
+  "deployment": {
+    "active": true,
+    "id": "b0442804-f579-4808-92d4-9db94a2160ea",
+    "instance": "1b6133bf",
+    "instances": "1 of 1",
+    "source": "3116b28c5646e639954494c7d67631fadbf0b87b",
+    "status": "Healthy",
+    "testedTree": "4671d7cd6766a94d8810682c833cc788b1849179"
+  },
+  "forai": {
+    "additionalModelCalls": 0,
+    "files": [
+      {
+        "bytes": 3927,
+        "id": "39b269a7-7981-4ef5-8d4d-ec4153815c48",
+        "name": "forai-b00f58d9.md",
+        "sha256": "6ae17c900b28270ef1eea98b2901f8a3d85c37d9eab4a41a4cbb2edd270b9440"
+      },
+      {
+        "bytes": 5206,
+        "id": "c106c2ec-db31-44f7-ac6f-cdc51c7abc79",
+        "name": "forai-evidence-b00f58d9.json",
+        "sha256": "e9326546a34ac719c50e8c64d951e6a90802fbc3aa88c2f71ba5062c584144e0"
+      },
+      {
+        "bytes": 12012,
+        "id": "0d45cd68-071c-4a6e-a7fb-4ef801a0e0fc",
+        "name": "research-page-f179ca44.html",
+        "sha256": "8035648ba72ed54e6d3d0b0a7dba2c92a80e6639051b82eab246d37bf097cdf1"
+      }
+    ],
+    "jobId": "b00f58d9-d8bd-4faa-ac85-4e0d8e2b38e2",
+    "parentJobId": "f179ca44-fdd2-4b60-8040-edbd4d87f878"
+  },
+  "newModelCalls": 1,
+  "research": {
+    "answer": {
+      "bytes": 7186,
+      "id": "d4130a33-194f-4481-8fc0-d6df1add1fd2",
+      "name": "research-answer-f179ca44.md",
+      "sha256": "ca46322c6e02ead5d7623d6a7577388cfb303764221b38ef3d6f2dcfe94d1d44"
+    },
+    "calls": 1,
+    "evidence": {
+      "bytes": 5319,
+      "id": "95a84c6b-6ccd-4119-8d15-80246c83d85c",
+      "name": "research-evidence-f179ca44.json",
+      "sha256": "507591af71283c84910ddb719725ba217e473642dc6ae9107986c6975be9e545"
+    },
+    "jobId": "f179ca44-fdd2-4b60-8040-edbd4d87f878",
+    "model": "gemini-3.8-flash",
+    "projectId": "bfb7d3b8-8716-42dc-8428-cb2cf06a8261",
+    "provider": "gemini",
+    "raw": [
+      {
+        "bytes": 79821,
+        "id": "b21128b0-d2b9-4798-b013-5173b8e707e0",
+        "name": "research-crossref.json",
+        "provider": "crossref",
+        "sha256": "95f08cab6ff61ba2f4b482770a03824cc58036a0217f5f2a0391e3c29ca9fd0b"
+      }
+    ],
+    "sourceCount": 2,
+    "trackCode": "E01",
+    "unknownCalls": 0
+  },
+  "runtimeTree": "4671d7cd6766a94d8810682c833cc788b1849179",
+  "searches": [
+    {
+      "error": {
+        "code": "research_upstream_http",
+        "message": "공식 검색 API 응답 오류 (503)."
+      },
+      "provider": "europepmc",
+      "rawFileName": null,
+      "rawSha256": null,
+      "resultCount": 0,
+      "status": "error",
+      "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=antimicrobial+resistance+EARS-Net+surveillance+trends&format=json&resultType=core&pageSize=2"
+    },
+    {
+      "error": null,
+      "provider": "crossref",
+      "rawFileName": "research-crossref.json",
+      "rawSha256": "95f08cab6ff61ba2f4b482770a03824cc58036a0217f5f2a0391e3c29ca9fd0b",
+      "resultCount": 2,
+      "status": "ok",
+      "url": "https://api.crossref.org/works?query.bibliographic=antimicrobial+resistance+EARS-Net+surveillance+trends&filter=type%3Ajournal-article&rows=2&sort=relevance"
+    }
+  ],
+  "sourceCommit": "98076b726b26b32b64956c9cbe44caefd54b18b4",
+  "sources": [
+    {
+      "id": "S1",
+      "readLevel": "metadata",
+      "title": "The rise of carbapenem resistance in Europe: just the tip of the iceberg?",
+      "url": "https://doi.org/10.1186/2047-2994-2-6"
+    },
+    {
+      "id": "S2",
+      "readLevel": "abstract",
+      "title": "Analysis of ESAC-Net/EARS-Net Data from 29 EEA Countries for Spatiotemporal Associations Between Antimicrobial Use and Resistance—Implications for Antimicrobial Stewardship?",
+      "url": "https://doi.org/10.3390/antibiotics14040399"
+    }
+  ],
+  "status": "AUTOPILOT_VERIFIED",
+  "url": "https://global-iris-gyeol-98386a17.koyeb.app/",
+  "video": {
+    "additionalModelCalls": 0,
+    "file": {
+      "bytes": 336099,
+      "id": "db931d5a-7d7d-48aa-ad18-10f11f9823cb",
+      "name": "blackhole-video-85bf6014.mp4",
+      "sha256": "bd5c2f4fef26d56843810c3a375a281d16695f940fda578254e87cf00b2ac3bd"
+    },
+    "jobId": "85bf6014-c4b0-4898-a0d9-20c51984ec0b",
+    "parentJobId": "f179ca44-fdd2-4b60-8040-edbd4d87f878"
+  },
+  "world": {
+    "files": [
+      {
+        "bytes": 13201,
+        "id": "b6670755-c843-435b-b659-7443bad48a7b",
+        "name": "world-298efda2.md",
+        "sha256": "b1cc871168aae4d92b06119f3ae10c1941866be7c22aad8a96360069ec360d89"
+      }
+    ],
+    "jobId": "298efda2-0b8d-49d2-a01d-c3253e70d5ea",
+    "sources": {
+      "checkedAt": "2026-09-12T21:14:52.062Z",
+      "nasa": {
+        "sha256": "cc45274c02199e6604d90ca135517a33792ddc09180e9af2bade660566e9effb",
+        "sourceCount": 15,
+        "status": "ok"
+      },
+      "usgs": {
+        "sha256": "291bbf330b5680e4ce04897a3a0c799051b7453b42123a234cdaa693217177e8",
+        "sourceCount": 54,
+        "status": "ok"
+      }
+    }
+  },
+  "actualBackupRestore": {
+    "aiEnabled": false,
+    "archiveBytes": 3387023,
+    "artifacts": 43,
+    "at": "2026-09-12T21:21:17.662Z",
+    "autopilotJobs": 4,
+    "createdAt": "2026-09-12T21:21:17.157Z",
+    "emergencyStop": true,
+    "format": 1,
+    "generatedFiles": 4,
+    "jobs": 55,
+    "memories": 0,
+    "pairingSecretImported": false,
+    "pausedJobCount": 0,
+    "projects": 70,
+    "restoredAt": "2026-09-12T21:21:17.544Z",
+    "restoredAutopilotEnabled": false,
+    "revision": 374,
+    "revokedDeviceCount": 1,
+    "serverStarted": false,
+    "sources": 110
+  },
+  "actualVideoProbe": {
+    "codec": "h264",
+    "width": 720,
+    "height": 1280,
+    "frameRate": "24/1",
+    "durationSeconds": 25,
+    "audio": false
+  }
+}

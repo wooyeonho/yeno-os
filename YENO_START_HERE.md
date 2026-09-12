@@ -1,3 +1,5 @@
+> **최신(2026-09-12 21:14Z): [BLACKHOLE 열기](https://global-iris-gyeol-98386a17.koyeb.app/) → 자동 운영.** 이미 켜 두었다. 개별 작업 요청 없이 세계 현황·E01 연구·For-Ai 연구 페이지 점검·실제 MP4가 생성됐다. 자동 연구는6시간 간격·하루 최대4회이며 기존전체20회 안에서 사용한다. 기존 APK 명령은 `자동 운영 현황` / `자동 운영 중지` / `자동 운영 시작`이다. [사용 범위](docs/AUTOPILOT_20260912.md) · [실제 증거](docs/AUTOPILOT_LIVE_VERIFICATION_20260912.json). 연구는 검증 전 초안이며 자동 코딩·외부 게시·Grok Bot 연결·무인 소설 연재는 미완료다. 아래는 이전 이력이다.
+
 > **최신(2026-09-12 17:57Z): [BLACKHOLE 열기](https://global-iris-gyeol-98386a17.koyeb.app/)** → **문제의 답 · EUREKA** → 연구 트랙과 질문 → **근거 수집·답안 만들기**. 기존 E01~E09 연결, 공개 근거·답안 보관, 작업당 모델1회. 실제 Long COVID 답안이 저장되어 있다. [사용법](docs/RESEARCH_20260912.md) · [실제 실행 증거](docs/RESEARCH_LIVE_VERIFICATION_20260912.json). 연구 초안과 과학적 해결 입증은 구분한다.
 
 > **최신(2026-09-12 16:43Z): [BLACKHOLE 운영실 열기](https://global-iris-gyeol-98386a17.koyeb.app/)** → 기존 개인 연결 키로 처음 한 번 연결 → 운영실. 개인 기기의 연결 유지에 체크하면 최대30일 다시 열 수 있다. Chrome 메뉴에서 홈 화면에 추가할 수 있다. 기존 APK는 그대로 둔다. [실사용 방법](docs/WEB_OPERATING_ROOM_20260912.md) · [실제 운영 검증](docs/WEB_LIVE_VERIFICATION_20260912.json).
