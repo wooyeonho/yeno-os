@@ -6,8 +6,9 @@ def patch(path, old, new, marker=None):
     text = file.read_text(encoding='utf-8')
     if (marker or new) in text:
         return
-    if text.count(old) != 1:
-        raise SystemExit(f'{path}: expected one replacement, found {text.count(old)}')
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f'{path}: expected one replacement, found {count}')
     file.write_text(text.replace(old, new), encoding='utf-8')
 
 
@@ -26,14 +27,11 @@ patch(
     marker='!localResearchCompletion(job)&&!s.modules[jobModule(job)]',
 )
 
-# Public job records intentionally omit codeTask. Reuse the already calculated,
-# bounded execution classification instead of reclassifying them as unknown.
-patch(
-    'runtime/lib/independent-core.mjs',
-    "  if (!job || typeof job !== 'object' || Array.isArray(job)) {\n    return result('unclassified', null, 'blocked', 'job record is not an object');\n  }\n  if (job.type === 'code') {",
-    "  if (!job || typeof job !== 'object' || Array.isArray(job)) {\n    return result('unclassified', null, 'blocked', 'job record is not an object');\n  }\n  const existing = job.execution;\n  if (existing && existing.schemaVersion === 1\n      && ['local-core', 'model-call', 'development-model-call', 'unclassified'].includes(existing.kind)\n      && [true, false, null].includes(existing.requiresModel)\n      && typeof existing.trigger === 'string' && typeof existing.reason === 'string') {\n    return { ...existing };\n  }\n  if (job.type === 'code') {",
-    marker='const existing = job.execution;',
-)
+# The public boundary wrapper is already present on the merged branch. Fail
+# rather than silently weakening the code-workshop classification.
+independent = Path('runtime/lib/independent-core.mjs').read_text(encoding='utf-8')
+if "job?.type==='code'&&!job.codeTask&&typeof job.code?.mode==='string'" not in independent:
+    raise SystemExit('public code execution boundary wrapper is missing')
 
 patch(
     'runtime/test/independent-core.test.mjs',
