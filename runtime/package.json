@@ -10,5 +10,8 @@
   "scripts": {
     "start": "node launch.mjs",
     "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "quickjs-emscripten": "0.32.0"
   }
 }

@@ -5,6 +5,8 @@ const {sourceDestination,sourceCoverage} = await import('/absorption-routing.mjs
 const {createWorldView} = await import('/world-view.mjs');
 const {createStudioView} = await import('/studio-view.mjs');
 const {createAutopilotView} = await import('/autopilot-view.mjs');
+const {createCodeView} = await import('/code-view.mjs');
+const {createVoiceView} = await import('/voice-view.mjs');
 const {createResearchView} = await import('/research-view.mjs');
 const {connectBrowser,enableInstall} = await import('/web-client.mjs');
 const $ = (id) => document.getElementById(id);
@@ -63,15 +65,17 @@ const studioView=createStudioView({root:$('studio-root'),api,storage:requestStor
 const researchView=createResearchView({root:$('research-root'),api,storage:requestStorage,notify,onJobCreated:()=>{void refresh(true);},onOpenJob:()=>{showTab('control');void refresh(true);},onOpenArtifact:id=>perform(()=>openArtifact(id)),onJobAction:(id,action)=>perform(()=>durableMutation(`/api/jobs/${id}/action`,{action}))});
 const requestId=()=>crypto.randomUUID();
 const autopilotView=createAutopilotView({root:$('autopilot-root'),notify,onNavigate:tab=>showTab(tab),onCapabilityAction:async(action,payload)=>{const result=await durableMutation(`/api/capabilities/${action}`,payload);await refresh(true);return result;},onControl:async enabled=>{await durableMutation('/api/autopilot',{enabled});await refresh(true);},onOpenJob:()=>{showTab('control');void refresh(true);},onOpenArtifact:id=>perform(()=>openArtifact(id))});
+const codeView=createCodeView($('code-root'),{onAction:async(action,payload)=>{const result=await durableMutation(`/api/code/${action}`,payload);await refresh(true);return result;},onOpenArtifact:id=>perform(()=>openArtifact(id))});
+const voiceView=createVoiceView($('voice-root'),{onSend:async(text,{history}={})=>{if(otherRequests?.pending||otherStorageError){const e=new Error('상단의 같은 요청 확인으로 이전 접수를 먼저 확인하세요.');e.status=409;throw e;}const result=await durableMutation('/api/voice',{text,history:history??[]});await refresh(true);return result;},onReadResult:async job=>{const item=job.artifacts.find(a=>a.name.endsWith('.md'));if(!item)throw new Error('읽을 답변 파일이 아직 없습니다.');const r=await api(`/api/artifacts/${encodeURIComponent(item.id)}`,undefined,{raw:true});return (await r.text()).split('\n\n---\nBLACKHOLE AI 초안')[0];}});
 let otherRequests,otherStorageError;
-try{otherRequests=createCommandRequest({storage:requestStorage,key:'blackhole-pending-other-v1',allowPath:path=>/^\/api\/capabilities\/(import|verify|activate|disable|rollback|run)$/.test(path)||['/api/memory','/api/snapshots','/api/settings','/api/control','/api/autopilot'].includes(path)||/^\/api\/(jobs|snapshots)\/[a-f0-9-]+\/(action|restore)$/.test(path),transport:(path,body)=>api(path,body)});}catch(error){otherStorageError=error;}
+try{otherRequests=createCommandRequest({storage:requestStorage,key:'blackhole-pending-other-v1',allowPath:path=>path==='/api/voice'||/^\/api\/code\/(generate|repair|github|import|verify|run|activate|disable|rollback)$/.test(path)||/^\/api\/capabilities\/(import|verify|activate|disable|rollback|run)$/.test(path)||['/api/memory','/api/snapshots','/api/settings','/api/control','/api/autopilot'].includes(path)||/^\/api\/(jobs|snapshots)\/[a-f0-9-]+\/(action|restore)$/.test(path),transport:(path,body)=>api(path,body)});}catch(error){otherStorageError=error;}
 function renderOtherRequest(){const pending=otherRequests?.pending;$('other-request').hidden=!pending&&!otherStorageError;$('other-request-message').textContent=otherStorageError?'작업 보관함을 읽지 못해 새 저장을 멈췄습니다.':pending?'이전 저장·설정 변경의 접수 여부를 확인해야 합니다. 같은 요청으로 확인하세요.':'';$('retry-other').disabled=!online||!!otherStorageError||!!otherRequests?.sending;}
 async function durableMutation(path,body){
   if(otherStorageError)throw otherStorageError;
   if(otherRequests.pending)throw new Error('상단의 같은 요청 확인을 눌러 이전 접수를 확인해 주세요.');
   otherRequests.stage(path,body);return retryOther();
 }
-async function retryOther(){const promise=otherRequests.send();renderOtherRequest();try{const outcome=await promise;if(outcome.kind==='accepted')return outcome.result;throw outcome.error;}finally{renderOtherRequest();}}
+async function retryOther(){const pendingPath=otherRequests.pending?.path;const promise=otherRequests.send();renderOtherRequest();try{const outcome=await promise;if(outcome.kind==='accepted'){if(pendingPath==='/api/voice')voiceView.acceptReceipt?.(outcome.result);return outcome.result;}throw outcome.error;}finally{renderOtherRequest();}}
 $('retry-other').addEventListener('click',()=>perform(async()=>{await retryOther();notify('이전 요청의 접수를 확인했습니다.');}));
 try {commandRequests=createCommandRequest({storage:requestStorage,transport:(path,body)=>api(path,body)});}
 catch(error) {commandStorageError=error;}
@@ -143,6 +147,8 @@ async function submitCommand(path,body) {
   finally {renderCommandRequest();await refresh(true);}
 }
 function connection(ok) {
+  codeView.update(current?{...current,online:ok}:{online:ok});
+  voiceView.update(current?{...current,online:ok}:{online:ok});
   studioView.setState(current?{...current,online:ok}:{online:ok});
   researchView.updateState(current?{...current,online:ok}:{online:ok});
   autopilotView.updateState(current?{...current,online:ok}:{online:ok});
@@ -159,9 +165,11 @@ async function refresh(force=false) {
   finally{loading=false;}
 }
 function showTab(tab) {
+  if(tab!=='voice')voiceView.stop();
+  $('voice-root').hidden=tab!=='voice';
   activeTab=tab;for(const el of document.querySelectorAll('.tab-panel'))el.hidden=el.id!==`tab-${tab}`;
   for(const el of document.querySelectorAll('.nav')){el.classList.toggle('active',el.dataset.tab===tab);el.setAttribute('aria-current',el.dataset.tab===tab?'page':'false');}
-  $('page-title').textContent={autopilot:'자동 운영',control:'조종석',quests:'목표 실행',studio:'운영실',research:'문제의 답 · EUREKA',world:'세계 현황',projects:'프로젝트',sources:'자료',memory:'기억',recovery:'복구',settings:'능력·설정'}[tab];
+  $('page-title').textContent={code:'코드 흡수·자동 개발',voice:'자비스 음성 대화',autopilot:'자동 운영',control:'조종석',quests:'목표 실행',studio:'운영실',research:'문제의 답 · EUREKA',world:'세계 현황',projects:'프로젝트',sources:'자료',memory:'기억',recovery:'복구',settings:'능력·설정'}[tab];
   if(tab==='quests')void refreshQuests(true);
   if(tab==='studio')void studioView.refresh();
   if(tab==='research')void researchView.refresh();
@@ -613,7 +621,7 @@ $('global-stop').addEventListener('click',e=>perform(async()=>{const action=curr
 $('concurrency').addEventListener('change',e=>perform(()=>durableMutation('/api/settings',{concurrency:Number(e.target.value)})));
 $('module-settings').addEventListener('change',e=>{if(e.target.dataset.module)perform(()=>durableMutation('/api/settings',{modules:{[e.target.dataset.module]:e.target.checked}}));});
 $('compact-toggle').addEventListener('click',()=>{const compact=document.body.classList.toggle('compact');$('compact-toggle').textContent=compact?'펼치기':'작게';$('compact-toggle').setAttribute('aria-pressed',String(compact));});
-function clearConnection(){authEpoch++;browserSession.invalidate();worldView.reset();studioView.reset();researchView.reset();autopilotView.reset();resetQuests();token='';current=null;if(artifact?.url)URL.revokeObjectURL(artifact.url);artifact=null;$('artifact-video').pause();$('artifact-video').removeAttribute('src');$('artifact-content').textContent='';document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());document.querySelector('.shell').hidden=true;$('pair-screen').hidden=false;}
+function clearConnection(){authEpoch++;browserSession.invalidate();worldView.reset();studioView.reset();researchView.reset();autopilotView.reset();codeView.reset();voiceView.reset();resetQuests();token='';current=null;if(artifact?.url)URL.revokeObjectURL(artifact.url);artifact=null;$('artifact-video').pause();$('artifact-video').removeAttribute('src');$('artifact-content').textContent='';document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());document.querySelector('.shell').hidden=true;$('pair-screen').hidden=false;}
 async function disconnect(){
   if(commandRequests?.sending||projectRequests?.sending||sourceRequests?.sending||questRequests?.sending||otherRequests?.sending||studioView.sending||researchView.sending){notify('접수 응답을 기다리고 있습니다. 잠시 후 연결을 해제하세요.');return;}
   try{await browserSession.logout();clearConnection();location.reload();}catch(error){notify(`연결 해제를 확인하지 못했습니다. ${error.message}`);}

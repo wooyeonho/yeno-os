@@ -1,3 +1,5 @@
+import {initialCodeWorkshop,validateCodeWorkshop,disableCodeForRestore} from './code-workshop.mjs';
+import {validateCodeJob} from './code-jobs.mjs';
 import {initialCapabilities,validateCapabilities,validateCapabilityRequest,capabilityInputSha256,disableAllCapabilitiesForRestore} from './capabilities.mjs';
 import {validateWorldSnapshot} from './world.mjs';
 import fs from 'node:fs';
@@ -29,7 +31,7 @@ export function atomicWrite(file, content) {
 export function initialState() {
  return {revision:0, emergencyStop:false, concurrency:1,
  modules:{memory:true,documents:true,diagnostics:true,ai:false},
- jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), capabilities:initialCapabilities(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem()};
+ jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), capabilities:initialCapabilities(), codeWorkshop:initialCodeWorkshop(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem()};
 }
 function initializeQuestCollections(state) {
  // Missing collections identify older stores. Present malformed data must fail
@@ -40,6 +42,9 @@ function initializeQuestCollections(state) {
  if(!Object.hasOwn(state,'autopilot'))state.autopilot=initialAutopilot();
  if(!Object.hasOwn(state,'capabilities'))state.capabilities=initialCapabilities();
  validateCapabilities(state.capabilities);
+ if(!Object.hasOwn(state,'codeWorkshop'))state.codeWorkshop=initialCodeWorkshop();
+ validateCodeWorkshop(state.codeWorkshop);
+ for(const job of state.jobs)validateCodeJob(job,state.codeWorkshop);
  for(const job of state.jobs){if(job.type==='capability'){validateCapabilityRequest(job.capabilityRequest,state.capabilities);if(capabilityInputSha256(JSON.parse(job.input))!==job.capabilityRequest.inputSha256)throw new Error('Capability job input mismatch');}else if(job.capabilityRequest)throw new Error('Unexpected capability request');}
  validateAutopilot(state.autopilot);
  for(const job of state.jobs)validateAutopilotJob(job,state);
@@ -85,7 +90,7 @@ export function openStore(directory) {
  if(!Object.hasOwn(state,'discovery'))state.discovery=initialDiscovery();
  if(!Object.hasOwn(state,'ecosystem'))state.ecosystem=initialEcosystem();
  initializeQuestCollections(state);
- if(recovered){state.discovery.enabled=false;state.ecosystem.enabled=false;state.autopilot.enabled=false;state.capabilities=disableAllCapabilitiesForRestore(state.capabilities).registry;}
+ if(recovered){state.discovery.enabled=false;state.ecosystem.enabled=false;state.autopilot.enabled=false;state.capabilities=disableAllCapabilitiesForRestore(state.capabilities).registry;state.codeWorkshop=disableCodeForRestore(state.codeWorkshop).registry;}
  // Keep accepted identities independently of the bounded response cache.
  // Existing hashes migrate unchanged; IDs evicted by older runtimes cannot
  // be reconstructed from a job alone and are not claimed as recovered.

@@ -171,7 +171,7 @@ export function planAutopilot(state,options={}){return choose(state,context(stat
 export function getAutopilotStatus(state,options={}){
   const ctx=context(state,options),active=ctx.jobs.find(job=>ACTIVE.has(job.status));
   const blockers=[
-    {id:'developer-worker',title:'자동 기능 수정',reason:'상주 코어에 코딩·시험·배포 작업자가 없습니다. 현재 자동 실행 범위는 공개 자료 수집, 연구, 연구 페이지 점검과 결과 영상 제작입니다.'},
+    {id:'developer-worker',title:'자동 기능 수정',reason:'코드 흡수·자동 개발에서 맡긴 JavaScript 기능은 작성·시험·수정할 수 있습니다. 코어 저장소의 자동 수정·배포 작업자가 없습니다. 지정하지 않은 기능의 반복 개발도 연결하지 않았습니다.'},
     {id:'grok-product',title:'Grok Bot 제품',reason:'제품 계정과 실행 연결이 완료되지 않았습니다. 모델 API 연결만으로 제품을 운영했다고 표시하지 않습니다.'},
     {id:'external-publishing',title:'게시·발송',reason:'외부 게시·메시지 발송 연결이 없습니다. 결과 파일은 개인 운영실에 저장합니다.'},
     {id:'god-eye-coverage',title:'God Eye 관측 범위',reason:'USGS·NASA 공개 재난 관측을 실행합니다. 항공·선박 실시간 추적과 3D 지구는 미구현입니다.'},
