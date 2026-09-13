@@ -1,0 +1,8 @@
+import { executionBoundary } from './independent-core.mjs';
+
+// One redaction path for state, initial replies and evicted receipt recovery.
+export function publicJob(job) {
+  const execution = executionBoundary(job);
+  const {input,normalized,draft,agentJournal,botAssignment,worldSnapshot,productionEvidence,researchRequest,capabilityRequest,codeTask,codeCheckpoint,codeOutput,...out}=job;
+  return {...out,execution,...(codeTask?{code:{mode:codeTask.mode,id:codeTask.id??codeTask.request?.id??codeTask.spec?.id,hash:codeCheckpoint?.resultHash??codeTask.hash??codeTask.request?.hash,passed:codeCheckpoint?.passed??null,feedback:codeCheckpoint?.feedback??[],message:codeCheckpoint?.message??null}}:{}),...(capabilityRequest?{capability:{id:capabilityRequest.id,hash:capabilityRequest.hash,inputSha256:capabilityRequest.inputSha256}}:{}),...(researchRequest?{research:{...researchRequest,claimStatus:'research_draft'}}:{}),...(botAssignment?{bot:{profile:botAssignment.profile,batchId:botAssignment.batchId,projectVersion:botAssignment.projectVersion,executionScope:'project-draft'}}:{}),...(agentJournal?{agent:{provider:agentJournal.provider,model:agentJournal.model,calls:agentJournal.calls.length,unknownCalls:agentJournal.calls.filter(call=>call.status!=='settled').length,toolResults:agentJournal.history.filter(message=>message.role==='tool').length}}:{})};
+}

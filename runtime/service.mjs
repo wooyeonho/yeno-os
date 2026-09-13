@@ -3,6 +3,7 @@ import { start } from './server.mjs';
 import { renderConfig } from './lib/render-config.mjs';
 import { koyebConfig } from './lib/koyeb-config.mjs';
 import { verifyHostedDisk } from './lib/hosted-disk.mjs';
+import { INDEPENDENT_CORE_CONTRACT, assertIndependentCoreContract } from './lib/independent-core.mjs';
 
 // Shared non-interactive entrypoint. Do not run server.mjs as a CLI on a hosted
 // service: that development entrypoint intentionally prints the pairing token.
@@ -24,6 +25,9 @@ function stop() {
 }
 
 try {
+  // This assertion has no provider access. It protects the invariant that model
+  // configuration is an optional bounded tool, never a boot dependency.
+  assertIndependentCoreContract();
   const preflightRender = process.argv.includes('--preflight-render');
   const preflightKoyeb = process.argv.includes('--preflight-koyeb');
   const preflight = preflightRender || preflightKoyeb;
@@ -47,6 +51,7 @@ try {
   } else {
     runtime = await start({ token, env, containerLease: true });
     for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, stop);
+    console.log(`BLACKHOLE ${INDEPENDENT_CORE_CONTRACT.mode} core active; model providers are optional bounded tools.`);
     console.log(`YENO core ready on port ${runtime.server.address().port}; pairing token logging is disabled.`);
   }
 } catch (error) {

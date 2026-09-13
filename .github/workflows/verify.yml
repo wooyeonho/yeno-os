@@ -2,9 +2,16 @@ name: Verify runtime on request
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - codex
 
 permissions:
   contents: read
+
+concurrency:
+  group: verify-runtime-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   runtime:
@@ -17,6 +24,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Install locked runtime dependencies
+        run: npm ci --prefix runtime --ignore-scripts --no-audit --no-fund
       - name: Install locked UI verification dependencies
         run: npm ci --prefix apps/controller --ignore-scripts --no-audit --no-fund
       - name: Run runtime tests

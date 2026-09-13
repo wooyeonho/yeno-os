@@ -1,3 +1,5 @@
+import { executionBoundary } from './independent-core.mjs';
+
 const JOB_STATES = [
   ['queued', '대기'], ['running', '실행 중'], ['paused', '일시정지'],
   ['failed', '실패'], ['completed', '완료'], ['cancelled', '취소'],
@@ -53,6 +55,14 @@ export function operatingBriefDocument({
   const jobCounts = countBy(jobList, 'status', JOB_STATES.map(([status]) => status));
   const reading = countBy(sourceList, 'readingStatus', READING_STATES);
   const decisions = countBy(sourceList, 'decision', DECISIONS);
+  const executionCounts = { localCore: 0, modelCall: 0, developmentModelCall: 0, unclassified: 0 };
+  for (const job of jobList) {
+    const kind = executionBoundary(job).kind;
+    if (kind === 'local-core') executionCounts.localCore++;
+    else if (kind === 'model-call') executionCounts.modelCall++;
+    else if (kind === 'development-model-call') executionCounts.developmentModelCall++;
+    else executionCounts.unclassified++;
+  }
   const first = activeProjects[0];
   const nextAction = plain(first?.nextAction, 400, '다음 작업 미등록');
   const rows = [
@@ -74,6 +84,9 @@ export function operatingBriefDocument({
   }
   rows.push('', '## 실행 가능 범위',
     `- 전체 멈춤: ${emergencyStop === true ? '켜짐' : '꺼짐'}`,
+    '- 독립 코어: 모델 공급자 없이도 부팅·상태 저장·복구·로컬 작업 실행 경계를 유지합니다.',
+    `- 저장 작업 경계: 로컬 코어 ${executionCounts.localCore}개 · 일반 모델 호출 ${executionCounts.modelCall}개 · 개발용 모델 호출 ${executionCounts.developmentModelCall}개 · 미분류 차단 ${executionCounts.unclassified}개.`,
+    '- 모델 미설정이나 공급자 장애는 모델 호출 경계 작업만 막습니다. 로컬 코어 작업을 모델 호출로 우회하지 않습니다.',
     `- AI 공급자: ${aiConfigured === true ? '설정 있음. 실제 호출 성공과 비용 한도 검증은 이 문서에서 확인하지 않았습니다.' : '미설정. AI가 필요한 실행은 연결과 비용 한도 확인 전까지 대기합니다.'}`,
     `- 개발 작업자: ${developerWorker === true ? '연결 표시 있음. 이번 문서 생성에서 실제 코드 수정·빌드를 실행하거나 검증하지 않았습니다.' : '미연결. 자동 코드 수정·빌드 실행은 작업자 연결 전까지 대기합니다.'}`,
     '- AI 설정과 개발 작업자 연결은 별개이며, 일반 자율 실행이나 운영 배포 완료를 뜻하지 않습니다.', '',

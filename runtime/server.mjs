@@ -104,6 +104,7 @@ export function createYenoServer(options={}) {
  const touch=job=>{job.updatedAt=now();job.version++;};
  const moduleFor=type=>['document','world','video','forai','capability','code'].includes(type)?'documents':['ai','agent'].includes(type)?'ai':'diagnostics';
  function requireModule(name){if(!s.modules[name])throw new HttpError(409,`${name} module is disabled`);}
+ const localResearchCompletion=job=>{const assistant=job.agentJournal?.history?.findLast(message=>message.role==='assistant');return job.type==='agent'&&!!job.researchRequest&&job.step===2&&typeof job.draft==='string'&&job.draft.trim().length>0&&job.callLimit===1&&job.agentJournal?.calls?.length===1&&job.agentJournal.calls[0].status==='settled'&&typeof assistant?.content==='string'&&assistant.content.trim().length>0&&Array.isArray(assistant.toolCalls)&&assistant.toolCalls.length===0;};
  const jobModule=job=>job.type==='code'&&['generate','repair'].includes(job.codeTask?.mode)?'ai':moduleFor(job.type);
  function newJob(body,{questExecution=false,capabilityExecution=false,codeExecution=false}={}){
    // The UI advertises AI when the bounded primary provider is configured.
@@ -408,7 +409,7 @@ export function createYenoServer(options={}) {
      const blocked=job.botAssignment?botBlockReason(job,s,profiles):null;
      const lastAssistant=job.agentJournal?.history.findLast(m=>m.role==='assistant');
      const budget=job.botAssignment&&job.step<2&&(!lastAssistant||lastAssistant.toolCalls.length>0)&&agentUsage(s.jobs).attempts>=configFor(job).dailyCallLimit;
-     if(blocked||budget||(!s.modules[jobModule(job)]&&!job.questId)){job.status='paused';job.pauseReason=blocked||(budget?'dailyBudget':'moduleDisabled');touch(job);save();continue;}
+     if(blocked||budget||(!localResearchCompletion(job)&&!s.modules[jobModule(job)]&&!job.questId)){job.status='paused';job.pauseReason=blocked||(budget?'dailyBudget':'moduleDisabled');touch(job);save();continue;}
      job.status='running';delete job.pauseReason;touch(job);save();const generation=(generations.get(job.id)??0)+1;generations.set(job.id,generation);runStep(job,generation);
    }}
    schedule();

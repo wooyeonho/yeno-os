@@ -104,7 +104,8 @@ function context(state,options={}){
   return {at,time:Date.parse(at),config,settings,jobs,globalUsedToday,aiUsedToday,capabilities:Array.isArray(options.capabilities)?options.capabilities:[],globalLimit:Number.isSafeInteger(config.dailyCallLimit)?config.dailyCallLimit:0,tracks:trackProgress(state,at)};
 }
 
-function aiAvailable(ctx){return !!ctx.config.ready&&ctx.aiUsedToday<ctx.settings.dailyAiLimit&&ctx.globalUsedToday<ctx.globalLimit;}
+const backgroundModelCallsAllowed=ctx=>ctx.config.backgroundModelCalls===true;
+function aiAvailable(ctx){return backgroundModelCallsAllowed(ctx)&&!!ctx.config.ready&&ctx.aiUsedToday<ctx.settings.dailyAiLimit&&ctx.globalUsedToday<ctx.globalLimit;}
 function resumeAllowed(job,state,ctx){
   if(job.status!=='paused'||!['restart','shutdown'].includes(job.pauseReason)||uncertain(job)||(job.deadlineAt&&Date.parse(job.deadlineAt)<=ctx.time))return false;
   if(job.autopilot.kind==='research'){
@@ -115,6 +116,7 @@ function resumeAllowed(job,state,ctx){
     // earlier checkpoints still need their provider and existing call budget.
     const finalAnswer=finalResearchCheckpoint(job);
     if(job.step===2&&finalAnswer&&typeof job.draft==='string'&&job.draft.trim().length>0)return true;
+    if(!backgroundModelCallsAllowed(ctx))return false;
     return !!ctx.config.ready&&(calls(job).length===0?aiAvailable(ctx):finalAnswer);
   }
   if(job.type==='capability'&&job.step<2&&!state.capabilities?.entries?.some(e=>e.id===job.capabilityRequest?.id&&e.activeHash===job.capabilityRequest?.hash))return false;
@@ -177,8 +179,9 @@ export function getAutopilotStatus(state,options={}){
     {id:'god-eye-coverage',title:'God Eye 관측 범위',reason:'USGS·NASA 공개 재난 관측을 실행합니다. 항공·선박 실시간 추적과 3D 지구는 미구현입니다.'},
     {id:'novel-canon',title:'자동 소설 연재',reason:'원본 세계관을 보존한 연속 집필과 게시 자동화가 미완료입니다. 인수검사용 작품·안부·장소 기록을 실제 운영 입력으로 선택하지 않습니다.'}
   ];
-  if(!ctx.config.ready)blockers.unshift({id:'model',title:'연구 모델 연결',reason:'선택한 제공자의 키·모델·호출 한도 연결이 필요합니다.'});
-  if(ctx.aiUsedToday>=ctx.settings.dailyAiLimit||ctx.globalUsedToday>=ctx.globalLimit)blockers.unshift({id:'budget',title:'오늘 모델 호출 한도',reason:'자율 실행 또는 전체 호출 한도에 도달했습니다. 미확인·예약 호출도 포함하며 UTC 날짜가 바뀐 뒤 다시 확인합니다.'});
+  if(!backgroundModelCallsAllowed(ctx))blockers.unshift({id:'model-policy',title:'AI 호출 정책 · 명시적 실행만',reason:'독립 운영 코어는 백그라운드에서 모델을 호출하지 않습니다. 질문·음성·연구·코딩을 연호님이 직접 실행한 경우에만 연결된 AI를 사용합니다.'});
+  else if(!ctx.config.ready)blockers.unshift({id:'model',title:'연구 모델 연결',reason:'선택한 제공자의 키·모델·호출 한도 연결이 필요합니다.'});
+  if(backgroundModelCallsAllowed(ctx)&&(ctx.aiUsedToday>=ctx.settings.dailyAiLimit||ctx.globalUsedToday>=ctx.globalLimit))blockers.unshift({id:'budget',title:'오늘 모델 호출 한도',reason:'자율 실행 또는 전체 호출 한도에 도달했습니다. 미확인·예약 호출도 포함하며 UTC 날짜가 바뀐 뒤 다시 확인합니다.'});
   if(state.modules?.documents!==true)blockers.unshift({id:'documents',title:'관측·페이지·영상 실행 중지',reason:'문서 모듈이 꺼져 있어 관측·페이지 점검·영상을 새로 실행하지 않습니다.'});
   const labels={world:'세계 관측',forai:'연구 페이지 점검',video:'연구 영상',capability:'흡수 기능 실행'};
   blockers.unshift(...ctx.jobs.filter(job=>job.autopilot.kind!=='research'&&['failed','cancelled','paused'].includes(job.status)&&!resumeAllowed(job,state,ctx)).sort((a,b)=>created(b)-created(a)).slice(0,8).map(job=>({id:`job-${job.id}`,title:`${labels[job.autopilot.kind]} · ${job.status==='failed'?'실패':job.status==='cancelled'?'취소':'중지'} (${job.id.slice(0,8)})`,reason:job.status==='failed'?'실패한 작업과 입력을 보존했습니다. 같은 작업을 새 ID로 자동 재전송하지 않습니다.':job.status==='cancelled'?'취소 기록을 보존하며 이 작업은 자동으로 다시 만들지 않습니다.':job.pauseReason==='owner'?'소유자가 멈춘 작업입니다. 자동 재개하지 않습니다.':`중지 기록을 보존했습니다. ${state.modules?.documents!==true?'문서 모듈이 꺼져 있습니다.':'자동 재개 조건을 충족하지 않습니다.'}`})));
@@ -197,14 +200,15 @@ export function getAutopilotStatus(state,options={}){
       const last=latest(ctx.jobs.filter(job=>job.autopilot.kind==='world'));due.push(last?created(last)+AUTOPILOT_INTERVAL_MS:ctx.time);
       for(const kind of ['forai','video'])if(derivativeParent(state,ctx,kind))due.push(derivativeToday(ctx,kind)?Date.parse(`${ctx.at.slice(0,10)}T00:00:00.000Z`)+24*60*60*1000:ctx.time);
     }
-    if(ctx.config.ready&&ctx.tracks.some(track=>track.status==='ready')){
+    if(backgroundModelCallsAllowed(ctx)&&ctx.config.ready&&ctx.tracks.some(track=>track.status==='ready')){
       const last=latest(ctx.jobs.filter(job=>job.autopilot.kind==='research'));
       let researchDue=last?created(last)+AUTOPILOT_INTERVAL_MS:ctx.time;
       if(!aiAvailable(ctx))researchDue=Math.max(researchDue,Date.parse(`${ctx.at.slice(0,10)}T00:00:00.000Z`)+24*60*60*1000);
       due.push(researchDue);
     }
     if(due.length)nextAt=new Date(Math.max(ctx.time,Math.min(...due))).toISOString();
-    summary=ctx.tracks.every(track=>['validation','blocked'].includes(track.status))?'연구 초안의 자동 반복을 멈추고 실제 검증 자료를 기다립니다. 공개 재난 관측은 설정에 따라 계속합니다.':'호출 한도와 실행 간격을 지키며 다음 작업을 기다립니다.';
+    summary=!backgroundModelCallsAllowed(ctx)?'독립 운영 모드입니다. 규칙·스케줄러·저장된 기능으로 계속 동작하며, AI는 연호님이 명시적으로 실행할 때만 호출합니다.':ctx.tracks.every(track=>['validation','blocked'].includes(track.status))?'연구 초안의 자동 반복을 멈추고 실제 검증 자료를 기다립니다. 공개 재난 관측은 설정에 따라 계속합니다.':'호출 한도와 실행 간격을 지키며 다음 작업을 기다립니다.';
   }
-  return {mind:motivationStatus(state,rankedCandidates(state,ctx),decision,ctx.at),enabled:ctx.settings.enabled,dailyAiLimit:ctx.settings.dailyAiLimit,aiUsedToday:ctx.aiUsedToday,globalLimit:ctx.globalLimit,globalUsedToday:ctx.globalUsedToday,activeJobId:active?.id??null,nextAt,summary,tracks:ctx.tracks.map(({code,name,phase,status,reason,lastJobId})=>({code,name,phase,status,reason,lastJobId})),blockers,recentJobs:[...ctx.jobs].sort((a,b)=>created(b)-created(a)).slice(0,12).map(job=>job.id),lastError:ctx.settings.lastError};
+  const backgroundModelCalls=backgroundModelCallsAllowed(ctx);
+  return {mind:motivationStatus(state,rankedCandidates(state,ctx),decision,ctx.at),enabled:ctx.settings.enabled,modelPolicy:backgroundModelCalls?'background-authorized':'explicit-only',backgroundModelCalls,dailyAiLimit:ctx.settings.dailyAiLimit,aiUsedToday:ctx.aiUsedToday,globalLimit:ctx.globalLimit,globalUsedToday:ctx.globalUsedToday,activeJobId:active?.id??null,nextAt,summary,tracks:ctx.tracks.map(({code,name,phase,status,reason,lastJobId})=>({code,name,phase,status,reason,lastJobId})),blockers,recentJobs:[...ctx.jobs].sort((a,b)=>created(b)-created(a)).slice(0,12).map(job=>job.id),lastError:ctx.settings.lastError};
 }
