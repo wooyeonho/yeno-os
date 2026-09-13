@@ -1,3 +1,4 @@
+import {rankMotivatedCandidates,motivationStatus,validateMotivation} from './motivation.mjs';
 import {agentUsage} from './agent.mjs';
 import {RESEARCH_TRACKS, validateResearchRequest} from './research.mjs';
 
@@ -32,9 +33,13 @@ export function validateAutopilot(value){
 
 export function validateAutopilotJob(job,state){
   if(!Object.hasOwn(job,'autopilot'))return true;
-  const meta=job.autopilot;
-  if(!object(meta)||meta.version!==1||!['world','research','forai','video'].includes(meta.kind)||typeof meta.taskKey!=='string')throw new TypeError('Invalid autopilot job identity');
-  if(meta.kind==='world'){
+  const {motivation,...meta}=job.autopilot;
+  if(motivation!==undefined)validateMotivation(motivation);
+  if(!object(meta)||meta.version!==1||!['world','research','forai','video','capability'].includes(meta.kind)||typeof meta.taskKey!=='string')throw new TypeError('Invalid autopilot job identity');
+  if(meta.kind==='capability'){
+    const request=job.capabilityRequest;
+    if(!exact(meta,['version','kind','taskKey','capabilityId','manifestHash'])||job.type!=='capability'||!request||request.id!==meta.capabilityId||request.hash!==meta.manifestHash||!HASH.test(request.hash??'')||!HASH.test(request.inputSha256??'')||meta.taskKey!==`cap:${request.id}:${request.hash}:${request.inputSha256}`)throw new TypeError('Invalid capability decision identity');
+  }else if(meta.kind==='world'){
     const at=meta.taskKey.slice(6);
     if(!exact(meta,['version','kind','taskKey'])||job.type!=='world'||!meta.taskKey.startsWith('world:')||!iso(at)||worldKey(at)!==meta.taskKey)throw new TypeError('Invalid autopilot world identity');
   }else if(meta.kind==='research'){
@@ -96,7 +101,7 @@ function context(state,options={}){
   const at=timestamp(options.at),config=options.config??{},settings=state.autopilot??initialAutopilot();
   validateAutopilot(settings);
   const jobs=ownJobs(state),globalUsedToday=agentUsage(state.jobs??[],at).attempts,aiUsedToday=agentUsage(jobs,at).attempts;
-  return {at,time:Date.parse(at),config,settings,jobs,globalUsedToday,aiUsedToday,globalLimit:Number.isSafeInteger(config.dailyCallLimit)?config.dailyCallLimit:0,tracks:trackProgress(state,at)};
+  return {at,time:Date.parse(at),config,settings,jobs,globalUsedToday,aiUsedToday,capabilities:Array.isArray(options.capabilities)?options.capabilities:[],globalLimit:Number.isSafeInteger(config.dailyCallLimit)?config.dailyCallLimit:0,tracks:trackProgress(state,at)};
 }
 
 function aiAvailable(ctx){return !!ctx.config.ready&&ctx.aiUsedToday<ctx.settings.dailyAiLimit&&ctx.globalUsedToday<ctx.globalLimit;}
@@ -112,6 +117,7 @@ function resumeAllowed(job,state,ctx){
     if(job.step===2&&finalAnswer&&typeof job.draft==='string'&&job.draft.trim().length>0)return true;
     return !!ctx.config.ready&&(calls(job).length===0?aiAvailable(ctx):finalAnswer);
   }
+  if(job.type==='capability'&&job.step<2&&!state.capabilities?.entries?.some(e=>e.id===job.capabilityRequest?.id&&e.activeHash===job.capabilityRequest?.hash))return false;
   return state.modules?.documents===true;
 }
 
@@ -128,23 +134,36 @@ function derivativeParent(state,ctx,kind){
   return [...ctx.jobs].sort((a,b)=>created(b)-created(a)).find(job=>job.autopilot.kind==='research'&&projectAvailable(state,RESEARCH_TRACKS.find(track=>track.code===job.autopilot.trackCode))&&verifiedAnswerMetadata(state,job)&&!ctx.jobs.some(child=>child.autopilot.taskKey===`${kind}:${job.id}`));
 }
 const derivativeToday=(ctx,kind)=>ctx.jobs.some(job=>job.autopilot.kind===kind&&job.createdAt?.slice(0,10)===ctx.at.slice(0,10));
-function choose(state,ctx){
-  if(!ctx.settings.enabled||state.emergencyStop||(ctx.settings.retryAt&&Date.parse(ctx.settings.retryAt)>ctx.time)||(state.jobs??[]).some(job=>ACTIVE.has(job.status)))return null;
-  for(const job of [...ctx.jobs].sort((a,b)=>created(a)-created(b)))if(resumeAllowed(job,state,ctx))return {kind:'resume',jobId:job.id};
-  const lastWorld=latest(ctx.jobs.filter(job=>job.autopilot.kind==='world'));
-  const worldTaskKey=worldKey(ctx.at);
-  if(state.modules?.documents===true&&(!lastWorld||created(lastWorld)+AUTOPILOT_INTERVAL_MS<=ctx.time)&&!ctx.jobs.some(job=>job.autopilot.taskKey===worldTaskKey))return {kind:'world',taskKey:worldTaskKey};
+function eligible(state,ctx){
+  return ctx.settings.enabled&&!state.emergencyStop&&!(ctx.settings.retryAt&&Date.parse(ctx.settings.retryAt)>ctx.time)&&!(state.jobs??[]).some(job=>ACTIVE.has(job.status));
+}
+function rankedCandidates(state,ctx){
+  if(!eligible(state,ctx))return [];
+  const candidates=[];
+  const add=(action,goal,signals,successCriterion='실제 근거와 결과 파일을 저장하고 호출·실패 기록을 보존한다.')=>candidates.push({action,goal,signals,successCriterion});
+  const lastWorld=latest(ctx.jobs.filter(job=>job.autopilot.kind==='world')),worldTaskKey=worldKey(ctx.at);
+  if(state.modules?.documents===true&&(!lastWorld||created(lastWorld)+AUTOPILOT_INTERVAL_MS<=ctx.time)&&!ctx.jobs.some(job=>job.autopilot.taskKey===worldTaskKey))add({kind:'world',taskKey:worldTaskKey},'오래되었거나 없는 공개 관측을 새 자료로 갱신한다.',{knowledgeGap:3,verificationGap:1,estimatedCalls:0});
   const lastResearch=latest(ctx.jobs.filter(job=>job.autopilot.kind==='research'));
-  if(aiAvailable(ctx)&&(!lastResearch||created(lastResearch)+AUTOPILOT_INTERVAL_MS<=ctx.time)){
-    const next=ctx.tracks.filter(track=>track.status==='ready').sort((a,b)=>a.phase-b.phase||a.code.localeCompare(b.code))[0];
-    if(next)return {kind:'research',taskKey:keyFor(next.code,next.phase),trackCode:next.code,phase:next.phase,projectId:next.projectId,question:researchQuestion(next),query:next.defaultEnglishQuery,...(next.previousJob?{previousJobId:next.previousJob.id}:{})};
+  if(aiAvailable(ctx)&&(!lastResearch||created(lastResearch)+AUTOPILOT_INTERVAL_MS<=ctx.time))for(const next of ctx.tracks.filter(track=>track.status==='ready')){
+    const coverageGap=Math.max(0,ctx.tracks.reduce((sum,t)=>sum+t.phase,0)/Math.max(1,ctx.tracks.length)-next.phase);
+    const phaseGoal=['공개 근거가 없는 질문의 첫 근거표와 검증 가설을 만든다.','이전 가설의 반대 근거와 대안 설명을 검토한다.','검증을 수행하지 못한 가설의 재현 계획을 구체화한다.'][next.phase];
+    const action={kind:'research',taskKey:keyFor(next.code,next.phase),trackCode:next.code,phase:next.phase,projectId:next.projectId,question:researchQuestion(next),query:next.defaultEnglishQuery,...(next.previousJob?{previousJobId:next.previousJob.id}:{})};
+    add(action,`${next.code} · ${phaseGoal}`,{knowledgeGap:next.phase===0?3:1,coverageGap,verificationGap:next.phase+1,estimatedCalls:1});
   }
   if(state.modules?.documents===true)for(const kind of ['forai','video']){
-    if(derivativeToday(ctx,kind))continue;
-    const parent=derivativeParent(state,ctx,kind);
-    if(parent)return {kind,taskKey:`${kind}:${parent.id}`,parentJobId:parent.id};
+    if(derivativeToday(ctx,kind))continue;const parent=derivativeParent(state,ctx,kind);if(!parent)continue;
+    add({kind,taskKey:`${kind}:${parent.id}`,parentJobId:parent.id},kind==='forai'?'저장된 연구를 다시 읽을 수 있는 개인 페이지와 점검 결과로 만든다.':'저장된 연구의 출처·한계를 확인할 수 있는 영상으로 만든다.',{assetGap:1,reuseArtifacts:1,deliveryGap:kind==='video'?2:1,verificationGap:kind==='forai'?2:0,estimatedCalls:0});
   }
-  return null;
+  if(state.modules?.documents===true&&!derivativeToday(ctx,'capability'))for(const candidate of ctx.capabilities){
+    if(candidate.kind!=='capability'||!['failure-triage','evidence-gap-brief'].includes(candidate.capabilityId)||!HASH.test(candidate.manifestHash??'')||!candidate.input||typeof candidate.taskKey!=='string'||ctx.jobs.some(job=>job.autopilot.taskKey===candidate.taskKey))continue;
+    add(candidate,candidate.goal,{repairNeed:candidate.focus==='wrath'?Math.min(4,candidate.input.records?.length??0):0,verificationGap:candidate.focus==='pride'?3:0,assetGap:1,reuseArtifacts:1,estimatedCalls:0},candidate.successCriterion);
+  }
+  return rankMotivatedCandidates(state,candidates,ctx.at);
+}
+function choose(state,ctx){
+  if(!eligible(state,ctx))return null;
+  for(const job of [...ctx.jobs].sort((a,b)=>created(a)-created(b)))if(resumeAllowed(job,state,ctx))return {kind:'resume',jobId:job.id};
+  return rankedCandidates(state,ctx)[0]?.action??null;
 }
 
 export function planAutopilot(state,options={}){return choose(state,context(state,options));}
@@ -161,7 +180,7 @@ export function getAutopilotStatus(state,options={}){
   if(!ctx.config.ready)blockers.unshift({id:'model',title:'연구 모델 연결',reason:'선택한 제공자의 키·모델·호출 한도 연결이 필요합니다.'});
   if(ctx.aiUsedToday>=ctx.settings.dailyAiLimit||ctx.globalUsedToday>=ctx.globalLimit)blockers.unshift({id:'budget',title:'오늘 모델 호출 한도',reason:'자율 실행 또는 전체 호출 한도에 도달했습니다. 미확인·예약 호출도 포함하며 UTC 날짜가 바뀐 뒤 다시 확인합니다.'});
   if(state.modules?.documents!==true)blockers.unshift({id:'documents',title:'관측·페이지·영상 실행 중지',reason:'문서 모듈이 꺼져 있어 관측·페이지 점검·영상을 새로 실행하지 않습니다.'});
-  const labels={world:'세계 관측',forai:'연구 페이지 점검',video:'연구 영상'};
+  const labels={world:'세계 관측',forai:'연구 페이지 점검',video:'연구 영상',capability:'흡수 기능 실행'};
   blockers.unshift(...ctx.jobs.filter(job=>job.autopilot.kind!=='research'&&['failed','cancelled','paused'].includes(job.status)&&!resumeAllowed(job,state,ctx)).sort((a,b)=>created(b)-created(a)).slice(0,8).map(job=>({id:`job-${job.id}`,title:`${labels[job.autopilot.kind]} · ${job.status==='failed'?'실패':job.status==='cancelled'?'취소':'중지'} (${job.id.slice(0,8)})`,reason:job.status==='failed'?'실패한 작업과 입력을 보존했습니다. 같은 작업을 새 ID로 자동 재전송하지 않습니다.':job.status==='cancelled'?'취소 기록을 보존하며 이 작업은 자동으로 다시 만들지 않습니다.':job.pauseReason==='owner'?'소유자가 멈춘 작업입니다. 자동 재개하지 않습니다.':`중지 기록을 보존했습니다. ${state.modules?.documents!==true?'문서 모듈이 꺼져 있습니다.':'자동 재개 조건을 충족하지 않습니다.'}`})));
   for(const track of ctx.tracks.filter(item=>item.status==='blocked'))blockers.push({id:`track-${track.code}`,title:track.name,reason:track.reason});
   const decision=choose(state,ctx);
@@ -171,7 +190,7 @@ export function getAutopilotStatus(state,options={}){
   else if(ctx.settings.retryAt&&Date.parse(ctx.settings.retryAt)>ctx.time){nextAt=ctx.settings.retryAt;summary='실행 준비 오류를 보존하고 다음 점검 시각까지 기다립니다.';}
   else if(active)summary='앱을 닫아도 현재 자동 작업을 계속하고 결과를 저장합니다.';
   else if((state.jobs??[]).some(job=>ACTIVE.has(job.status)))summary='먼저 접수된 작업이 끝나면 자동 작업을 선택합니다.';
-  else if(decision){nextAt=ctx.at;summary=decision.kind==='resume'?'저장된 자동 작업을 안전하게 이어갑니다.':decision.kind==='world'?'공개 재난 자료를 새로 수집합니다.':decision.kind==='research'?'다음 연구 단계를 선택했습니다. 근거와 답안을 저장합니다.':decision.kind==='forai'?'완료된 연구 기록으로 개인 연구 페이지를 만들고 구조를 점검합니다.':'완료된 연구 기록으로 출처와 한계를 표시한 영상을 만듭니다.';}
+  else if(decision){nextAt=ctx.at;summary=decision.motivation?decision.motivation.goal:decision.kind==='resume'?'저장된 자동 작업을 안전하게 이어갑니다.':decision.kind==='world'?'공개 재난 자료를 새로 수집합니다.':decision.kind==='research'?'다음 연구 단계를 선택했습니다. 근거와 답안을 저장합니다.':decision.kind==='forai'?'완료된 연구 기록으로 개인 연구 페이지를 만들고 구조를 점검합니다.':'완료된 연구 기록으로 출처와 한계를 표시한 영상을 만듭니다.';}
   else{
     const due=[];
     if(state.modules?.documents===true){
@@ -187,5 +206,5 @@ export function getAutopilotStatus(state,options={}){
     if(due.length)nextAt=new Date(Math.max(ctx.time,Math.min(...due))).toISOString();
     summary=ctx.tracks.every(track=>['validation','blocked'].includes(track.status))?'연구 초안의 자동 반복을 멈추고 실제 검증 자료를 기다립니다. 공개 재난 관측은 설정에 따라 계속합니다.':'호출 한도와 실행 간격을 지키며 다음 작업을 기다립니다.';
   }
-  return {enabled:ctx.settings.enabled,dailyAiLimit:ctx.settings.dailyAiLimit,aiUsedToday:ctx.aiUsedToday,globalLimit:ctx.globalLimit,globalUsedToday:ctx.globalUsedToday,activeJobId:active?.id??null,nextAt,summary,tracks:ctx.tracks.map(({code,name,phase,status,reason,lastJobId})=>({code,name,phase,status,reason,lastJobId})),blockers,recentJobs:[...ctx.jobs].sort((a,b)=>created(b)-created(a)).slice(0,12).map(job=>job.id),lastError:ctx.settings.lastError};
+  return {mind:motivationStatus(state,rankedCandidates(state,ctx),decision,ctx.at),enabled:ctx.settings.enabled,dailyAiLimit:ctx.settings.dailyAiLimit,aiUsedToday:ctx.aiUsedToday,globalLimit:ctx.globalLimit,globalUsedToday:ctx.globalUsedToday,activeJobId:active?.id??null,nextAt,summary,tracks:ctx.tracks.map(({code,name,phase,status,reason,lastJobId})=>({code,name,phase,status,reason,lastJobId})),blockers,recentJobs:[...ctx.jobs].sort((a,b)=>created(b)-created(a)).slice(0,12).map(job=>job.id),lastError:ctx.settings.lastError};
 }

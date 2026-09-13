@@ -1,3 +1,4 @@
+import {initialCapabilities,validateCapabilities,validateCapabilityRequest,capabilityInputSha256,disableAllCapabilitiesForRestore} from './capabilities.mjs';
 import {validateWorldSnapshot} from './world.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -24,7 +25,7 @@ const MAGIC = Buffer.from('YENOBK1\n');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const HASH = /^[a-f0-9]{64}$/;
 const STATE_KEYS = ['revision', 'emergencyStop', 'concurrency', 'modules', 'jobs', 'memories', 'snapshots', 'events', 'requests', 'artifacts', 'devices', 'projects', 'sources'];
-const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt', 'productionEvidence', 'studioSeriesId', 'studioChapterId', 'researchRequest', 'researchEvidenceId', 'autopilot'];
+const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt', 'productionEvidence', 'studioSeriesId', 'studioChapterId', 'researchRequest', 'researchEvidenceId', 'autopilot', 'capabilityRequest'];
 const fail = message => { throw new Error(`Backup: ${message}`); };
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = (value, min, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value) && value >= min && value <= max;
@@ -49,8 +50,10 @@ function memories(value) {
   }
 }
 function validateState(state) {
-  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot'], STATE_KEYS);
+  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities'], STATE_KEYS);
   if(!Object.hasOwn(state,'autopilot'))state.autopilot=initialAutopilot();
+  if(!Object.hasOwn(state,'capabilities'))state.capabilities=initialCapabilities();
+  validateCapabilities(state.capabilities);
   validateAutopilot(state.autopilot);
   if (!Object.hasOwn(state, 'quests')) state.quests = [];
   if (!Object.hasOwn(state, 'outcomes')) state.outcomes = [];
@@ -68,7 +71,8 @@ function validateState(state) {
   for (const job of state.jobs) {
     validateAutopilotJob(job,state);
     keys(job, JOB_KEYS, ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts']);
-    if (!UUID.test(job.id) || jobs.has(job.id) || !string(job.title, 160) || !string(job.input, job.type==='forai'?160000:80000) || !['document', 'diagnostics', 'evolution', 'ai', 'agent', 'world', 'video', 'forai'].includes(job.type) || !['queued', 'running', 'paused', 'completed', 'failed', 'cancelled'].includes(job.status) || !integer(job.step, 0, 3) || job.totalSteps !== 3 || !integer(job.version, 1, Number.MAX_SAFE_INTEGER - 1) || !Array.isArray(job.artifacts) || (job.error !== null && !string(job.error))) fail('invalid job');
+    if (!UUID.test(job.id) || jobs.has(job.id) || !string(job.title, 160) || !string(job.input, job.type==='forai'?160000:80000) || !['document', 'diagnostics', 'evolution', 'ai', 'agent', 'world', 'video', 'forai', 'capability'].includes(job.type) || !['queued', 'running', 'paused', 'completed', 'failed', 'cancelled'].includes(job.status) || !integer(job.step, 0, 3) || job.totalSteps !== 3 || !integer(job.version, 1, Number.MAX_SAFE_INTEGER - 1) || !Array.isArray(job.artifacts) || (job.error !== null && !string(job.error))) fail('invalid job');
+    if(job.type==='capability'){validateCapabilityRequest(job.capabilityRequest,state.capabilities);if(capabilityInputSha256(JSON.parse(job.input))!==job.capabilityRequest.inputSha256)fail('capability input mismatch');}else if(job.capabilityRequest)fail('unexpected capability request');
     if(job.type==='video')validateVideoInput(JSON.parse(job.input));
     if(job.type==='forai')validateForAiInput(JSON.parse(job.input));
     if(Object.hasOwn(job,'productionEvidence')&&(job.type!=='forai'||!record(job.productionEvidence)||Buffer.byteLength(JSON.stringify(job.productionEvidence))>65536))fail('invalid production evidence');
@@ -268,6 +272,7 @@ export function restoreBackup({ archive, key, targetDir }) {
   let pausedJobCount = 0, revokedDeviceCount = 0;
   state.emergencyStop = true; state.modules.ai = false; state.revision++;
   state.autopilot.enabled = false;
+  state.capabilities=disableAllCapabilitiesForRestore(state.capabilities,{at:restoredAt}).registry;
   recoverAgentJournals(state.jobs);
   if(state.ecosystem){state.ecosystem.enabled=false;if(state.ecosystem.lastRun?.status==='running'){state.ecosystem.lastRun.status='interrupted';state.ecosystem.lastRun.finishedAt=restoredAt;}}
   if (state.discovery) {

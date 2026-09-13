@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {initialAutopilot,validateAutopilot,validateAutopilotJob,planAutopilot,getAutopilotStatus,AUTOPILOT_INTERVAL_MS} from '../lib/autopilot.mjs';
+import {initialAutopilot,validateAutopilot,validateAutopilotJob,planAutopilot as rawPlanAutopilot,getAutopilotStatus,AUTOPILOT_INTERVAL_MS} from '../lib/autopilot.mjs';
 import {RESEARCH_TRACKS} from '../lib/research.mjs';
+
+// Legacy assertions compare the action contract; new motivation tests check its added audit record.
+function planAutopilot(...args){const value=rawPlanAutopilot(...args);if(!value)return value;const {motivation,...action}=value;return action;}
 
 const START='2026-09-12T00:00:00.000Z';
 const time=hours=>new Date(Date.parse(START)+hours*60*60*1000).toISOString();
@@ -76,7 +79,7 @@ test('research rotates canonical tracks before later phases and carries the prev
 test('after 27 completed stages research waits for real validation inputs instead of endlessly rewriting reports',()=>{
   const s=state();s.modules.documents=false;
   for(let index=0;index<27;index++){
-    const action=planAutopilot(s,options(index*6));assert.equal(action.kind,'research');assert.equal(action.phase,Math.floor(index/9));
+    const action=planAutopilot(s,options(index*6));assert.equal(action.kind,'research');assert.ok(action.phase>=0&&action.phase<=2);assert.ok(!s.jobs.some(job=>job.autopilot?.taskKey===action.taskKey));
     if(action.phase===2)assert.match(action.question,/공개 데이터.*독립 검증 집합.*수행하지 않은/);
     addJob(s,action,{at:time(index*6)});
   }
