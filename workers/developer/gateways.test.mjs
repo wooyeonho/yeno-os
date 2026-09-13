@@ -1,5 +1,33 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {GitHubGateway,CoreGateway,dockerEvidenceFrom} from './gateways.mjs';
-import {validateDeveloperEvidence} from '../../runtime/lib/repository-patch.mjs';
+import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
+import {GitHubGateway,CoreGateway,dockerEvidenceFrom,reportEvidenceDurably} from './gateways.mjs';
+import {validateDeveloperEvidence,mergeDeveloperEvidence} from '../../runtime/lib/repository-patch.mjs';
+test('reportEvidenceDurably parks a failed report for later resend, and clears it once delivered',async()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'blackhole-evidence-pending-'));
+  const pendingPath=path.join(dir,'journal.json.evidence-pending.json');
+  const evidence={schema:1,ciRun:{id:1,conclusion:'success'}};
+  let attempts=0;
+  const flakyCore={async reportEvidence(){attempts++;if(attempts===1)throw Object.assign(Error('network'),{code:'core_unreachable'});return {ok:true};}};
+  // A report that never actually reaches the core (the run/publish/GitHub
+  // write it describes already happened) must never be silently dropped.
+  const failed=await reportEvidenceDurably(flakyCore,'job-1',evidence,pendingPath);
+  assert.equal(failed,false);
+  const parked=JSON.parse(fs.readFileSync(pendingPath,'utf8'));
+  assert.equal(parked.jobId,'job-1');assert.deepEqual(parked.evidence,evidence);
+  // A later call - a replay, or an explicit sync-evidence - resends the exact
+  // same evidence object that was parked, and only then is it cleared.
+  const retried=await reportEvidenceDurably(flakyCore,parked.jobId,parked.evidence,pendingPath);
+  assert.equal(retried,true);assert.equal(attempts,2);
+  assert.equal(fs.existsSync(pendingPath),false);
+  fs.rmSync(dir,{recursive:true,force:true});
+});
+test('a parked report resent unmodified is exactly what mergeDeveloperEvidence treats as idempotent, never a conflict',()=>{
+  // This is what makes retrying a possibly-already-delivered report safe: the
+  // ambiguous case (request sent, response lost) resends byte-identical
+  // facts, which merge accepts as a no-op rather than a contradiction.
+  const first={schema:1,contractId:'demo',baseCommit:'a'.repeat(40),testFiles:[{path:'projects/demo/main.test.mjs',sha256:'b'.repeat(64)}],dockerImageId:'sha256:'+'c'.repeat(64),attempts:[{number:1,exitCode:0,timedOut:false,outputOverflow:false,stdoutSha256:'d'.repeat(64),stderrSha256:'e'.repeat(64),isolation:'docker-no-network',passed:true}],patchSha256:'f'.repeat(64),candidateCommit:null,publish:null,ciRun:null,approval:null,promotion:null,rollback:null,reportedAt:new Date().toISOString()};
+  const merged=mergeDeveloperEvidence(null,first);
+  assert.deepEqual(mergeDeveloperEvidence(merged,first),merged);
+});
 test('dockerEvidenceFrom builds valid evidence from a real run() journal shape, or null when no test actually ran',()=>{
   assert.equal(dockerEvidenceFrom({attempts:[{number:1,status:'unknown'}]}),null);
   const journal={id:'demo-contract',baseCommit:'a'.repeat(40),tests:[{path:'projects/demo/main.test.mjs',sha256:'b'.repeat(64)}],

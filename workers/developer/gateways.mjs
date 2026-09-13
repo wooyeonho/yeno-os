@@ -1,7 +1,9 @@
 // Credentials stay in this trusted controller process, never in test containers.
+import fs from 'node:fs';
+import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {sha256,parseRepositoryPatch} from '../../runtime/lib/repository-patch.mjs';
-import {WorkerError} from './worker.mjs';
+import {WorkerError,atomic} from './worker.mjs';
 const fail=code=>{throw new WorkerError(code);};
 async function bounded(response,max=2*1024*1024){
   if(!response.ok){await response.body?.cancel();fail('remote_http_'+response.status);}
@@ -58,6 +60,27 @@ export class CoreGateway {
     if(typeof jobId!=='string'||!jobId)fail('core_job_identity_missing');
     const {text}=await this.request('/api/developer/evidence',{requestId,jobId,evidence},signal);
     return JSON.parse(text);
+  }
+}
+// The Docker run (or GitHub write) this evidence describes already happened
+// and must never be repeated just because the core was briefly unreachable
+// when reporting it. So a failed report is never dropped on the floor: it is
+// parked at `pendingPath` as {jobId,evidence} so a later call with the same
+// arguments - a replay of the run() journal that produced it, or an explicit
+// operator resync - can safely resend the exact same evidence. That resend is
+// safe because mergeDeveloperEvidence requires an already-reported fact to
+// match exactly rather than advance, so it can never be told twice by
+// accident. Kept alongside CoreGateway (rather than inline in the CLI) so the
+// exact function the CLI runs is what a test can call against a real core.
+export async function reportEvidenceDurably(core,jobId,evidence,pendingPath,signal){
+  if(!evidence||!jobId)return true;
+  try{
+    await core.reportEvidence(jobId,evidence,randomUUID(),signal);
+    if(pendingPath)try{fs.rmSync(pendingPath);}catch{}
+    return true;
+  }catch(error){
+    if(pendingPath)atomic(pendingPath,{jobId,evidence,error:error.code??String(error)});
+    return false;
   }
 }
 export class GitHubGateway {

@@ -1,3 +1,14 @@
+# 2026-09-13 — evidence 보고 실패의 정합성 확보, docker-verified 라벨 정확성 수정
+
+- **버그 수정 (정합성)**: `workers/developer/cli.mjs`의 `reportEvidence()`가 코어 전송 실패를 `console.error` 경고만 남기고 삼켜, Docker 검증이나 GitHub 승격/롤백이 실제로 성공한 뒤 evidence 보고만 실패해도 CLI가 성공으로 종료했다. 같은 저널을 다시 실행해도 이미 끝난 작업(`runDeveloperTask`가 조기 반환)이라 `core.lastJobId`가 다시 설정되지 않아 실패한 evidence가 자동 재전송되지 않았다 — 외부 저널과 코어 상태가 영구히 어긋날 수 있었다.
+  - `workers/developer/gateways.mjs`에 `reportEvidenceDurably(core, jobId, evidence, pendingPath, signal)`를 추가했다. 전송에 실패하면 `{jobId, evidence}`를 `<record>.evidence-pending.json`에 원자적으로 기록하고, 성공하면 그 파일을 지운다. `mergeDeveloperEvidence`는 이미 접수된 사실의 재전송을 그대로(모순 없이) 받아들이므로, "요청은 갔는데 응답을 못 받은" 모호한 실패도 안전하게 재시도할 수 있다.
+  - `cli.mjs`의 `run` 모드는 이제 `core.lastJobId`가 이번에 새로 설정되지 않았어도 저널에 이미 저장된 `jobId`를 읽어 evidence 재전송을 시도한다 — 같은 `--journal`로 재실행해도 모델·Docker·GitHub 작업은 반복하지 않고(저널이 이미 종료 상태면 `runDeveloperTask`가 그대로 조기 반환) evidence만 다시 보낸다. `promote`/`rollback`도 evidence 보고 실패 시 exit code 1로 종료해 "GitHub 쓰기는 성공했지만 코어에 안 알려짐" 상태를 명시적으로 드러낸다(단, 이미 성공한 GitHub 쓰기 자체는 절대 반복하지 않는다).
+  - 별도 `sync-evidence --pending <path>` 명령을 추가했다. Docker나 GitHub를 전혀 건드리지 않고 parked evidence만 재전송한다 — `run`/`promote`/`rollback` 재실행이 아닌 경로로도 정합화할 수 있다.
+  - `workers/developer/gateways.test.mjs`에 `reportEvidenceDurably`의 실패→park→재전송→정리 경로와, park된 evidence를 그대로 재전송하는 것이 `mergeDeveloperEvidence`에서 충돌이 아니라 멱등 처리됨을 확인하는 시험을 추가했다.
+- **버그 수정 (라벨 정확성)**: `developerEvidenceStatus`가 `attempts.some(a=>a.passed)`만으로 `docker-verified`를 판정해, `isolation`이 `'synthetic-test-adapter'`(테스트용 가짜 러너)여도, 혹은 `patchSha256`이 아직 `null`이어도 진짜 Docker 검증과 동일하게 표시됐다. `docker-verified`는 이제 (1) 통과한 시도 중 `isolation === 'docker-no-network'`인 것이 있고 (2) `patchSha256`이 채워져 있을 때만(그 값은 `/api/developer/evidence`에서 이미 코어의 실제 저장 아티팩트 해시와 대조됨) 반환한다. 그 밖의 통과(가짜 어댑터, 또는 해시가 아직 없는 경우)는 새 상태 `test-adapter-verified`로 구분해, 소유자가 실제로 승격 판단에 쓸 수 있는 라벨과 시험용 라벨이 절대 섞이지 않게 했다.
+  - `runtime/test/repository-patch.test.mjs`에 회귀 시험을 추가하고, `workers/developer/core-integration.test.mjs`의 synthetic 경로(진짜 Docker가 아님을 스스로 명시하는 어댑터) 기대값을 `test-adapter-verified`로 바로잡았다(`DEVELOPER_DOCKER_REQUIRED=1`로 실행되는 실제 Docker 경로는 여전히 `docker-verified`를 기대한다).
+- 전체 회귀: 로컬 476개 중 444 통과, 25 실패(이전과 완전히 동일한 사전 환경 한계 — WASM 샌드박스·UI DOM·Node 네이티브 전역 부재), 7 건너뜀. `npm run test:developer` 78개 중 75 통과, 3 건너뜀(로컬 Docker 부재).
+
 # 2026-09-13 — runtime/public 잠금, evidence 실제 연결과 신뢰 경계 수정
 
 - **보안 수정**: `runtime/public/`도 `runtime/lib/`과 같은 기본 거부형 허용 목록(`ALLOWED_PUBLIC_FILES`, 현재 빈 목록)으로 바꿨다. 이전 수정은 `runtime/lib/`만 잠갔고 `runtime/public/`은 여전히 전체 허용이어서, 모델 패치가 브라우저에 그대로 서빙되는 `app.js`·`web-client.mjs`·`device-connect.mjs`·`sw.js` 등을 바꿔 승인 버튼의 실제 동작이나 인증된 세션의 요청 대상을 변조할 수 있었다. Docker 시험의 `--network none`은 배포 후 브라우저에서 실행되는 JS와는 무관하다.

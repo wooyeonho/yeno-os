@@ -1,4 +1,4 @@
-## 2026-09-13 저장소 개발 워커 통합 (최신 구현, 2차 보안·연결 수정 반영)
+## 2026-09-13 저장소 개발 워커 통합 (최신 구현, 3차 정합성·라벨 수정 반영)
 
 `workers/developer/`와 `runtime/lib/repository-patch.mjs`를 우선한다. 저장소 패치 작업(`job.repositoryTask`)은 `independent-core-engine.mjs`에서 `development-model-call`로 분류되며, 코드 생성·수리 모드와 동일하게 명시적 개발 요청에서만 모델을 호출한다. 운영 코어는 Docker 소켓을 갖지 않으며 저장소 시험을 직접 실행하지 않는다. 별도 신뢰 개발 호스트의 `workers/developer/cli.mjs`가 코어의 `/api/developer/plan`에서 받은 계획을 네트워크 없는 비루트 컨테이너에서 시험·최대 1회 수리하고, 승인된 정확한 커밋에서만 GitHub로 승격한다. 모델 패치는 시험·워크플로·인증·예산·워커 자신을 변경할 수 없다.
 
@@ -6,7 +6,9 @@
 
 Docker 기반 시험(패치 실패→1회 수리→재시험, 네트워크 없는 읽기 전용 비루트 컨테이너)은 **GitHub Actions CI에서 실제로 실행되어 통과했다** (`.github/workflows/developer-worker.yml`의 `verify` 잡). 최신 검증 실행 기록은 CHANGELOG.md를 따른다. 로컬 개발 컨테이너에는 Docker가 없어 `DEVELOPER_DOCKER_REQUIRED=1` 시험만 로컬에서 skip되며, 이를 "미검증"으로 적지 않는다 — CI 로그가 실제 증거다.
 
-워커가 실제로 확인한 Docker 시험 결과·후보 커밋·GitHub Draft PR·CI 실행·소유자 승인·승격/롤백은 `workers/developer/cli.mjs`가 **매 단계마다 자동으로** `POST /api/developer/evidence`를 호출해 코어 상태(`job.developerEvidence`)와 암호화 백업에 되돌린다(`CoreGateway.reportEvidence`, `gateways.mjs`의 `dockerEvidenceFrom`). 이 접수 전까지 저장소 패치 작업의 `repositoryPlan.executionStatus`는 `patch-drafted`일 뿐이며, 실제로 Docker 검증까지 됐다는 뜻이 아니다. 단계는 `patch-drafted → docker-failed|docker-verified → awaiting-ci → awaiting-approval → approved → promoted → rolled-back` 순으로만 전진한다.
+워커가 실제로 확인한 Docker 시험 결과·후보 커밋·GitHub Draft PR·CI 실행·소유자 승인·승격/롤백은 `workers/developer/cli.mjs`가 **매 단계마다 자동으로** `POST /api/developer/evidence`를 호출해 코어 상태(`job.developerEvidence`)와 암호화 백업에 되돌린다(`CoreGateway.reportEvidence`, `gateways.mjs`의 `dockerEvidenceFrom`/`reportEvidenceDurably`). 이 접수 전까지 저장소 패치 작업의 `repositoryPlan.executionStatus`는 `patch-drafted`일 뿐이며, 실제로 Docker 검증까지 됐다는 뜻이 아니다. 단계는 `patch-drafted → docker-failed|test-adapter-verified|docker-verified → awaiting-ci → awaiting-approval → approved → promoted → rolled-back` 순으로만 전진한다. `docker-verified`는 통과한 시도의 `isolation`이 실제로 `'docker-no-network'`이고 `patchSha256`이 채워져 있을 때만 반환되며(그 값은 아래 문단대로 코어의 실제 저장 아티팩트 해시와 대조된다), 그 밖의 통과(시험용 어댑터, 또는 해시가 아직 없는 경우)는 `test-adapter-verified`로만 표시된다 — 소유자가 승격 판단에 쓰는 라벨과 시험용 라벨은 절대 섞이지 않는다.
+
+evidence 보고 자체가 코어에 닿지 못하고 실패해도(네트워크 단절 등) Docker 시험이나 GitHub 승격/롤백처럼 이미 일어난 사실이 조용히 유실되지 않는다. `reportEvidenceDurably`가 실패한 보고를 `<record>.evidence-pending.json`에 원자적으로 남기고, 같은 `--journal`로 `run`을 다시 실행하면(저널이 이미 종료 상태라 모델·Docker·GitHub 작업은 반복하지 않는다) 그 evidence를 재전송하며, `promote`/`rollback`도 evidence 보고가 실패하면 exit code 1로 정합화가 필요함을 드러낸다(이미 끝난 GitHub 쓰기 자체는 절대 반복하지 않는다). Docker·GitHub 작업 없이 parked evidence만 다시 보내려면 `cli.mjs sync-evidence --pending <path>`를 쓴다. 재전송이 안전한 이유는 `mergeDeveloperEvidence`가 이미 접수된 사실과 동일한 재보고를 충돌이 아니라 멱등 처리로 받아들이기 때문이다.
 
 `/api/developer/evidence`는 소유자 pairing 토큰 또는 `platform:'developer-worker'`로 등록한 기기만 호출할 수 있고(일반 브라우저·기기 토큰은 403), `patchSha256`을 신고하면 코어가 실제로 저장한 패치 아티팩트의 SHA-256과 대조하며, `attempts[].passed`는 신고값을 믿지 않고 `exitCode===0 && !timedOut && !outputOverflow`에서 코어가 직접 계산한다. 롤백 증거는 `{rollbackCommit, revertedPromotionCommit}`로 구분한다 — 실제 `approveRollback()`은 새 forward-revert 커밋을 만들며 그 SHA는 되돌리는 promotion 커밋과 절대 같지 않다. 두 번째 신고부터는 **부분 패치**를 보낼 수 있다(`mergeDeveloperEvidence`) — 이미 접수된 필드는 그대로 두고 새 필드만 보내면 코어가 이전 기록 위에 병합하며, 이미 접수된 사실은 이후 제출로 뒤집거나 지울 수 없다. `promote`/`rollback` CLI 명령이 서로 다른(별도 시점의) 프로세스로 실행되는 실제 운영 방식과 이 부분 패치 방식은 짝을 이룬다.
 

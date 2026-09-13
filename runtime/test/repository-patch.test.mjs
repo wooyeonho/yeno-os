@@ -28,6 +28,15 @@ test('evidence status reflects only what has actually been reported, in order',(
   assert.equal(developerEvidenceStatus(failedOnly),'docker-failed');
   assert.equal(developerEvidenceStatus(baseEvidence()),'docker-verified');
 });
+test('docker-verified requires a real networkless-Docker pass bound to a patch hash, not just any pass',()=>{
+  // A pass from anything other than the pinned Docker sandbox is real signal,
+  // but must never be labelled the same as an actually-verified candidate.
+  const syntheticPass={...baseEvidence(),attempts:[attempt(1,false),{...attempt(2,true),isolation:'synthetic-test-adapter'}]};
+  assert.equal(developerEvidenceStatus(syntheticPass),'test-adapter-verified');
+  // A real Docker pass with no patch hash bound yet is progress, not a verified candidate.
+  const unbound={...baseEvidence(),patchSha256:null,candidateCommit:null};
+  assert.equal(developerEvidenceStatus(unbound),'test-adapter-verified');
+});
 test('a candidate commit requires at least one passing Docker attempt',()=>{
   const bad={...baseEvidence(),attempts:[attempt(1,false)]};
   assert.throws(()=>validateDeveloperEvidence(bad));
@@ -53,12 +62,13 @@ test('publish, CI, approval, promotion and rollback must be reported in that ord
   assert.equal(validateDeveloperEvidence(rolledBack),true);
   assert.equal(developerEvidenceStatus(rolledBack),'rolled-back');
 });
-test('a candidate commit and patch hash can arrive after Docker verification, not only alongside it',()=>{
-  // This is the real worker sequence: Docker verification succeeds with no
-  // GitHub interaction yet (no candidate branch, no patch hash to report),
-  // and only a later report - once the candidate is actually pushed - fills
-  // those two facts in. That must be an extension, not a conflict.
-  const dockerOnly={...baseEvidence(),patchSha256:null,candidateCommit:null};
+test('a candidate commit can arrive after Docker verification, not only alongside it',()=>{
+  // This is the real worker sequence (worker.mjs sets patchSha256 the moment
+  // a candidate passes tests, well before any GitHub interaction): Docker
+  // verification succeeds with no candidate branch pushed yet, and only a
+  // later report - once the candidate is actually published - fills the
+  // candidate commit in. That must be an extension, not a conflict.
+  const dockerOnly={...baseEvidence(),candidateCommit:null};
   const first=mergeDeveloperEvidence(null,dockerOnly);
   assert.equal(developerEvidenceStatus(first),'docker-verified');
   assert.equal(first.candidateCommit,null);

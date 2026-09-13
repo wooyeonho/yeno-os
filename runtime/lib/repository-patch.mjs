@@ -178,6 +178,13 @@ export function mergeDeveloperEvidence(previous,patch) {
   return merged;
 }
 // A drafted patch is a model guess, nothing more, until this says otherwise.
+// "docker-verified" is a claim the owner may act on (publish, promote), so it
+// requires a passing attempt that actually ran in the real pinned-image,
+// networkless sandbox (isolation === 'docker-no-network') AND a patch hash
+// (already bound to the core's own stored artifact at the API boundary - see
+// server.mjs's /api/developer/evidence handler). A passing attempt from any
+// other adapter (the synthetic test harness) or one not yet bound to a patch
+// hash is real progress but never gets the production-grade label.
 export function developerEvidenceStatus(evidence) {
   if(!evidence)return 'patch-drafted';
   if(evidence.rollback)return 'rolled-back';
@@ -185,7 +192,8 @@ export function developerEvidenceStatus(evidence) {
   if(evidence.approval)return 'approved';
   if(evidence.ciRun?.conclusion==='success')return 'awaiting-approval';
   if(evidence.publish)return 'awaiting-ci';
-  if(evidence.attempts.some(a=>a.passed))return 'docker-verified';
+  if(evidence.attempts.some(a=>a.passed&&a.isolation==='docker-no-network')&&evidence.patchSha256!==null)return 'docker-verified';
+  if(evidence.attempts.some(a=>a.passed))return 'test-adapter-verified';
   return 'docker-failed';
 }
 export function validateJobEvidence(job) {

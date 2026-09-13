@@ -55,7 +55,10 @@ async function integrated(t,realDocker){
   assert.equal(gateway.lastJobId,state.jobs.find(j=>j.repositoryPlan?.baseCommit===baseCommit)?.id);
   await gateway.reportEvidence(gateway.lastJobId,evidence,'evidence-'+gateway.lastJobId);
   const withEvidence=(await gateway.state()).jobs.find(j=>j.id===gateway.lastJobId);
-  assert.equal(withEvidence.repositoryPlan.executionStatus,'docker-verified');
+  // The synthetic branch never claims real Docker isolation, so it can only
+  // ever reach 'test-adapter-verified' - 'docker-verified' is reserved for a
+  // pass whose isolation is actually 'docker-no-network' (the realDocker branch).
+  assert.equal(withEvidence.repositoryPlan.executionStatus,realDocker?'docker-verified':'test-adapter-verified');
   assert.equal(withEvidence.repositoryPlan.evidence.attempts.length,2);
   assert.equal(withEvidence.repositoryPlan.evidence.attempts[0].passed,false);
   assert.equal(withEvidence.repositoryPlan.evidence.attempts[1].passed,true);

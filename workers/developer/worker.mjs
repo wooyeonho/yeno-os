@@ -10,7 +10,7 @@ export class WorkerError extends Error {constructor(code){super(`Developer worke
 const fail=code=>{throw new WorkerError(code);};
 const git=(root,...args)=>execFileSync('git',['-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false',...args],{cwd:root,env:{PATH:process.env.PATH,HOME:os.tmpdir(),GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null',GIT_TERMINAL_PROMPT:'0'},maxBuffer:12*1024*1024,timeout:15000,stdio:['ignore','pipe','pipe']});
 export const headOf=root=>git(root,'rev-parse','HEAD').toString().trim();
-function atomic(file,value){fs.mkdirSync(path.dirname(file),{recursive:true,mode:0o700});const temp=file+'.'+randomUUID()+'.tmp';const fd=fs.openSync(temp,'wx',0o600);try{fs.writeFileSync(fd,JSON.stringify(value,null,2)+'\n');fs.fsyncSync(fd);}finally{fs.closeSync(fd);}fs.renameSync(temp,file);const dir=fs.openSync(path.dirname(file),'r');try{fs.fsyncSync(dir);}finally{fs.closeSync(dir);}}
+export function atomic(file,value){fs.mkdirSync(path.dirname(file),{recursive:true,mode:0o700});const temp=file+'.'+randomUUID()+'.tmp';const fd=fs.openSync(temp,'wx',0o600);try{fs.writeFileSync(fd,JSON.stringify(value,null,2)+'\n');fs.fsyncSync(fd);}finally{fs.closeSync(fd);}fs.renameSync(temp,file);const dir=fs.openSync(path.dirname(file),'r');try{fs.fsyncSync(dir);}finally{fs.closeSync(dir);}}
 const clean=x=>String(x??'').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g,'').slice(-3000);
 export function validateContract(c){
   if(!c||Object.keys(c).some(k=>!['id','baseCommit','goal','editablePaths','contextPaths','testFiles'].includes(k))||!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(c.id??'')||!/^[a-f0-9]{40}$/.test(c.baseCommit??'')||typeof c.goal!=='string'||!c.goal.trim()||c.goal.length>1500)fail('invalid_contract');
