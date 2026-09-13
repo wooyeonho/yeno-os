@@ -26,3 +26,11 @@ progress.job-progress{display:block;width:100%;border:0;appearance:none;-webkit-
 .web-install{display:flex;align-items:center;flex-wrap:wrap;gap:12px;background:#111719;color:#a8b5b7;margin:-12px 0 20px;padding:8px 0;font-size:11px}
 .web-recovery{position:fixed;top:8px;left:260px;right:16px;z-index:40;display:flex;gap:12px;align-items:center}
 @media(max-width:800px){.web-recovery{left:12px;right:12px}.web-install{font-size:11px}.web-install .button{min-height:44px}.pair-card{max-height:calc(100dvh - 40px);overflow:auto}}
+
+#device-connect { width:100%; margin:16px 0 4px; min-height:52px; }
+#device-connect-status { font-size:15px; line-height:1.6; }
+#device-connect-reference { display:block; overflow-wrap:anywhere; padding:12px; background:var(--bg); border-radius:8px; font-size:12px; user-select:all; }
+#device-connect-reference[hidden] { display:none; }
+.connection-alternative { margin:22px 0; border-top:1px solid var(--border); padding-top:18px; }
+.connection-alternative summary { cursor:pointer; padding:8px 0; }
+.connection-alternative form { padding-top:12px; }

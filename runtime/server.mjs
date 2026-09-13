@@ -26,6 +26,7 @@ import {issueHankkiInvite,revokeHankkiInvite,getHankkiRecipientView,respondToHan
 import {assertProductionCapacity,productionCapacity,ProductionCapacityError,RESEARCH_RESERVED_ARTIFACT_BYTES} from './lib/production-capacity.mjs';
 import {RESEARCH_TRACKS,ResearchError,validateResearchInput,validateResearchBundle,collectResearchEvidence,createResearchPrompt,researchCitationIds} from './lib/research.mjs';
 import {createWebSessions,WebSessionError} from './lib/web-session.mjs';
+import {createWebPairings} from './lib/web-pairing.mjs';
 import {planAutopilot,getAutopilotStatus,validateAutopilot,validateAutopilotJob} from './lib/autopilot.mjs';
 import {researchEvidenceCsv,researchForAiInput,researchVideoInput} from './lib/autopilot-outputs.mjs';
 
@@ -54,6 +55,7 @@ export function createYenoServer(options={}) {
  if(typeof token!=='string'||token.length<16){releaseLock();throw new Error('YENO_TOKEN must contain at least 16 characters.');}
  const tokenHash=digest(token);
  const webSessions=createWebSessions({key:token,now:options.webSessionNow??Date.now});
+ const webPairings=createWebPairings({now:options.webSessionNow??Date.now});
  const hankkiRateLimit=createHankkiRateLimiter();
  const aiBase=env.YENO_AI_BASE_URL??'', aiModel=env.YENO_AI_MODEL??'', aiKey=env.YENO_AI_API_KEY??'';
  let aiEndpoint=null;
@@ -530,7 +532,7 @@ export function createYenoServer(options={}) {
        if(req.method!=='GET'&&req.method!=='HEAD')throw new HttpError(405,'Method not allowed');
        const allowed={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/command-request.mjs':'command-request.mjs','/source-reference-labels.mjs':'source-reference-labels.mjs','/world-view.mjs':'world-view.mjs','/studio-view.mjs':'studio-view.mjs','/studio.css':'studio.css','/absorption-routing.mjs':'absorption-routing.mjs','/world-land.svg':'world-land.svg','/style.css':'style.css','/manifest.webmanifest':'manifest.webmanifest','/icon.svg':'icon.svg','/web-client.mjs':'web-client.mjs','/sw.js':'sw.js','/offline.html':'offline.html'};
        Object.assign(allowed,{'/autopilot-view.mjs':'autopilot-view.mjs','/research-view.mjs':'research-view.mjs','/hankki/answer':'hankki-answer.html','/hankki-answer.mjs':'hankki-answer.mjs','/hankki-answer.css':'hankki-answer.css'});
-       Object.assign(allowed,{'/icon-192.png':'icon-192.png','/icon-512.png':'icon-512.png'});
+       Object.assign(allowed,{'/icon-192.png':'icon-192.png','/icon-512.png':'icon-512.png','/device-connect.mjs':'device-connect.mjs'});
        const filename=allowed[url.pathname];if(!filename)throw new HttpError(404,'Not found');const file=path.join(ROOT,'public',filename);if(!fs.existsSync(file))throw new HttpError(404,'UI not available');const contentTypes={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.png':'image/png'};res.writeHead(200,{'Content-Type':contentTypes[path.extname(file)]??'application/octet-stream'});if(req.method==='HEAD')return res.end();return fs.createReadStream(file).pipe(res);
      }
      const recipientMatch=url.pathname.match(/^\/api\/hankki\/checkins\/([a-f0-9-]+)$/);
@@ -542,6 +544,40 @@ export function createYenoServer(options={}) {
        const b=await body(req,4096),result=respondToHankkiInvite(s.studio,recipientMatch[1],credential,b,{key:token});
        if(s.emergencyStop)throw new HttpError(409,'현재 안부 응답 접수가 일시 중지되어 있습니다.');
        s.studio=result.studio;event('Hankki recipient response saved.');save();return respond(res,200,{ok:true,checkin:result.view});
+     }
+     if(url.pathname==='/api/web/pairing'&&['POST','GET'].includes(req.method)){
+       webSessions.guard(req,{mutation:req.method==='POST'});
+       if(req.method==='POST'){
+         const b=await body(req,4096);
+         if(Object.keys(b).some(key=>key!=='remember')||typeof b.remember!=='boolean')throw new HttpError(400,'연결 유지 여부를 확인해 주세요.');
+         const result=webPairings.begin(req,b.remember);
+         res.setHeader('Set-Cookie',result.cookie);return respond(res,result.created?201:200,webPairings.metadata(result.entry));
+       }
+       const entry=webPairings.read(req),metadata=webPairings.metadata(entry);
+       if(!entry.deviceId)return respond(res,200,metadata);
+       ensureDurable();
+       const device=s.devices[entry.deviceId];
+       if(!device||device.platform!=='web'||device.revokedAt||device.tokenHash!==digest(deriveDeviceToken(device.id))){res.setHeader('Set-Cookie',webPairings.clear(req));throw new HttpError(409,'이 브라우저 연결이 해제되었습니다. 새 연결 요청이 필요합니다.',{code:'WEB_PAIRING_REVOKED'});}
+       const session=webSessions.issue(req,device,entry.remember);
+       res.setHeader('Set-Cookie',session.cookie);return respond(res,200,{...metadata,...webSessions.session(device,session.expiresAt)});
+     }
+     if(url.pathname==='/api/web/pairing/approve'&&req.method==='POST'){
+       // Only the existing owner bearer can approve. Browser cookies, public
+       // references and native device credentials never confer this authority.
+       const credential=bearer(req);
+       if(!credential||!crypto.timingSafeEqual(Buffer.from(digest(credential)),Buffer.from(tokenHash)))throw new HttpError(401,'Owner pairing credential required for browser approval');
+       const b=await body(req,4096);
+       if(Object.keys(b).some(key=>key!=='requestId'))throw new HttpError(400,'연결 요청 번호만 지정해 주세요.');
+       const entry=webPairings.get(b.requestId);
+       const result=mutation(req,url,{requestId:entry.id},()=>{
+         const devices=Object.values(s.devices).filter(device=>device.platform==='web');
+         if(devices.length>=1000||devices.filter(device=>!device.revokedAt).length>=100)throw new HttpError(409,'등록된 브라우저가 많습니다. 이전 브라우저 연결을 해제해 주세요.');
+         return {status:200,payload:{device:enrollDevice({name:entry.name,platform:'web'})}};
+       },{required:true});
+       const device=s.devices[result.payload.device?.id];
+       if(!device||device.platform!=='web'||device.revokedAt||device.tokenHash!==digest(deriveDeviceToken(device.id)))throw new HttpError(409,'이 브라우저 연결이 해제되었습니다. 새 연결 요청이 필요합니다.',{code:'WEB_PAIRING_REVOKED'});
+       entry.deviceId=device.id;
+       return respond(res,200,webPairings.metadata(entry));
      }
      if(url.pathname==='/api/web/session'&&req.method==='POST'){
        webSessions.guard(req,{mutation:true});

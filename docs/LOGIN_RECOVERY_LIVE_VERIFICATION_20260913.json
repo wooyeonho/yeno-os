@@ -1,0 +1,33 @@
+{
+  "at": "2026-09-13T01:01:29.336Z",
+  "origin": "https://global-iris-gyeol-98386a17.koyeb.app",
+  "currentLoginVerified": true,
+  "status": "verified",
+  "stage": "complete",
+  "checks": [
+    "current_container_key_accepted_by_public_https",
+    "new_https_login_and_secure_host_only_cookie",
+    "independent_cookie_reopen_and_existing_records_readable",
+    "cookie_cannot_administer_devices_or_use_native_api",
+    "logout_revoked_synthetic_cookie_and_preserved_prior_devices"
+  ],
+  "cleanup": "synthetic_device_revoked",
+  "modelCallsSubmitted": 0,
+  "verificationId": "39e241d6-reset01",
+  "preservedActiveDevices": 1,
+  "deploymentId": "39e241d6-b6cc-42de-8d31-d045de6c120b",
+  "instanceId": "7dbed241",
+  "sourceCommit": "a3dc0f65ed710077d6f82de8b25b22930ffd9ee1",
+  "ownerPhoneLoginVerified": false,
+  "autopilotAfterDeploy": {
+    "enabled": true,
+    "nextAt": "2026-09-13T03:14:51.251Z",
+    "activeJobId": null,
+    "dailyAiLimit": 4,
+    "aiUsedToday": 0,
+    "lastError": null,
+    "jobs": 55,
+    "projects": 70,
+    "sources": 110
+  }
+}
