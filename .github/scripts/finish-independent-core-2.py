@@ -12,6 +12,16 @@ def patch(path, old, new, marker=None):
     file.write_text(text.replace(old, new), encoding='utf-8')
 
 
+# Only a persisted step-2 draft is local-only. Earlier checkpoints may still
+# collect evidence or invoke a provider and therefore stay blocked without an
+# explicitly authorized model path.
+patch(
+    'runtime/lib/autopilot.mjs',
+    "    // A settled answer can finish locally. Any path that would create a new\n    // provider call needs explicit background authorization, which production\n    // provider configuration deliberately never grants.\n    if(finalAnswer)return true;\n    return backgroundModelCallsAllowed(ctx)&&!!ctx.config.ready&&calls(job).length===0&&aiAvailable(ctx);",
+    "    if(!backgroundModelCallsAllowed(ctx))return false;\n    return !!ctx.config.ready&&(calls(job).length===0?aiAvailable(ctx):finalAnswer);",
+    marker="return !!ctx.config.ready&&(calls(job).length===0?aiAvailable(ctx):finalAnswer);",
+)
+
 # A research job at step 2 already owns its settled answer and only needs to
 # persist bytes. Let that one checkpoint run even when the AI module is off.
 patch(
