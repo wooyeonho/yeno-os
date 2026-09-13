@@ -104,7 +104,13 @@ function resumeAllowed(job,state,ctx){
   if(job.status!=='paused'||!['restart','shutdown'].includes(job.pauseReason)||uncertain(job)||(job.deadlineAt&&Date.parse(job.deadlineAt)<=ctx.time))return false;
   if(job.autopilot.kind==='research'){
     const track=RESEARCH_TRACKS.find(item=>item.code===job.autopilot.trackCode);
-    return projectAvailable(state,track)&&!!ctx.config.ready&&iso(job.deadlineAt)&&Date.parse(job.deadlineAt)>ctx.time&&job.callLimit===1&&(calls(job).length===0?aiAvailable(ctx):finalResearchCheckpoint(job));
+    if(!projectAvailable(state,track)||!iso(job.deadlineAt)||Date.parse(job.deadlineAt)<=ctx.time||job.callLimit!==1)return false;
+    // At step 2 the server only saves the already verified draft. A provider
+    // outage/configuration change must not strand this local completion; all
+    // earlier checkpoints still need their provider and existing call budget.
+    const finalAnswer=finalResearchCheckpoint(job);
+    if(job.step===2&&finalAnswer&&typeof job.draft==='string'&&job.draft.trim().length>0)return true;
+    return !!ctx.config.ready&&(calls(job).length===0?aiAvailable(ctx):finalAnswer);
   }
   return state.modules?.documents===true;
 }

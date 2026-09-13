@@ -545,8 +545,10 @@ export function createYenoServer(options={}) {
      }
      if(url.pathname==='/api/web/session'&&req.method==='POST'){
        webSessions.guard(req,{mutation:true});
-       const rate=webSessions.loginLimit(req);if(!rate.allowed){res.setHeader('Retry-After',String(rate.retryAfter));throw new HttpError(429,'연결 시도가 많습니다. 잠시 후 같은 연결 요청을 확인해 주세요.');}
-       const credential=bearer(req);if(!credential||!crypto.timingSafeEqual(Buffer.from(digest(credential)),Buffer.from(tokenHash)))throw new HttpError(401,'개인 연결 키를 확인해 주세요.');
+       const rate=webSessions.loginLimit(req);if(!rate.allowed){res.setHeader('Retry-After',String(rate.retryAfter));throw new HttpError(429,'연결 시도가 많습니다. 잠시 후 같은 연결 요청을 확인해 주세요.',{code:'AUTH_RATE_LIMITED',retryAfterSeconds:rate.retryAfter});}
+       const credential=bearer(req);
+       if(!credential)throw new HttpError(401,'연결 키가 서버에 전달되지 않았습니다. 현재 블랙홀 주소에서 다시 연결해 주세요.',{code:'AUTH_HEADER_MISSING'});
+       if(!crypto.timingSafeEqual(Buffer.from(digest(credential)),Buffer.from(tokenHash)))throw new HttpError(401,'입력한 연결 키가 서버에 적용된 키와 일치하지 않습니다.',{code:'AUTH_KEY_MISMATCH'});
        const b=await body(req,4096);
        if(Object.keys(b).some(key=>!['requestId','name','remember'].includes(key))||(b.remember!==undefined&&typeof b.remember!=='boolean'))throw new HttpError(400,'브라우저 연결 입력을 확인해 주세요.');
        const name=b.name===undefined?'BLACKHOLE 브라우저':requiredText(b.name,80);
@@ -556,7 +558,7 @@ export function createYenoServer(options={}) {
          return {status:201,payload:{device:enrollDevice({name,platform:'web'})}};
        },{required:true});
        const device=s.devices[result.payload.device?.id];
-       if(!device||device.platform!=='web'||device.revokedAt||device.tokenHash!==digest(deriveDeviceToken(device.id)))throw new HttpError(409,'이전 브라우저 등록이 해제되었습니다. 새 연결 요청으로 다시 연결해 주세요.');
+       if(!device||device.platform!=='web'||device.revokedAt||device.tokenHash!==digest(deriveDeviceToken(device.id)))throw new HttpError(409,'이전 브라우저 등록이 해제되었습니다. 새 연결 요청으로 다시 연결해 주세요.',{code:'WEB_ENROLLMENT_STALE'});
        const session=webSessions.issue(req,device,b.remember===true);
        res.setHeader('Set-Cookie',session.cookie);return respond(res,result.status,webSessions.session(device,session.expiresAt));
      }

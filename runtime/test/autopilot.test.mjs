@@ -139,6 +139,80 @@ test('a settled answer checkpoint can finish without another call at the exhaust
   assert.equal(planAutopilot(s,options(0.1)),null);
 });
 
+test('restart finishes a persisted research draft locally when the provider configuration is unavailable',()=>{
+  for(const pauseReason of ['restart','shutdown']){
+    const s=state();s.modules.documents=false;s.autopilot.dailyAiLimit=1;
+    const job=addJob(s,research(s),{status:'paused',withAnswer:false});
+    job.pauseReason=pauseReason;job.step=2;job.draft='검증한 인용과 함께 저장을 기다리는 연구 답안';
+    const unavailable=options(0.1,{config:{ready:false,dailyCallLimit:0}}),before=structuredClone(s);
+    assert.deepEqual(planAutopilot(s,unavailable),{kind:'resume',jobId:job.id});
+    assert.equal(getAutopilotStatus(s,unavailable).nextAt,time(0.1));
+    assert.deepEqual(s,before,'planning neither rewrites checkpoints nor creates another call');
+    assert.equal(job.agentJournal.calls.length,1);
+  }
+});
+
+test('local-only restart recovery requires the completed draft checkpoint and preserves every stop boundary',()=>{
+  const unavailable=options(0.1,{config:{ready:false,dailyCallLimit:0}});
+  const changes=[
+    (s,job)=>{job.step=1;},
+    (s,job)=>{delete job.draft;},
+    (s,job)=>{job.draft='  ';},
+    (s,job)=>{job.agentJournal.calls=[];},
+    (s,job)=>{job.agentJournal.calls[0].status='unknown';},
+    (s,job)=>{job.agentJournal.calls[0].status='reserved';},
+    (s,job)=>{job.agentJournal.history.at(-1).toolCalls=[{id:'t1',name:'runtime_inspect',args:{}}];},
+    (s,job)=>{job.deadlineAt=time(0.05);},
+    (s,job)=>{delete job.deadlineAt;},
+    (s,job)=>{job.pauseReason='owner';},
+    (s,job)=>{job.pauseReason='autopilotStopped';},
+    (s,job)=>{s.autopilot.enabled=false;},
+    (s,job)=>{s.emergencyStop=true;},
+    (s,job)=>{s.projects[0].status='archived';},
+  ];
+  for(const change of changes){
+    const s=state();s.modules.documents=false;
+    const job=addJob(s,research(s),{status:'paused',withAnswer:false});job.pauseReason='restart';job.step=2;job.draft='보관할 검증 전 답안';
+    change(s,job);const before=structuredClone(s);
+    assert.equal(planAutopilot(s,unavailable),null);
+    assert.deepEqual(s,before);
+  }
+});
+
+test('a real core restart without model credentials saves the same settled research draft without another model call',{timeout:12000},async t=>{
+  const [{default:fs},{default:os},{default:path},{start},{openStore,digest}]=await Promise.all([import('node:fs'),import('node:os'),import('node:path'),import('../server.mjs'),import('../lib/store.mjs')]);
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'blackhole-autopilot-local-finish-'));
+  const store=openStore(root),at=new Date().toISOString(),track=RESEARCH_TRACKS[0];
+  store.state.projects.push({id:track.projectId,name:track.name,repositoryUrl:'',summary:'Synthetic recovery fixture',nextAction:'Verify local completion',status:'active',version:1,createdAt:at,updatedAt:at});
+  store.state.modules.documents=false;
+  store.save();
+  const owner='synthetic-autopilot-recovery-owner';let core,modelCalls=0,evidenceReads=0;
+  t.after(()=>{core?.shutdown();fs.rmSync(root,{recursive:true,force:true});});
+  const json=value=>new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
+  const coreOptions={host:'127.0.0.1',port:0,dataDir:root,token:owner,
+    researchFetch:async url=>{evidenceReads++;return new URL(url).hostname==='www.ebi.ac.uk'?json({hitCount:1,resultList:{result:[{id:'12345678',source:'MED',pmid:'12345678',title:'Synthetic recovery evidence',authorString:'Synthetic Researcher',pubYear:'2025',abstractText:'Synthetic evidence to test recovery, not a research finding.',journalInfo:{journal:{title:'Synthetic Journal'}},isRetracted:'N'}]}}):json({status:'ok','message-type':'work-list',message:{'total-results':0,items:[]}});},
+    agentFetch:async()=>{modelCalls++;return json({choices:[{finish_reason:'stop',message:{content:'합성 복구 검사 답안입니다. [S1]의 한계를 독립 자료로 검증해야 합니다.',tool_calls:[]}}],usage:{prompt_tokens:25,completion_tokens:20}});},
+  };
+  core=await start({...coreOptions,env:{YENO_AGENT_PROVIDER:'auto',YENO_AGENT_DAILY_CALL_LIMIT:'20',YENO_OPENAI_API_KEY:'synthetic-provider-recovery-key',YENO_OPENAI_MODEL:'synthetic-recovery-model'}});
+  const accepted=await fetch(`http://127.0.0.1:${core.server.address().port}/api/autopilot`,{method:'POST',headers:{Authorization:`Bearer ${owner}`,'Content-Type':'application/json'},body:JSON.stringify({requestId:randomUUID(),enabled:true,dailyAiLimit:1})});
+  assert.equal(accepted.status,200);await accepted.arrayBuffer();
+  const waitFor=async predicate=>{const until=Date.now()+5000;while(Date.now()<until){const value=predicate();if(value)return value;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail('Expected recovery checkpoint was not reached');};
+  const before=await waitFor(()=>core.state().jobs.find(job=>job.autopilot?.kind==='research'&&job.step===2));
+  core.shutdown();
+  const saved=openStore(root).state.jobs.find(job=>job.id===before.id);
+  assert.equal(saved.status,'paused');assert.equal(saved.pauseReason,'shutdown');assert.equal(saved.step,2);
+  assert.equal(saved.agentJournal.calls.length,1);assert.equal(saved.agentJournal.calls[0].status,'settled');assert.match(saved.draft,/합성 복구 검사 답안/);
+  const reads=evidenceReads;
+  core=await start({...coreOptions,env:{}});
+  assert.equal(core.state().agent.configured,false);
+  const completed=await waitFor(()=>core.state().jobs.find(job=>job.id===before.id&&job.status==='completed'));
+  assert.equal(core.state().jobs.filter(job=>job.autopilot?.kind==='research').length,1);
+  assert.equal(modelCalls,1);assert.equal(evidenceReads,reads);
+  const finalStore=openStore(root).state,answer=completed.artifacts.find(file=>file.name.startsWith('research-answer-'));
+  assert.ok(answer);const metadata=finalStore.artifacts[answer.id],bytes=fs.readFileSync(path.join(root,'artifacts',metadata.filename));
+  assert.equal(digest(bytes),metadata.sha256);assert.equal(bytes.toString('utf8'),saved.draft);
+});
+
 test('settlement alone cannot resume research without its one-call final answer checkpoint',()=>{
   const s=state();s.modules.documents=false;const job=addJob(s,research(s),{status:'paused'});job.pauseReason='restart';
   const original=structuredClone(job.agentJournal);

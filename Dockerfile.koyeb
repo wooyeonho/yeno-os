@@ -16,6 +16,7 @@ COPY scripts/start-koyeb.sh ./scripts/
 COPY scripts/verify-quest-live.mjs ./scripts/
 COPY scripts/verify-production-live.mjs ./scripts/
 COPY scripts/verify-web-live.mjs ./scripts/
+COPY scripts/verify-login-live.mjs ./scripts/
 COPY scripts/verify-research-live.mjs ./scripts/
 COPY scripts/verify-autopilot-live.mjs ./scripts/
 COPY scripts/render-video-runtime.py ./scripts/
@@ -35,4 +36,3 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["node", "--input-type=module", "-e", "try { const r = await fetch('http://127.0.0.1:' + (process.env.YENO_PORT || '8790') + '/api/v1/health', { signal: AbortSignal.timeout(3000), redirect: 'error' }); const h = await r.json(); if (!r.ok || h.name !== 'YENO OS' || h.apiVersion !== '1' || h.authRequired !== true) process.exit(1); } catch { process.exit(1); }"]
 
 ENTRYPOINT ["/bin/sh", "scripts/start-koyeb.sh"]
-

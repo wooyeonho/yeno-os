@@ -31,10 +31,21 @@ export async function holdControllerLock({locks, onBlocked, onRelease, events = 
 export async function connectBrowser({document: doc = document, fetchImpl = fetch, storage = localStorage,
   oldStorage = sessionStorage, locks = navigator.locks, events = window} = {}) {
   const $ = id => doc.getElementById(id);
-  const errorBox = $('pair-error'), form = $('pair-form');
-  let generation = 0, live = true, first = true, metadata, loginAttempted = false;
+  const errorBox = $('pair-error'), form = $('pair-form'), keyInput = $('pair-token'), keyToggle = $('pair-key-toggle');
+  const button = form.querySelector('[type="submit"]');
+  let generation = 0, live = true, first = true, metadata, loginAttempted = false, loginBusy = false, retryAt = 0;
   const showError = message => { errorBox.textContent = message; };
-  const lock = await holdControllerLock({locks, events, onRelease: () => { live = false; generation++; },
+  const hideKey = () => { keyInput.type = 'password'; if (keyToggle) { keyToggle.textContent = '키 보기'; keyToggle.setAttribute('aria-pressed', 'false'); } };
+  keyToggle?.addEventListener('click', () => {
+    const visible = keyInput.type === 'password';
+    keyInput.type = visible ? 'text' : 'password';
+    keyToggle.textContent = visible ? '키 숨기기' : '키 보기';
+    keyToggle.setAttribute('aria-pressed', String(visible));
+  });
+  keyInput.addEventListener('blur', hideKey);
+  keyToggle?.addEventListener('blur', hideKey);
+  doc.addEventListener?.('visibilitychange', () => { if (doc.hidden) hideKey(); });
+  const lock = await holdControllerLock({locks, events, onRelease: () => { live = false; generation++; keyInput.value = ''; hideKey(); },
     onBlocked: () => { showError('다른 탭에서 운영실을 사용 중입니다. 그 탭을 닫고 아래에서 다시 연결하세요.'); form.querySelectorAll('input,button').forEach(input=>{input.disabled=true;}); $('web-retry').hidden = false; }});
   $('web-retry').addEventListener('click', () => location.reload());
   if (!lock) return new Promise(() => {});
@@ -52,7 +63,13 @@ export async function connectBrowser({document: doc = document, fetchImpl = fetc
     const response = await request(route, init);
     let body; try { body = await response.json(); } catch { throw new Error('본체 응답을 확인하지 못했습니다. 다시 연결해 주세요.'); }
     if (!live || epoch !== generation) throw new Error('연결이 바뀌어 이전 응답을 닫았습니다.');
-    if (!response.ok) { const error = new Error(body.error?.message || body.error || '연결 키와 네트워크를 확인하세요.'); error.status = response.status; throw error; }
+    if (!response.ok) {
+      const error = new Error(body.error?.message || body.error || '연결 키와 네트워크를 확인하세요.');
+      error.status = response.status; error.code = body.code;
+      const wait = Number(response.headers.get('Retry-After') || body.retryAfterSeconds);
+      if (Number.isFinite(wait) && wait > 0) error.retryAfterSeconds = Math.ceil(wait);
+      throw error;
+    }
     return body;
   }
   function activate(value) {
@@ -69,24 +86,64 @@ export async function connectBrowser({document: doc = document, fetchImpl = fetc
     }
     oldStorage.removeItem('yeno-token');
     storage.removeItem('blackhole-web-login-request-v1');
-    $('pair-token').value = '';
+    keyInput.value = ''; hideKey();
     $('pair-screen').hidden = true;
     return scoped;
   }
   let resolveLogin;
   const loginReady = new Promise(resolve => { resolveLogin = resolve; });
+  function newEnrollment() {
+    const pending = {requestId: crypto.randomUUID(), name: 'BLACKHOLE 휴대폰 브라우저', remember: $('remember-browser').checked};
+    storage.setItem('blackhole-web-login-request-v1', JSON.stringify(pending));
+    return pending;
+  }
   form.addEventListener('submit', async event => {
-    event.preventDefault(); loginAttempted = true; const button = form.querySelector('[type="submit"]'); button.disabled = true; showError('');
+    event.preventDefault();
+    if (loginBusy || !live) return;
+    loginAttempted = true;
+    const key = keyInput.value;
+    // Never silently change a credential. Header serialization cannot preserve
+    // trailing whitespace, and non-ASCII input is not a portable bearer value.
+    let invalid = '';
+    if (key !== key.trim()) invalid = '키 앞뒤에 공백이 있습니다. 저장한 키를 확인해 공백 없이 입력해 주세요. 자동으로 바꾸지 않았습니다.';
+    else if (key.length < 16) invalid = '개인 연결 키는 16자 이상이어야 합니다. Koyeb 계정 비밀번호가 아니라 저장한 연결 키를 입력하세요.';
+    else if (!/^[\x20-\x7e]+$/.test(key)) invalid = '연결 키에는 영문·숫자·기호를 입력해 주세요. 한글·줄바꿈·보이지 않는 문자가 포함되어 있습니다.';
+    keyInput.setAttribute('aria-invalid', String(Boolean(invalid)));
+    if (invalid) { showError(invalid); keyInput.focus(); return; }
+    if (retryAt > Date.now()) { showError(`연결 시도가 많습니다. ${Math.ceil((retryAt - Date.now()) / 1000)}초 뒤 같은 요청으로 다시 연결하세요.`); return; }
+    loginBusy = true; button.disabled = true; button.textContent = '연결 확인 중…'; showError('');
     try {
       let pending = storage.getItem('blackhole-web-login-request-v1');
       if (pending) pending = JSON.parse(pending);
-      else { pending = {requestId: crypto.randomUUID(), name: 'BLACKHOLE 휴대폰 브라우저', remember: $('remember-browser').checked}; storage.setItem('blackhole-web-login-request-v1', JSON.stringify(pending)); }
-      const value = await json('/api/web/session', {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: `Bearer ${$('pair-token').value.trim()}`}, body: JSON.stringify(pending), signal: AbortSignal.timeout(12000)});
+      else pending = newEnrollment();
+      const enroll = () => json('/api/web/session', {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: `Bearer ${key}`}, body: JSON.stringify(pending), signal: AbortSignal.timeout(12000)});
+      let value;
+      try { value = await enroll(); }
+      catch (error) {
+        // Only an authenticated, definitive stale/expired enrollment response
+        // permits a new identity. Lost replies, wrong keys, capacity conflicts
+        // and unknown 409s must retain their exact request for reconciliation.
+        if (error.status !== 409 || !['WEB_ENROLLMENT_STALE', 'WEB_ENROLLMENT_EXPIRED'].includes(error.code)) throw error;
+        pending = newEnrollment();
+        value = await enroll();
+      }
       const scoped = activate(value);
       if (!first) { location.reload(); return; }
       first = false; resolveLogin(scoped);
-    } catch (error) { if (error.status && [400,404,409,410,422].includes(error.status)) storage.removeItem('blackhole-web-login-request-v1'); showError(error.status === 401 ? '개인 연결 키를 확인해 주세요.' : error.message); }
-    finally { button.disabled = false; }
+    } catch (error) {
+      if (!live) return;
+      if (error.status === 401) {
+        keyInput.setAttribute('aria-invalid', 'true');
+        showError(error.code === 'AUTH_HEADER_MISSING'
+          ? '서버에 연결 키가 전달되지 않았습니다. 새로고침 후 다시 연결해 주세요. 계속되면 이 문구를 알려주세요.'
+          : '입력한 키가 현재 서버의 연결 키와 일치하지 않습니다. ‘키 보기’로 대소문자·공백을 확인해 주세요. 방금 키를 변경했다면 서버에 적용됐는지도 확인해야 합니다.');
+      } else if (error.status === 429) {
+        const seconds = error.retryAfterSeconds || 300; retryAt = Date.now() + seconds * 1000;
+        showError(`연결 시도가 많습니다. ${seconds}초 뒤 같은 요청으로 다시 연결하세요. 보관된 작업은 유지됩니다.`);
+      } else if (error.status) showError(error.message);
+      else showError('연결 결과를 받지 못했습니다. 네트워크를 확인한 뒤 다시 누르면 같은 연결 요청을 확인합니다. 보관된 작업은 유지됩니다.');
+    }
+    finally { loginBusy = false; button.disabled = !live; button.textContent = '운영실 열기'; }
   });
   try {
     const value = await json('/api/web/session', {signal: AbortSignal.timeout(12000)});
