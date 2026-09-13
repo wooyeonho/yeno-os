@@ -6,7 +6,8 @@
 - **신뢰 경계 강화**: (1) `/api/developer/evidence`는 소유자 pairing 토큰 또는 `platform:'developer-worker'`로 등록한 기기만 호출 가능(일반 브라우저·다른 기기는 403). (2) 신고된 `patchSha256`을 코어가 실제로 저장한 아티팩트 SHA-256과 대조. (3) `attempts[].passed`는 신고값을 그대로 믿지 않고 `exitCode===0 && !timedOut && !outputOverflow`에서 코어가 직접 계산 — 모순된 조합(`exitCode:1, timedOut:true, passed:true` 등)을 구조적으로 통과시키던 문제를 막았다.
 - **버그 수정**: `mergeDeveloperEvidence`가 `patchSha256`·`candidateCommit`을 항상 완전히 동일해야 한다고 요구해, 실제 워커 순서(Docker 검증 완료 시점엔 이 값들이 아직 없고, GitHub 후보 생성 이후에야 채워짐)에서 두 번째 보고가 무조건 `evidence_conflict`로 거부됐다. null → 값 채움은 허용하고, 값이 채워진 뒤에만 그 값을 고정하도록 고쳤다. 또한 두 번째 보고부터는 전체 evidence가 아니라 **새 사실만 담은 부분 패치**를 보낼 수 있도록 계약을 바꿔, 서로 다른 시점에 실행되는 별도 프로세스인 `promote`/`rollback` CLI 명령이 원래 저널 전체를 다시 알 필요가 없게 했다.
 - **버그 수정**: 롤백 evidence 스키마가 `rollback.sourceCommit === promotion.sourceCommit`을 요구했지만, 실제 `approveRollback()`은 되돌리는 대상과 다른 **새 forward-revert 커밋**을 반환한다 — 즉 실제 롤백은 항상 이 검사에 걸려 거부됐을 것이다. `{rollbackCommit, revertedPromotionCommit}`로 필드를 분리하고 `rollbackCommit !== revertedPromotionCommit`, `revertedPromotionCommit === promotion.sourceCommit`을 요구하도록 고쳤다.
-- 전체 회귀: 로컬 475개 중 443 통과, 25 실패(이전과 완전히 동일한 사전 환경 한계), 7 건너뜀. `npm run test:developer` 75개 중 72 통과, 3 건너뜀(로컬 Docker 부재). 새 CI 실행 기록은 이 파일의 다음 갱신에서 실제 run ID로 확정한다.
+- 전체 회귀: 로컬 475개 중 443 통과, 25 실패(이전과 완전히 동일한 사전 환경 한계), 7 건너뜀. `npm run test:developer` 75개 중 72 통과, 3 건너뜀(로컬 Docker 부재).
+- 이 커밋에 대한 실제 GitHub Actions 검증: run `34758673800`, head `b15dd8732a780babdf97fbcfac8e48d69158cf07`, conclusion success, artifact `10318068791` / SHA-256 `8bedd52c681cc4e837bd0cae06c5909b29e70df20448c1e193a5d00901f5bf83`. 이번에도 네트워크 없는 읽기 전용 비루트 컨테이너에서 실패→1회 수리→재시험 경로를 포함한 실제 Docker 시험이 통과했다.
 
 # 2026-09-13 — 저장소 편집 허용 목록 보안 수정과 Docker 검증 기록 정정
 
