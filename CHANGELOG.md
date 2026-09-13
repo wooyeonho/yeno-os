@@ -1,3 +1,11 @@
+# 2026-09-13 — 저장소 편집 허용 목록 보안 수정과 Docker 검증 기록 정정
+
+- **보안 수정**: `runtime/lib/repository-patch.mjs`의 `editablePath()`가 `runtime/lib/` 아래 파일을 차단 목록(`PROTECTED`) 방식으로 걸러 실제로는 최신 `agent-engine.mjs`, `independent-core.mjs`/`independent-core-engine.mjs`, `job-view-engine.mjs`, `provider-config-engine.mjs`, `motivation.mjs`, `quests.mjs`, `capabilities.mjs`가 목록에서 빠져 있었다. 즉 모델이 작성한 패치가 모델 호출 방화벽·호문쿨루스 평가식·부명예인지도 장부 판정·기능 검증 로직을 직접 수정할 수 있는 상태였다. `runtime/lib/`을 기본 거부형 허용 목록(`ALLOWED_LIB_FILES`, 현재 빈 목록)으로 바꿔 신설 파일을 포함한 모든 `runtime/lib/*`가 개별 검토 전까지 기본 차단되도록 했다. 위 7개 파일과 임의의 미래 파일(`runtime/lib/future-policy.mjs`)을 거부하는 회귀 시험을 추가했다.
+- `POST /api/developer/evidence`를 추가해 신뢰 개발 호스트가 실제로 확인한 Docker 시험 결과·후보 커밋·GitHub Draft PR·CI 실행 결론·소유자 승인·승격/롤백 커밋을 코어 상태(`job.developerEvidence`)와 암호화 백업에 되돌린다. `mergeDeveloperEvidence`는 이미 접수된 사실을 이후 제출로 뒤집거나 지울 수 없게 하고, `developerEvidenceStatus`는 `repositoryPlan.executionStatus`를 `patch-drafted → docker-failed|docker-verified → awaiting-ci → awaiting-approval → approved → promoted → rolled-back`로 명확히 구분해 패치 초안과 실제 검증 완료를 더 이상 같은 상태로 섞지 않는다.
+- **기록 정정**: 앞선 통합 커밋의 "Docker 기반 시험 미수행" 기록은 부정확했다. 실제로는 PR #4의 GitHub Actions `verify` 잡이 진짜 Docker(네트워크 없는 읽기 전용 비루트 컨테이너, `DEVELOPER_DOCKER_REQUIRED=1`)로 실패→1회 수리→재시험 경로를 포함해 통과했다: run `34755163501`, head `80f7574d869cab970a93ed1a32bf82b3e325d6f6`, conclusion success, artifact `10316922073` / SHA-256 `07c5ccdeda4b46353f5a7cd9eb4336f2f36ea4ae1f4856aed1097ee4eb05f1af`. 이 세션의 로컬 컨테이너에는 Docker가 없어 관련 3개 시험만 로컬에서 skip된다.
+- `codex`와 배포 브랜치 `yeno-koyeb-pilot`의 트리가 이미 다르므로(`254b4515...` vs `d55420d5...`) 첫 실제 승격은 기존 `production_base_tree_mismatch` 안전 조건에 그대로 막힌다. 이 조건은 약화하지 않았다 — 대신 운영 트리를 먼저 수동으로 정렬해야 한다는 필요조건으로 AGENTS.md에 남겼다.
+- 전체 회귀: 로컬 466개 중 434 통과, 25 실패(모두 기존 환경 한계 — WASM/QuickJS 샌드박스, Node 24 전용 전역 객체 부재 — 로 이전과 완전히 동일), 7 건너뜀. `npm run test:developer` 65개 중 62 통과, 3 건너뜀(로컬 Docker 부재; CI에서는 위 run에서 실제로 통과).
+
 # 2026-09-13 — 저장소 개발 워커를 독립 코어에 통합
 
 - `blackhole/developer-worker-20260913`(PR #2)의 저장소 패치 작업자(`runtime/lib/repository-patch.mjs`, `workers/developer/*`)를 최신 `codex` 기준으로 다시 연결했다. PR #2 이후 `agent.mjs→agent-engine.mjs`, `job-view.mjs→job-view-engine.mjs`, 그리고 새 `independent-core(-engine).mjs` 모델 호출 방화벽이 추가돼 있어 단순 병합이 아니라 새 위치에 다시 연결했다.

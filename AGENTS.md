@@ -1,6 +1,14 @@
-## 2026-09-13 저장소 개발 워커 통합 (최신 구현)
+## 2026-09-13 저장소 개발 워커 통합 (최신 구현, 1차 보안 수정 반영)
 
-`workers/developer/`와 `runtime/lib/repository-patch.mjs`를 우선한다. 저장소 패치 작업(`job.repositoryTask`)은 `independent-core-engine.mjs`에서 `development-model-call`로 분류되며, 코드 생성·수리 모드와 동일하게 명시적 개발 요청에서만 모델을 호출한다. 운영 코어는 Docker 소켓을 갖지 않으며 저장소 시험을 직접 실행하지 않는다. 별도 신뢰 개발 호스트의 `workers/developer/cli.mjs`가 코어의 `/api/developer/plan`에서 받은 계획을 네트워크 없는 비루트 컨테이너에서 시험·최대 1회 수리하고, 승인된 정확한 커밋에서만 GitHub로 승격한다. 모델 패치는 시험·워크플로·인증·예산·워커 자신을 변경할 수 없다. 이 저장소 브랜치에서는 Docker 기반 시험을 실행하지 않았으므로 `worker.mjs`/`gateways.mjs`/`core-integration.test.mjs`의 Docker 필요 검사는 미검증으로 남는다.
+`workers/developer/`와 `runtime/lib/repository-patch.mjs`를 우선한다. 저장소 패치 작업(`job.repositoryTask`)은 `independent-core-engine.mjs`에서 `development-model-call`로 분류되며, 코드 생성·수리 모드와 동일하게 명시적 개발 요청에서만 모델을 호출한다. 운영 코어는 Docker 소켓을 갖지 않으며 저장소 시험을 직접 실행하지 않는다. 별도 신뢰 개발 호스트의 `workers/developer/cli.mjs`가 코어의 `/api/developer/plan`에서 받은 계획을 네트워크 없는 비루트 컨테이너에서 시험·최대 1회 수리하고, 승인된 정확한 커밋에서만 GitHub로 승격한다. 모델 패치는 시험·워크플로·인증·예산·워커 자신을 변경할 수 없다.
+
+`editablePath()`(`runtime/lib/repository-patch.mjs`)의 `runtime/lib/` 판정은 차단 목록이 아니라 **허용 목록**이다. 현재 `ALLOWED_LIB_FILES`는 비어 있다 — 개별 보안 검토를 거쳐 명시적으로 등록하기 전까지는 `runtime/lib/`의 어떤 파일도, 신설 파일을 포함해 모델이 수정할 수 없다. 새 `runtime/lib/*-engine.mjs`·정책·평가기·장부 파일이 생겨도 이 파일을 고치지 않는 한 자동으로는 편집 대상이 되지 않는다. 목록에 항목을 추가할 때는 그 파일 하나를 개별적으로 검토하고 회귀 시험을 반드시 추가한다.
+
+Docker 기반 시험(패치 실패→1회 수리→재시험, 네트워크 없는 읽기 전용 비루트 컨테이너)은 **GitHub Actions CI에서 실제로 실행되어 통과했다** (`.github/workflows/developer-worker.yml`의 `verify` 잡; run 34755163501, head `80f7574d869cab970a93ed1a32bf82b3e325d6f6`, conclusion success, artifact 10316922073 / SHA-256 `07c5ccdeda4b46353f5a7cd9eb4336f2f36ea4ae1f4856aed1097ee4eb05f1af`). 이 세션의 로컬 개발 컨테이너에는 Docker가 없어 `DEVELOPER_DOCKER_REQUIRED=1` 시험 3개만 로컬에서 skip되며, 이를 "미검증"으로 적는 것은 부정확하다 — CI 로그가 실제 증거다.
+
+워커가 로컬 Docker에서 확인한 시험 결과·후보 커밋·GitHub Draft PR·CI 실행·소유자 승인·승격/롤백은 `POST /api/developer/evidence`로 코어 상태(`job.developerEvidence`)와 암호화 백업에 되돌아온다. 이 접수 전까지 저장소 패치 작업의 `repositoryPlan.executionStatus`는 `patch-drafted`일 뿐이며, 실제로 Docker 검증까지 됐다는 뜻이 아니다. 단계는 `patch-drafted → docker-failed|docker-verified → awaiting-ci → awaiting-approval → approved → promoted → rolled-back` 순으로만 전진하며, 이미 접수된 사실은 이후 제출로 뒤집거나 지울 수 없다(`mergeDeveloperEvidence`).
+
+첫 실제 승격은 `codex`와 운영 배포 브랜치 `yeno-koyeb-pilot`의 트리가 이미 다르기 때문에 `production_base_tree_mismatch`로 반드시 차단된다. 이 조건을 완화하지 않는다 — 대신 연호님이 먼저 검증된 `codex` 트리를 `yeno-koyeb-pilot`에 수동 동기화하고 Koyeb Healthy·운영 데이터 보존을 확인한 뒤에만 첫 승격을 시도한다.
 
 ## 2026-09-13 모델 선택형 독립 OS 코어 계약 (최신 구현)
 

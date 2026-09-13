@@ -1,4 +1,4 @@
-import {validateRepositoryTask,repositoryPrompt,parseRepositoryPatch,RepositoryPatchError} from './lib/repository-patch.mjs';
+import {validateRepositoryTask,repositoryPrompt,parseRepositoryPatch,RepositoryPatchError,mergeDeveloperEvidence,developerEvidenceStatus} from './lib/repository-patch.mjs';
 import http from 'node:http';
 import {absorptionDocument} from './public/absorption-routing.mjs';
 import {fetchWorldSnapshot,worldDocument,latestWorldJob,worldOverview,WORLD_CACHE_MS} from './lib/world.mjs';
@@ -817,6 +817,14 @@ export function createYenoServer(options={}) {
          if(agentUsage(s.jobs).attempts>=agentSettings.dailyCallLimit)throw new HttpError(409,'Daily model call limit reached');
          const job=newJob({type:'agent',text:repositoryPrompt(task),title:'저장소 수정안 · '+task.goal.slice(0,100)});
          job.repositoryTask=task;job.callLimit=1;return {status:201,payload:{jobId:job.id,job:publicJob(job)}};
+       }
+       if(url.pathname==='/api/developer/evidence'){
+         if(!b.requestId||Object.keys(b).some(k=>!['requestId','jobId','evidence'].includes(k)))throw new HttpError(400,'Invalid developer evidence request');
+         const job=s.jobs.find(j=>j.id===b.jobId);
+         if(!job||!job.repositoryTask)throw new HttpError(404,'Repository patch job not found');
+         if(b.evidence?.baseCommit!==job.repositoryTask.baseCommit)throw new HttpError(400,'Evidence base commit does not match the repository plan');
+         job.developerEvidence=mergeDeveloperEvidence(job.developerEvidence??null,b.evidence);touch(job);
+         return {status:200,payload:{jobId:job.id,job:publicJob(job)}};
        }
        if(url.pathname==='/api/voice'){
          if(!b.requestId||Object.keys(b).some(k=>!['requestId','text','history'].includes(k)))throw new HttpError(400,'Invalid voice request');
