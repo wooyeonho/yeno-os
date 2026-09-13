@@ -1,0 +1,30 @@
+{
+  "verifiedSourceCommit": "b7feb5d4857d219d15d9c3c32238a9ed513cbc82",
+  "repository": "wooyeonho/yeno-os",
+  "branch": "blackhole/developer-worker-20260913",
+  "pullRequest": 2,
+  "workflowRun": 34748866363,
+  "workflowJob": 103701612865,
+  "workflowConclusion": "success",
+  "artifactId": 10315047244,
+  "artifactSha256": "c82f7753654fbffa75dddafcbb5efb999632e64ba71a13e945e7cccb56657584",
+  "testImage": "sha256:f7c0926ac7c5d75b52f02d4c934aac75fc9fdc87fb05cbbbc50c9ca31aa13339",
+  "runtime": {"passed":459,"failed":0,"skipped":0},
+  "developer": {"passed":24,"failed":0,"skipped":0},
+  "totalTests":483,
+  "additionalBrowserFlowScripts":2,
+  "localNode22":{"passed":47,"failed":0,"skipped":3,"total":50},
+  "actualDockerChecks":["HTTP core -> patch -> failure -> one repair -> durable replay","broken repository -> failing candidate -> repaired tests -> approval state","host secrets/git unavailable, read-only source, non-root, timeout termination"],
+  "synthetic":{"providerResponses":true,"githubPromotionAndRollbackResponses":true,"browserDomAndCookies":"JSDOM simulation"},
+  "paidProviderCalls":0,
+  "persistentWorkerConnected":false,
+  "newEndpointDeployed":false,
+  "productionChangedByThisWork":false,
+  "productionBranchObserved":"0007b3d143a1bacc8b8481478e5dca778f5f17ae",
+  "logSha256":{
+    "developer.txt":"3f847d08d4179a4021427eba754fb10874d8caea6b64a23a19791e2fec14d4e0",
+    "runtime.txt":"c95d1e1d009ce5ba9365918cf9a7cefb89c32780f0ea0aaa8a4dcf7172d4821a",
+    "source-commit.txt":"32abd5b46331910e0f4260d78dcdbd6a3df2170f634309980a62a06f41be8feb",
+    "test-image.txt":"1f8d88c47e8668bd2157b2ce958ba120812e0a0f2a8c660964b3d264981cbdc9"
+  }
+}
