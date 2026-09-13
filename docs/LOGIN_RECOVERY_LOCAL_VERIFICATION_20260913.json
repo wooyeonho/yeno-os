@@ -1,0 +1,32 @@
+{
+  "at": "2026-09-13",
+  "sourceCommit": "706dec929c809dff1caffdb616c0c2ac5f5ad9c7",
+  "runtimeTree": "6363b055f512971b24cdec41e4b9b3518061b4eb",
+  "scope": [
+    "browser credential errors and exact enrollment recovery",
+    "provider-independent completion of persisted final research draft",
+    "fresh per-deployment HTTPS login verifier"
+  ],
+  "fullSuite": {
+    "total": 380,
+    "pass": 373,
+    "fail": 0,
+    "skipped": 7
+  },
+  "requiredVideoAndProductionSuite": {
+    "total": 16,
+    "pass": 16,
+    "fail": 0,
+    "skipped": 0,
+    "coversAllSevenFullSuiteSkips": true
+  },
+  "credentialsChangedByThisPatch": false,
+  "phoneVerified": false,
+  "actualOwnerLoginVerified": false,
+  "deployedSourceCommit": "a3dc0f65ed710077d6f82de8b25b22930ffd9ee1",
+  "deploymentId": "39e241d6-b6cc-42de-8d31-d045de6c120b",
+  "publicClientSourceMatch": {
+    "web-client.mjs": "5f2543407506ece20eb8ee1312add659ac27ece03d1d4f2866f3b0d5b9e7a6ed",
+    "index.html": "8e9e025c659502891b6659f031948f92f6375916b83a873eb3af3d9923d0209a"
+  }
+}
