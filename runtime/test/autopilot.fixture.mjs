@@ -9,7 +9,7 @@ function planAutopilot(...args){const value=rawPlanAutopilot(...args);if(!value)
 
 const START='2026-09-12T00:00:00.000Z';
 const time=hours=>new Date(Date.parse(START)+hours*60*60*1000).toISOString();
-const config={ready:true,dailyCallLimit:20};
+const config={ready:true,dailyCallLimit:20,backgroundModelCalls:true};
 const options=(hours=0,extra={})=>({config,at:time(hours),...extra});
 function state(){return {autopilot:{...initialAutopilot(),enabled:true,enabledAt:START},emergencyStop:false,modules:{documents:true,ai:false},jobs:[],projects:RESEARCH_TRACKS.map(track=>({id:track.projectId,status:'active'})),artifacts:{}};}
 function receipt(at=START,status='settled'){return {id:randomUUID(),at,status,inputTokens:10,outputTokens:20};}

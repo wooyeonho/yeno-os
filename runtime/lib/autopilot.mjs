@@ -104,7 +104,7 @@ function context(state,options={}){
   return {at,time:Date.parse(at),config,settings,jobs,globalUsedToday,aiUsedToday,capabilities:Array.isArray(options.capabilities)?options.capabilities:[],globalLimit:Number.isSafeInteger(config.dailyCallLimit)?config.dailyCallLimit:0,tracks:trackProgress(state,at)};
 }
 
-const backgroundModelCallsAllowed=ctx=>ctx.config.backgroundModelCalls!==false;
+const backgroundModelCallsAllowed=ctx=>ctx.config.backgroundModelCalls===true;
 function aiAvailable(ctx){return backgroundModelCallsAllowed(ctx)&&!!ctx.config.ready&&ctx.aiUsedToday<ctx.settings.dailyAiLimit&&ctx.globalUsedToday<ctx.globalLimit;}
 function resumeAllowed(job,state,ctx){
   if(job.status!=='paused'||!['restart','shutdown'].includes(job.pauseReason)||uncertain(job)||(job.deadlineAt&&Date.parse(job.deadlineAt)<=ctx.time))return false;

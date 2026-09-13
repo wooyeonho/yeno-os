@@ -91,7 +91,7 @@ test('agent reads pinned collected skill text as data; automatic review tracks a
  const list=await agentTool({name:'ecosystem_list',args:{}},f.state,()=>assert.fail('No network'),signal);assert.equal(list.entries.length,3);
  const doc=entry.documents.find(doc=>doc.kind==='skill'),result=await agentTool({name:'ecosystem_read',args:{sourceId:entry.sourceId,path:doc.path}},f.state,()=>assert.fail('No network'),signal);
  assert.equal(result.untrustedData,true);assert.equal(result.installed,false);assert.match(result.url,new RegExp(COMMIT));assert.equal(result.bodySha256,doc.sha256);
- const config=agentConfig({YENO_AGENT_PROVIDER:'nvidia',YENO_AGENT_MODEL:'moonshotai/kimi-k3',YENO_AGENT_API_KEY:'synthetic-key-only',YENO_AGENT_DAILY_CALL_LIMIT:'4',YENO_AGENT_AUTORUN:'true'});f.state.modules.ai=true;
+ const config=agentConfig({NODE_ENV:'test',YENO_DEVELOPMENT_BACKGROUND_MODEL_CALLS:'true',YENO_AGENT_PROVIDER:'nvidia',YENO_AGENT_MODEL:'moonshotai/kimi-k3',YENO_AGENT_API_KEY:'synthetic-key-only',YENO_AGENT_DAILY_CALL_LIMIT:'4',YENO_AGENT_AUTORUN:'true'});f.state.modules.ai=true;
  const mission=automaticMission(f.state,config);assert.equal(mission.scope,'ecosystem');
  f.state.jobs.push({agentJournal:{automaticScope:mission.scope,automaticKey:mission.key}});assert.equal(automaticMission(f.state,config),null);
 });

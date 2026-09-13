@@ -15,6 +15,6 @@ export {
 import {automaticMission as engineAutomaticMission} from './agent-engine.mjs';
 
 export function automaticMission(state, config) {
-  if (config?.backgroundModelCalls === false) return null;
+  if (config?.backgroundModelCalls !== true) return null;
   return engineAutomaticMission(state, config);
 }
