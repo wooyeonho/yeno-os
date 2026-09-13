@@ -1,4 +1,21 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {GitHubGateway,CoreGateway} from './gateways.mjs';
+import test from 'node:test';import assert from 'node:assert/strict';import {GitHubGateway,CoreGateway,dockerEvidenceFrom} from './gateways.mjs';
+import {validateDeveloperEvidence} from '../../runtime/lib/repository-patch.mjs';
+test('dockerEvidenceFrom builds valid evidence from a real run() journal shape, or null when no test actually ran',()=>{
+  assert.equal(dockerEvidenceFrom({attempts:[{number:1,status:'unknown'}]}),null);
+  const journal={id:'demo-contract',baseCommit:'a'.repeat(40),tests:[{path:'projects/demo/main.test.mjs',sha256:'b'.repeat(64)}],
+    attempts:[
+      {number:1,test:{exitCode:1,timedOut:false,outputOverflow:false,stdoutSha256:'c'.repeat(64),stderrSha256:'d'.repeat(64),imageId:'sha256:'+'e'.repeat(64),isolation:'docker-no-network',passed:false}},
+      {number:2,test:{exitCode:0,timedOut:false,outputOverflow:false,stdoutSha256:'f'.repeat(64),stderrSha256:'0'.repeat(64),imageId:'sha256:'+'e'.repeat(64),isolation:'docker-no-network',passed:true}},
+    ],patchSha256:'1'.repeat(64),published:null};
+  const evidence=dockerEvidenceFrom(journal);
+  assert.equal(validateDeveloperEvidence(evidence),true);
+  assert.equal(evidence.contractId,'demo-contract');assert.equal(evidence.dockerImageId,'sha256:'+'e'.repeat(64));
+  assert.equal(evidence.attempts.length,2);assert.equal(evidence.candidateCommit,null);
+  const published={...journal,published:{repository:'wooyeonho/yeno-os',branch:'blackhole/worker/demo',candidateCommit:'2'.repeat(40),prNumber:9,url:'https://github.com/wooyeonho/yeno-os/pull/9',status:'awaiting_owner_approval',baseTree:'3'.repeat(40),candidateTree:'4'.repeat(40)}};
+  const withCandidate=dockerEvidenceFrom(published);
+  assert.equal(validateDeveloperEvidence(withCandidate),true);
+  assert.equal(withCandidate.candidateCommit,'2'.repeat(40));assert.equal(withCandidate.publish.url,published.published.url);
+});
 const A='a'.repeat(40),B='b'.repeat(40),C='c'.repeat(40),T='d'.repeat(40),U='e'.repeat(40),D='f'.repeat(40);
 const receipt={repository:'wooyeonho/yeno-os',branch:'blackhole/worker/demo',baseCommit:A,candidateCommit:B,baseTree:T,candidateTree:U};
 function gateway(overrides={}){const writes=[];const values={

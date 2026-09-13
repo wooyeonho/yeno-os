@@ -549,7 +549,7 @@ export function createYenoServer(options={}) {
        else if(job.type==='agent'){
          const controller=new AbortController();controllers.set(job.id,controller);
          const timeout=setTimeout(()=>controller.abort(),Math.max(1,Math.min(90000,job.deadlineAt?Date.parse(job.deadlineAt)-Date.now():90000)));
-         try {const bundle=job.researchRequest?await prepareResearch(job,controller.signal,valid):null;if(!valid())return;const draft=await runAgent({job,state:s,config:configFor(job),save:()=>{if(closed)throw new AgentError('runtime_closed');save();},signal:controller.signal,fetchImpl:options.agentFetch});if(!valid())return;job.draft=job.repositoryTask?JSON.stringify(parseRepositoryPatch(draft,job.repositoryTask),null,2):bundle?researchAnswer(job,draft,bundle):draft;}
+         try {const bundle=job.researchRequest?await prepareResearch(job,controller.signal,valid):null;if(!valid())return;const draft=await runAgent({job,state:s,config:configFor(job),save:()=>{if(closed)throw new AgentError('runtime_closed');save();},signal:controller.signal,fetchImpl:options.agentFetch});if(!valid())return;job.draft=job.repositoryTask?JSON.stringify(parseRepositoryPatch(draft,job.repositoryTask)):bundle?researchAnswer(job,draft,bundle):draft;}
          finally{clearTimeout(timeout);if(controllers.get(job.id)===controller)controllers.delete(job.id);}
        }
        else {const draft=await aiDraft(job);if(!valid())return;job.draft=`# ${job.title}\n\n${draft}\n\n---\nAI 생성 초안 · 모델: ${aiModel}\n외부 사실 검증이나 도구 실행은 하지 않았습니다.\n입력 SHA-256: ${job.inputSha256}\n`;}
@@ -820,9 +820,22 @@ export function createYenoServer(options={}) {
        }
        if(url.pathname==='/api/developer/evidence'){
          if(!b.requestId||Object.keys(b).some(k=>!['requestId','jobId','evidence'].includes(k)))throw new HttpError(400,'Invalid developer evidence request');
+         // Any authenticated browser or enrolled device can otherwise reach this
+         // route; only the owner's own credential or a device explicitly
+         // enrolled for this role may assert what a trusted worker host saw.
+         if(principal.kind!=='pairing'&&principal.device?.platform!=='developer-worker')throw new HttpError(403,'Developer worker credential required');
          const job=s.jobs.find(j=>j.id===b.jobId);
          if(!job||!job.repositoryTask)throw new HttpError(404,'Repository patch job not found');
-         if(b.evidence?.baseCommit!==job.repositoryTask.baseCommit)throw new HttpError(400,'Evidence base commit does not match the repository plan');
+         // evidence may be a partial update after the first report (a later
+         // promote/rollback call knows only the new facts), so baseCommit is
+         // only cross-checked when this particular report actually states it.
+         if(Object.hasOwn(b.evidence??{},'baseCommit')&&b.evidence.baseCommit!==job.repositoryTask.baseCommit)throw new HttpError(400,'Evidence base commit does not match the repository plan');
+         // The core already knows the real hash of the patch it drafted; never
+         // take the worker's word for which patch its evidence is about.
+         if(typeof b.evidence?.patchSha256==='string'){
+           const stored=job.artifacts.map(ref=>s.artifacts[ref.id]?.sha256).find(Boolean);
+           if(!stored||stored!==b.evidence.patchSha256)throw new HttpError(400,'Evidence patch hash does not match the stored patch artifact');
+         }
          job.developerEvidence=mergeDeveloperEvidence(job.developerEvidence??null,b.evidence);touch(job);
          return {status:200,payload:{jobId:job.id,job:publicJob(job)}};
        }

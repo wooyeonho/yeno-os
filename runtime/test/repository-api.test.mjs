@@ -8,9 +8,10 @@ async function setup(t,options={}){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'blackhole-repository-api-')),dataDir=path.join(root,'data'),token='synthetic-repository-owner-only';const st=openStore(dataDir);st.state.modules.ai=options.ai!==false;st.save();
  const env={YENO_AGENT_PROVIDER:'openai',YENO_AGENT_DAILY_CALL_LIMIT:'20',YENO_OPENAI_MODEL:'synthetic-repository-model',YENO_OPENAI_API_KEY:'synthetic-repository-api-key'};
  let core=await start({dataDir,host:'127.0.0.1',port:0,token,env,...options});
- const api=async(route,body)=>{const r=await fetch(`http://127.0.0.1:${core.server.address().port}`+route,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});const text=await r.text();let value;try{value=JSON.parse(text);}catch{value=text;}return {status:r.status,value,text};};
+ const rawApi=async(route,authToken,body)=>{const r=await fetch(`http://127.0.0.1:${core.server.address().port}`+route,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+authToken,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});const text=await r.text();let value;try{value=JSON.parse(text);}catch{value=text;}return {status:r.status,value,text};};
+ const api=(route,body)=>rawApi(route,token,body);
  const wait=async id=>{for(let n=0;n<150;n++){const s=(await api('/api/state')).value,j=s.jobs.find(j=>j.id===id);if(['failed','completed','paused','cancelled'].includes(j?.status))return j;await new Promise(r=>setTimeout(r,25));}throw Error('timeout');};
- t.after(()=>{core.shutdown();fs.rmSync(root,{recursive:true,force:true});});return {root,dataDir,api,wait,stop:()=>core.shutdown(),restart:async()=>{core.shutdown();core=await start({dataDir,host:'127.0.0.1',port:0,token,env,...options});}};
+ t.after(()=>{core.shutdown();fs.rmSync(root,{recursive:true,force:true});});return {root,dataDir,api,rawApi,wait,stop:()=>core.shutdown(),restart:async()=>{core.shutdown();core=await start({dataDir,host:'127.0.0.1',port:0,token,env,...options});}};
 }
 const reply=x=>new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify(x)}}],usage:{prompt_tokens:40,completion_tokens:70}}),{headers:{'Content-Type':'application/json'}});
 test('core drafts a one-call bounded patch, redacts source from state, deduplicates and restores backup',async t=>{
@@ -34,7 +35,8 @@ test('real Docker/CI/approval evidence from the trusted worker host survives res
  const h=await setup(t,{agentFetch:async()=>reply(patch)});
  const r=await h.api('/api/developer/plan',{requestId:randomUUID(),task});const j=await h.wait(r.value.jobId);
  assert.equal(j.repositoryPlan.executionStatus,'patch-drafted');
- const evidence={schema:1,contractId:'demo-contract',baseCommit:task.baseCommit,testFiles:[{path:'projects/demo/main.test.mjs',sha256:sha256('test')}],dockerImageId:dockerImage,attempts:[attempt(1,false),attempt(2,true)],patchSha256:sha256(JSON.stringify(patch)),candidateCommit:'b'.repeat(40),publish:null,ciRun:null,approval:null,promotion:null,rollback:null,reportedAt:new Date().toISOString()};
+ const storedPatchText=(await h.api('/api/artifacts/'+j.artifacts[0].id)).text;
+ const evidence={schema:1,contractId:'demo-contract',baseCommit:task.baseCommit,testFiles:[{path:'projects/demo/main.test.mjs',sha256:sha256('test')}],dockerImageId:dockerImage,attempts:[attempt(1,false),attempt(2,true)],patchSha256:sha256(storedPatchText),candidateCommit:'b'.repeat(40),publish:null,ciRun:null,approval:null,promotion:null,rollback:null,reportedAt:new Date().toISOString()};
  const wrongBase=await h.api('/api/developer/evidence',{requestId:randomUUID(),jobId:j.id,evidence:{...evidence,baseCommit:'c'.repeat(40)}});assert.equal(wrongBase.status,400);
  const verified=await h.api('/api/developer/evidence',{requestId:randomUUID(),jobId:j.id,evidence});assert.equal(verified.status,200,JSON.stringify(verified));
  assert.equal(verified.value.job.repositoryPlan.executionStatus,'docker-verified');assert.equal(verified.value.job.repositoryPlan.evidence.attempts.length,2);
@@ -46,4 +48,21 @@ test('real Docker/CI/approval evidence from the trusted worker host survives res
  assert.equal((await h.api('/api/state')).value.jobs.find(x=>x.id===j.id).repositoryPlan.executionStatus,'approved');
  h.stop();const state=openStore(h.dataDir).state,key=randomBytes(32),archive=exportBackup({state,dataDir:h.dataDir,key});const dest=path.join(h.root,'restored-evidence');restoreBackup({archive,key,targetDir:dest});
  const restored=openStore(dest).state.jobs.find(x=>x.id===j.id);assert.equal(restored.developerEvidence.approval.approvedBy,'연호님');
+});
+test('evidence must claim the patch the core actually drafted, and only the owner or an enrolled developer-worker device may report it',async t=>{
+ const h=await setup(t,{agentFetch:async()=>reply(patch)});
+ const r=await h.api('/api/developer/plan',{requestId:randomUUID(),task});const j=await h.wait(r.value.jobId);
+ const forgedEvidence={schema:1,contractId:'demo-contract',baseCommit:task.baseCommit,testFiles:[{path:'projects/demo/main.test.mjs',sha256:sha256('test')}],dockerImageId:dockerImage,attempts:[attempt(1,true)],patchSha256:sha256('not the real stored patch text'),candidateCommit:'b'.repeat(40),publish:null,ciRun:null,approval:null,promotion:null,rollback:null,reportedAt:new Date().toISOString()};
+ const forged=await h.api('/api/developer/evidence',{requestId:randomUUID(),jobId:j.id,evidence:forgedEvidence});assert.equal(forged.status,400,JSON.stringify(forged));
+ const storedPatchText=(await h.api('/api/artifacts/'+j.artifacts[0].id)).text;
+ const evidence={...forgedEvidence,patchSha256:sha256(storedPatchText)};
+ const browserEnroll=await h.rawApi('/api/v1/devices/enroll','synthetic-repository-owner-only',{requestId:randomUUID(),name:'phone',platform:'android'});
+ assert.equal(browserEnroll.status,201,JSON.stringify(browserEnroll));
+ const rejectedFromOrdinaryDevice=await h.rawApi('/api/developer/evidence',browserEnroll.value.device.deviceToken,{requestId:randomUUID(),jobId:j.id,evidence});
+ assert.equal(rejectedFromOrdinaryDevice.status,403,JSON.stringify(rejectedFromOrdinaryDevice));
+ const workerEnroll=await h.rawApi('/api/v1/devices/enroll','synthetic-repository-owner-only',{requestId:randomUUID(),name:'ci-worker-host',platform:'developer-worker'});
+ assert.equal(workerEnroll.status,201,JSON.stringify(workerEnroll));
+ const acceptedFromWorkerDevice=await h.rawApi('/api/developer/evidence',workerEnroll.value.device.deviceToken,{requestId:randomUUID(),jobId:j.id,evidence});
+ assert.equal(acceptedFromWorkerDevice.status,200,JSON.stringify(acceptedFromWorkerDevice));
+ assert.equal(acceptedFromWorkerDevice.value.job.repositoryPlan.executionStatus,'docker-verified');
 });

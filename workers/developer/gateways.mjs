@@ -7,6 +7,18 @@ async function bounded(response,max=2*1024*1024){
   if(!response.ok){await response.body?.cancel();fail('remote_http_'+response.status);}
   let size=0;const chunks=[];for await(const chunk of response.body){size+=chunk.length;if(size>max)fail('remote_response_limit');chunks.push(chunk);}return Buffer.concat(chunks).toString('utf8');
 }
+// Builds the full first-report evidence from a run() journal. Kept alongside
+// CoreGateway (rather than inline in the CLI) so the exact same function the
+// CLI actually runs is what a test can call and verify against a real core.
+export function dockerEvidenceFrom(journal){
+  const attempts=(journal.attempts??[]).filter(a=>a.test).map(a=>({number:a.number,exitCode:a.test.exitCode,timedOut:a.test.timedOut,outputOverflow:a.test.outputOverflow,stdoutSha256:a.test.stdoutSha256,stderrSha256:a.test.stderrSha256,isolation:a.test.isolation,passed:a.test.passed}));
+  if(!attempts.length)return null;
+  const imageId=(journal.attempts??[]).find(a=>a.test?.imageId)?.test.imageId??null;
+  return {schema:1,contractId:journal.id,baseCommit:journal.baseCommit,testFiles:journal.tests??[],dockerImageId:imageId,attempts,
+    patchSha256:journal.patchSha256??null,candidateCommit:journal.published?.candidateCommit??null,
+    publish:journal.published?{repository:journal.published.repository,branch:journal.published.branch,candidateCommit:journal.published.candidateCommit,prNumber:journal.published.prNumber,url:journal.published.url,status:journal.published.status}:null,
+    ciRun:null,approval:null,promotion:null,rollback:null,reportedAt:new Date().toISOString()};
+}
 export class CoreGateway {
   constructor({origin,token,fetchImpl=fetch}){
     const u=new URL(origin);if(u.username||u.password||u.search||u.hash||u.pathname!=='/'||!(u.protocol==='https:'||u.protocol==='http:'&&['127.0.0.1','localhost'].includes(u.hostname)))fail('invalid_core_origin');
@@ -23,6 +35,9 @@ export class CoreGateway {
     await this.guard(signal);
     const accepted=JSON.parse((await this.request('/api/developer/plan',{requestId,task},signal)).text);
     if(typeof accepted.jobId!=='string')fail('core_job_identity_missing');
+    // Remembered so this same run can report evidence back against the right
+    // job without the caller having to thread the ID through separately.
+    this.lastJobId=accepted.jobId;
     for(let i=0;i<180;i++){
       const s=await this.guard(signal),job=s.jobs.find(j=>j.id===accepted.jobId);
       if(!job)fail('core_job_missing');
@@ -36,6 +51,13 @@ export class CoreGateway {
       await delay(1000,undefined,{signal});
     }
     fail('model_outcome_unknown');
+  }
+  // Reports what this trusted host actually saw back into durable core state,
+  // instead of leaving it only in the worker's own local journal file.
+  async reportEvidence(jobId,evidence,requestId,signal){
+    if(typeof jobId!=='string'||!jobId)fail('core_job_identity_missing');
+    const {text}=await this.request('/api/developer/evidence',{requestId,jobId,evidence},signal);
+    return JSON.parse(text);
   }
 }
 export class GitHubGateway {

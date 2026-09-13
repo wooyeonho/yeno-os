@@ -8,7 +8,10 @@ for(const p of ['../bad.mjs','/tmp/x','a//x.mjs','a/../b','a\\b','runtime/data/s
 for(const p of ['runtime/server.mjs','runtime/lib/agent.mjs','runtime/lib/repository-patch.mjs','runtime/lib/store.mjs','workers/developer/worker.mjs','.github/workflows/ci.yml','package.json','runtime/test/foo.test.mjs','projects/demo/main.test.mjs',
   // runtime/lib/ is default-deny: every current control/policy module, and any
   // file not yet individually reviewed and allowlisted, must stay unreachable.
-  'runtime/lib/agent-engine.mjs','runtime/lib/independent-core.mjs','runtime/lib/independent-core-engine.mjs','runtime/lib/job-view-engine.mjs','runtime/lib/provider-config-engine.mjs','runtime/lib/motivation.mjs','runtime/lib/quests.mjs','runtime/lib/capabilities.mjs','runtime/lib/future-policy.mjs'])
+  'runtime/lib/agent-engine.mjs','runtime/lib/independent-core.mjs','runtime/lib/independent-core-engine.mjs','runtime/lib/job-view-engine.mjs','runtime/lib/provider-config-engine.mjs','runtime/lib/motivation.mjs','runtime/lib/quests.mjs','runtime/lib/capabilities.mjs','runtime/lib/future-policy.mjs',
+  // runtime/public/ is served to the owner's browser and is default-deny too:
+  // a model-authored edit there could change what an approval click sends.
+  'runtime/public/app.js','runtime/public/web-client.mjs','runtime/public/device-connect.mjs','runtime/public/command-request.mjs','runtime/public/sw.js','runtime/public/index.html'])
   test('worker cannot modify trusted boundary '+p,()=>assert.throws(()=>editablePath(p)));
 test('reject changed base, changed source hash, duplicates and empty patches',()=>{
   for(const mutate of [p=>p.baseCommit='b'.repeat(40),p=>p.changes[0].beforeSha256='b'.repeat(64),p=>p.changes.push(p.changes[0]),p=>p.changes[0].content=source,p=>p.command='npm test',p=>p.changes[0].path='projects/other/main.mjs']){const p=patch();mutate(p);assert.throws(()=>parseRepositoryPatch(JSON.stringify(p),task()));}
@@ -41,9 +44,31 @@ test('publish, CI, approval, promotion and rollback must be reported in that ord
   assert.throws(()=>validateDeveloperEvidence({...approved,promotion:{sourceCommit:'d'.repeat(40),previousCommit:'z'.repeat(40)}}));
   const promoted={...approved,promotion:{sourceCommit:'d'.repeat(40),previousCommit:'c'.repeat(40)}};
   assert.equal(developerEvidenceStatus(promoted),'promoted');
-  assert.throws(()=>validateDeveloperEvidence({...promoted,rollback:{sourceCommit:'wrong'.padEnd(40,'0')}}));
-  const rolledBack={...promoted,rollback:{sourceCommit:'d'.repeat(40)}};
+  // A rollback creates a NEW forward-revert commit; it is never the same SHA
+  // as the promotion it reverts, and must revert the actual promoted commit.
+  assert.throws(()=>validateDeveloperEvidence({...promoted,rollback:{sourceCommit:'d'.repeat(40)}}));
+  assert.throws(()=>validateDeveloperEvidence({...promoted,rollback:{rollbackCommit:'d'.repeat(40),revertedPromotionCommit:'d'.repeat(40)}}));
+  assert.throws(()=>validateDeveloperEvidence({...promoted,rollback:{rollbackCommit:'e'.repeat(40),revertedPromotionCommit:'wrong'.padEnd(40,'0')}}));
+  const rolledBack={...promoted,rollback:{rollbackCommit:'e'.repeat(40),revertedPromotionCommit:'d'.repeat(40)}};
+  assert.equal(validateDeveloperEvidence(rolledBack),true);
   assert.equal(developerEvidenceStatus(rolledBack),'rolled-back');
+});
+test('a candidate commit and patch hash can arrive after Docker verification, not only alongside it',()=>{
+  // This is the real worker sequence: Docker verification succeeds with no
+  // GitHub interaction yet (no candidate branch, no patch hash to report),
+  // and only a later report - once the candidate is actually pushed - fills
+  // those two facts in. That must be an extension, not a conflict.
+  const dockerOnly={...baseEvidence(),patchSha256:null,candidateCommit:null};
+  const first=mergeDeveloperEvidence(null,dockerOnly);
+  assert.equal(developerEvidenceStatus(first),'docker-verified');
+  assert.equal(first.candidateCommit,null);
+  const withCandidate=mergeDeveloperEvidence(first,baseEvidence());
+  assert.equal(withCandidate.candidateCommit,baseEvidence().candidateCommit);
+  assert.equal(withCandidate.patchSha256,baseEvidence().patchSha256);
+  // Once a candidate commit is on file, a later report cannot swap it for another.
+  assert.throws(()=>mergeDeveloperEvidence(withCandidate,{...baseEvidence(),candidateCommit:'f'.repeat(40)}));
+  // reportedAt cannot move backwards either.
+  assert.throws(()=>mergeDeveloperEvidence(withCandidate,{...baseEvidence(),reportedAt:new Date(Date.parse(withCandidate.reportedAt)-1000).toISOString()}));
 });
 test('merged evidence can only extend the record, never contradict or erase it',()=>{
   const first=mergeDeveloperEvidence(null,baseEvidence());
@@ -54,6 +79,25 @@ test('merged evidence can only extend the record, never contradict or erase it',
   const extended=mergeDeveloperEvidence(first,published);
   assert.equal(developerEvidenceStatus(extended),'awaiting-ci');
   assert.throws(()=>mergeDeveloperEvidence(extended,baseEvidence()));
+});
+test('a later report can send only the new facts it knows, not the whole history',()=>{
+  // This is how promote/rollback actually call it: a separate, later process
+  // that only has the new ciRun/approval/promotion or rollback fact, not the
+  // original contractId/testFiles/attempts from the run() that drafted the patch.
+  const first=mergeDeveloperEvidence(null,baseEvidence());
+  const withCi=mergeDeveloperEvidence(first,{schema:1,ciRun:{id:34756514362,conclusion:'success'},publish:{repository:'wooyeonho/yeno-os',branch:'blackhole/worker/demo',candidateCommit:first.candidateCommit,prNumber:9,url:'https://github.com/wooyeonho/yeno-os/pull/9',status:'awaiting_owner_approval'}});
+  assert.equal(developerEvidenceStatus(withCi),'awaiting-approval');
+  assert.equal(withCi.contractId,first.contractId);assert.deepEqual(withCi.testFiles,first.testFiles);
+  const approvedPatch={schema:1,approval:{approvedBy:'연호님',approvedCommit:first.candidateCommit,expectedProductionHead:'c'.repeat(40)}};
+  const approved=mergeDeveloperEvidence(withCi,approvedPatch);
+  assert.equal(developerEvidenceStatus(approved),'approved');
+  const promoted=mergeDeveloperEvidence(approved,{schema:1,promotion:{sourceCommit:'d'.repeat(40),previousCommit:'c'.repeat(40)}});
+  assert.equal(developerEvidenceStatus(promoted),'promoted');
+  const rolledBack=mergeDeveloperEvidence(promoted,{schema:1,rollback:{rollbackCommit:'e'.repeat(40),revertedPromotionCommit:'d'.repeat(40)}});
+  assert.equal(developerEvidenceStatus(rolledBack),'rolled-back');
+  // A partial patch still can't smuggle in a contradiction of an already-set field.
+  assert.throws(()=>mergeDeveloperEvidence(promoted,{schema:1,candidateCommit:'f'.repeat(40)}));
+  assert.throws(()=>mergeDeveloperEvidence(first,{schema:1,unknownField:true}));
 });
 test('a repository job\'s evidence must reference the same base commit as its own patch task',()=>{
   const t=task();const j={type:'agent',callLimit:1,repositoryTask:t,input:repositoryPrompt(t),developerEvidence:{...baseEvidence(),baseCommit:t.baseCommit}};

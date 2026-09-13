@@ -20,6 +20,13 @@ const PROTECTED = new Set(['runtime/server.mjs','runtime/service.mjs','runtime/l
 // after its own individual security review; the default for every current and
 // future file in that directory is deny.
 const ALLOWED_LIB_FILES = new Set([]);
+// runtime/public/ is served straight to the owner's browser. A model-authored
+// edit there can change what an "approve" click actually sends, or add code
+// that exfiltrates data from an already-authenticated session — Docker's
+// --network none during testing says nothing about what runs in a real
+// browser after deployment. So it gets the same default-deny treatment as
+// runtime/lib/: nothing is editable until reviewed and named here.
+const ALLOWED_PUBLIC_FILES = new Set([]);
 export function safeSourcePath(value) {
   if(typeof value!=='string'||value.length>200||!value.split('/').every(s=>/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(s))||value.split('/').some(s=>['node_modules','data','00_INBOX_RAW','.git','secrets','credentials'].includes(s))||/(?:^|\/)(?:[^/]*(?:secret|credential|token|private[-_]key)[^/]*|\.env[^/]*|id_rsa|id_ed25519)(?:$|\/)/i.test(value)||/\.(?:pem|key|p12|pfx|jks|keystore|yenobak)$/i.test(value))fail('unsafe_source_path');
   return value;
@@ -28,6 +35,7 @@ export function editablePath(value) {
   safeSourcePath(value);
   if(!/^(?:projects\/|runtime\/public\/|runtime\/lib\/)/.test(value)||!/[.](?:mjs|js|ts|css|html|svg)$/.test(value)||PROTECTED.has(value)||/(?:^|\/)(?:test|tests|fixtures|__tests__)(?:\/|$)|\.(?:test|spec)\.|(?:package|lock)\./.test(value))fail('protected_path');
   if(/^runtime\/lib\//.test(value)&&!ALLOWED_LIB_FILES.has(value))fail('protected_path');
+  if(/^runtime\/public\//.test(value)&&!ALLOWED_PUBLIC_FILES.has(value))fail('protected_path');
   return value;
 }
 export function validateRepositoryTask(input) {
@@ -88,6 +96,9 @@ function validateAttempt(a) {
   if(typeof a.timedOut!=='boolean'||typeof a.outputOverflow!=='boolean'||typeof a.passed!=='boolean')fail('invalid_evidence_attempt');
   if(!hash(a.stdoutSha256)||!hash(a.stderrSha256))fail('invalid_evidence_attempt');
   if(!nonEmptyText(a.isolation,60))fail('invalid_evidence_attempt');
+  // passed is a derived fact, not something the caller gets to assert: a timed
+  // out or output-overflowed run, or a non-zero exit, was never a pass.
+  if(a.passed!==(a.exitCode===0&&!a.timedOut&&!a.outputOverflow))fail('invalid_evidence_attempt');
 }
 export function validateDeveloperEvidence(evidence) {
   if(!exact(evidence,EVIDENCE_KEYS)||evidence.schema!==1)fail('invalid_evidence');
@@ -123,29 +134,46 @@ export function validateDeveloperEvidence(evidence) {
     if(!evidence.approval||p.previousCommit!==evidence.approval.expectedProductionHead)fail('invalid_evidence');
   }
   if(evidence.rollback!==null){
+    // approveRollback() creates a NEW forward-revert commit; it is never the
+    // same SHA as the promotion it reverts, and claiming otherwise would make
+    // every real rollback fail this check.
     const r=evidence.rollback;
-    if(!exact(r,['sourceCommit'])||!commit(r.sourceCommit))fail('invalid_evidence');
-    if(!evidence.promotion||r.sourceCommit!==evidence.promotion.sourceCommit)fail('invalid_evidence');
+    if(!exact(r,['rollbackCommit','revertedPromotionCommit'])||!commit(r.rollbackCommit)||!commit(r.revertedPromotionCommit)||r.rollbackCommit===r.revertedPromotionCommit)fail('invalid_evidence');
+    if(!evidence.promotion||r.revertedPromotionCommit!==evidence.promotion.sourceCommit)fail('invalid_evidence');
   }
   if(!iso(evidence.reportedAt))fail('invalid_evidence');
   return true;
 }
 // Facts already on file can only be confirmed, never rewritten or unset: the
-// worker reports its progress in stages (verified -> published -> approved ->
-// promoted -> rolled back), and a later report can extend that record but
-// never contradict or erase what an earlier one already established.
-export function mergeDeveloperEvidence(previous,incoming) {
-  validateDeveloperEvidence(incoming);
-  if(!previous)return structuredClone(incoming);
+// worker reports its progress in separate stages (verified -> published ->
+// approved -> promoted -> rolled back), often from separate CLI invocations
+// (promote/rollback run long after the original run() that drafted and
+// tested the patch) that only know the NEW facts, not the whole history. So a
+// report after the first one may be a partial patch - whichever keys it omits
+// keep their previously reported value - and it can extend the record but
+// never contradict or erase what an earlier report already established.
+export function mergeDeveloperEvidence(previous,patch) {
+  if(!plain(patch)||Object.keys(patch).some(key=>!EVIDENCE_KEYS.includes(key)))fail('invalid_evidence');
+  if(!previous){validateDeveloperEvidence(patch);return structuredClone(patch);}
   validateDeveloperEvidence(previous);
-  for(const key of ['contractId','baseCommit','dockerImageId','patchSha256','candidateCommit']) if(previous[key]!==incoming[key])fail('evidence_conflict');
-  if(JSON.stringify(previous.testFiles)!==JSON.stringify(incoming.testFiles))fail('evidence_conflict');
-  for(const key of ['publish','ciRun','approval','promotion','rollback']) {
-    if(previous[key]!==null&&JSON.stringify(previous[key])!==JSON.stringify(incoming[key]))fail('evidence_conflict');
+  const merged=structuredClone(previous);
+  for(const [key,value] of Object.entries(patch)){
+    if(key==='schema'){if(value!==1)fail('invalid_evidence');continue;}
+    if(key==='attempts'){
+      if(!Array.isArray(value)||value.length<previous.attempts.length)fail('evidence_conflict');
+      for(const a of previous.attempts){const match=value.find(x=>x?.number===a.number);if(!match||JSON.stringify(match)!==JSON.stringify(a))fail('evidence_conflict');}
+      merged.attempts=value;continue;
+    }
+    if(key==='testFiles'){if(JSON.stringify(previous.testFiles)!==JSON.stringify(value))fail('evidence_conflict');merged.testFiles=value;continue;}
+    if(['contractId','baseCommit','dockerImageId'].includes(key)){if(previous[key]!==value)fail('evidence_conflict');merged[key]=value;continue;}
+    if(key==='reportedAt'){if(Date.parse(value)<Date.parse(previous.reportedAt))fail('evidence_conflict');merged.reportedAt=value;continue;}
+    // patchSha256, candidateCommit, publish, ciRun, approval, promotion, rollback:
+    // these fill in over real, separate stages - null -> value is the expected
+    // next report, not a conflict - but once a stage is on file, only that
+    // exact same fact can be repeated; it can never change or revert to null.
+    if(previous[key]!==null&&JSON.stringify(previous[key])!==JSON.stringify(value))fail('evidence_conflict');
+    merged[key]=value;
   }
-  if(incoming.attempts.length<previous.attempts.length)fail('evidence_conflict');
-  for(const a of previous.attempts){const match=incoming.attempts.find(x=>x.number===a.number);if(!match||JSON.stringify(match)!==JSON.stringify(a))fail('evidence_conflict');}
-  const merged=structuredClone(incoming);
   validateDeveloperEvidence(merged);
   return merged;
 }
