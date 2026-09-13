@@ -1,0 +1,13 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {sha256,validateRepositoryTask,parseRepositoryPatch,editablePath,safeSourcePath,repositoryPrompt,validateRepositoryJob,PATCH_SCHEMA} from '../lib/repository-patch.mjs';
+const source='export const sum = xs => 0;\n';
+const task=()=>({baseCommit:'a'.repeat(40),goal:'Fix sum',files:[{path:'projects/demo/main.mjs',content:source,sha256:sha256(source)}],editablePaths:['projects/demo/main.mjs'],feedback:''});
+const patch=()=>({schema:PATCH_SCHEMA,baseCommit:'a'.repeat(40),changes:[{path:'projects/demo/main.mjs',beforeSha256:sha256(source),content:'export const sum = xs => xs.reduce((a,b)=>a+b,0);\n'}]});
+test('patch matches original source, base commit and explicit editable scope',()=>{assert.deepEqual(parseRepositoryPatch(JSON.stringify(patch()),task()),patch());assert.deepEqual(validateRepositoryTask(task()),task());});
+for(const p of ['../bad.mjs','/tmp/x','a//x.mjs','a/../b','a\\b','runtime/data/state.json','00_INBOX_RAW/raw.md','runtime/.env','config/private-key.pem','runtime/lib/token-reader.mjs'])test('refuse unsafe path '+p,()=>assert.throws(()=>safeSourcePath(p)));
+for(const p of ['runtime/server.mjs','runtime/lib/agent.mjs','runtime/lib/repository-patch.mjs','runtime/lib/store.mjs','workers/developer/worker.mjs','.github/workflows/ci.yml','package.json','runtime/test/foo.test.mjs','projects/demo/main.test.mjs'])test('worker cannot modify trusted boundary '+p,()=>assert.throws(()=>editablePath(p)));
+test('reject changed base, changed source hash, duplicates and empty patches',()=>{
+  for(const mutate of [p=>p.baseCommit='b'.repeat(40),p=>p.changes[0].beforeSha256='b'.repeat(64),p=>p.changes.push(p.changes[0]),p=>p.changes[0].content=source,p=>p.command='npm test',p=>p.changes[0].path='projects/other/main.mjs']){const p=patch();mutate(p);assert.throws(()=>parseRepositoryPatch(JSON.stringify(p),task()));}
+});
+test('source digest, context size and exact schema are mandatory',()=>{const t=task();t.files[0].content+='tamper';assert.throws(()=>validateRepositoryTask(t));const x=task();x.files[0].content='x'.repeat(12001);x.files[0].sha256=sha256(x.files[0].content);assert.throws(()=>validateRepositoryTask(x));assert.throws(()=>validateRepositoryTask({...task(),approve:true}));});
+test('persisted plan stays one-call and cannot cross into another execution mode',()=>{const t=task();const j={type:'agent',callLimit:1,repositoryTask:t,input:repositoryPrompt(t)};validateRepositoryJob(j);assert.throws(()=>validateRepositoryJob({...j,callLimit:2}));assert.throws(()=>validateRepositoryJob({...j,voiceConversation:true}));assert.throws(()=>validateRepositoryJob({...j,input:'different'}));});

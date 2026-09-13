@@ -1,3 +1,11 @@
+# 2026-09-13 — 저장소 개발 워커를 독립 코어에 통합
+
+- `blackhole/developer-worker-20260913`(PR #2)의 저장소 패치 작업자(`runtime/lib/repository-patch.mjs`, `workers/developer/*`)를 최신 `codex` 기준으로 다시 연결했다. PR #2 이후 `agent.mjs→agent-engine.mjs`, `job-view.mjs→job-view-engine.mjs`, 그리고 새 `independent-core(-engine).mjs` 모델 호출 방화벽이 추가돼 있어 단순 병합이 아니라 새 위치에 다시 연결했다.
+- 저장소 패치 작업(`job.repositoryTask`)을 `independent-core-engine.mjs`에서 코드 생성·수리와 같은 `development-model-call`로 분류해, 배경 자동 실행이 아닌 명시적 개발 요청에서만 모델을 호출하도록 했다.
+- `blackhole/`(별도 실험용 Seven Drives MVP, PR #3)는 이번 통합에 포함하지 않았다. 같은 `codex` 코어에 이미 더 엄격한 wealth/honor/fame 장부(`runtime/lib/quests.mjs`)와 해시·픽스처 기반 코드/기능 검증·승급 체계(`runtime/lib/capabilities.mjs`, `runtime/lib/code-workshop.mjs`)가 있어, PR #3의 자체 서버·상태 파일·자기신고형 boolean 검증 코드를 옮기면 오히려 더 약한 두 번째 BLACKHOLE가 생긴다고 판단했다.
+- Node 24 로컬 회귀: 기존 `npm test`(Docker 불필요) 전체와 신규 `runtime/test/repository-*.test.mjs`, `workers/developer/gateways.test.mjs`를 실행했다. `workers/developer/worker.test.mjs`·`core-integration.test.mjs`의 실제 Docker 필요 검사(`DEVELOPER_DOCKER_REQUIRED=1`)는 이 환경에 Docker가 없어 실행하지 못했다.
+- Koyeb 운영 배포, GitHub 실제 승격, 실제 유료 모델 호출은 이번 통합에서 수행하지 않았다. `yeno-koyeb-pilot`과 운영 데이터는 변경하지 않았다.
+
 # 2026-09-12 — 목표 실행 운영 배포와 실제 Gemini 결과
 
 기존 Koyeb 서비스에 f98cfa4c 배포568d3cc3의 Healthy/Active를 확인했다. Gemini 목표1개·모델호출1회로 5,142바이트 대본 결과를 실제 생성했다. 기존 데이터 보존·동일 요청 동일 작업·공개 HTTPS 다운로드200·SHA-256 일치를 검증했다. 하루4회 상한과 자동 검토off 유지. 호출 상한 도달·두 번째 모델과 폰 실기기 미검증을 상태 기록에 명시했다. 새 결제·호출 상한 확대·APK 재설치·실제 게시 없음.

@@ -1,3 +1,7 @@
+## 2026-09-13 저장소 개발 워커 통합 (최신 구현)
+
+`workers/developer/`와 `runtime/lib/repository-patch.mjs`를 우선한다. 저장소 패치 작업(`job.repositoryTask`)은 `independent-core-engine.mjs`에서 `development-model-call`로 분류되며, 코드 생성·수리 모드와 동일하게 명시적 개발 요청에서만 모델을 호출한다. 운영 코어는 Docker 소켓을 갖지 않으며 저장소 시험을 직접 실행하지 않는다. 별도 신뢰 개발 호스트의 `workers/developer/cli.mjs`가 코어의 `/api/developer/plan`에서 받은 계획을 네트워크 없는 비루트 컨테이너에서 시험·최대 1회 수리하고, 승인된 정확한 커밋에서만 GitHub로 승격한다. 모델 패치는 시험·워크플로·인증·예산·워커 자신을 변경할 수 없다. 이 저장소 브랜치에서는 Docker 기반 시험을 실행하지 않았으므로 `worker.mjs`/`gateways.mjs`/`core-integration.test.mjs`의 Docker 필요 검사는 미검증으로 남는다.
+
 ## 2026-09-13 모델 선택형 독립 OS 코어 계약 (최신 구현)
 
 `docs/INDEPENDENT_OS_20260913.md`와 `runtime/lib/independent-core.mjs`를 우선한다. BLACKHOLE의 영속 코어는 모델 공급자나 API 키 없이 부팅·인증·상태 저장·작업 큐·결과 파일·복구·로컬 기능 실행이 가능해야 한다. 모델은 `model-call` 또는 `development-model-call`로 분류된 유한 작업에서만 선택적으로 사용한다. 모든 새 작업 유형은 실행 전 `executionBoundary`에 등록하며, 미등록 유형은 `unclassified`로 실패 폐쇄한다. 로컬 작업을 편의상 모델 경로로 우회하지 않는다. 무키 실제 서버·커비 실행·재시작 복구 회귀 검사를 제거하거나 완화하지 않는다. 아래 코드·음성 확장과 이전 제약도 계속 적용한다.
