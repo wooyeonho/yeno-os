@@ -34,7 +34,10 @@ export function agentConfig(env) {
   const selected = (automatic && order.map(provider => choices.find(c => c.provider === provider)).find(c => c.ready)) || choices.find(c => c.provider === order[0]);
   if (!automatic && !selected.valid) throw new AgentError('invalid_configuration');
   const {valid, missing, ...config} = selected;
-  return {...config, auto: env.YENO_AGENT_AUTORUN === 'true', selectionMode: automatic ? 'configured-order' : 'explicit',
+  // A configured provider remains ready for an owner-triggered call, but the
+  // operating core never interprets a key or legacy AUTORUN flag as permission
+  // to create background model work.
+  return {...config, auto:false, backgroundModelCalls:false, selectionMode: automatic ? 'configured-order' : 'explicit',
     // Status is a whitelist: never expose keys or raw environment variables.
     providers: choices.map(c => ({provider:c.provider, model:c.model || null, eligible:order.includes(c.provider), configured:c.ready, missing:c.missing}))};
 }
