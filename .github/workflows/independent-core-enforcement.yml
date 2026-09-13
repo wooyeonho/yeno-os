@@ -1,0 +1,62 @@
+name: Enforce independent core
+
+on:
+  push:
+    branches:
+      - codex
+    paths:
+      - .github/independent-core-trigger
+
+permissions:
+  contents: write
+
+concurrency:
+  group: independent-core-enforcement
+  cancel-in-progress: false
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex
+          fetch-depth: 0
+
+      - name: Apply explicit-only AI boundary
+        run: python .github/scripts/enforce-independent-core.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            runtime/package-lock.json
+            apps/controller/package-lock.json
+
+      - name: Install locked dependencies
+        run: |
+          npm ci --prefix runtime --ignore-scripts --no-audit --no-fund
+          npm ci --prefix apps/controller --ignore-scripts --no-audit --no-fund
+
+      - name: Verify independent core boundary
+        run: |
+          node --check runtime/lib/provider-config.mjs
+          node --check runtime/lib/autopilot.mjs
+          node --check runtime/lib/agent.mjs
+          node --check runtime/lib/independent-core.mjs
+          node --check runtime/public/autopilot-view.mjs
+          node --test runtime/test/independent-core.test.mjs runtime/test/autopilot.test.mjs runtime/test/provider-config.test.mjs runtime/test/autopilot-ui.test.mjs
+
+      - name: Commit verified boundary
+        run: |
+          if git diff --quiet -- runtime/lib/provider-config.mjs runtime/lib/autopilot.mjs runtime/lib/agent.mjs runtime/public/autopilot-view.mjs runtime/test/autopilot.test.mjs CHANGELOG.md; then
+            echo 'No code changes required.'
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add runtime/lib/provider-config.mjs runtime/lib/autopilot.mjs runtime/lib/agent.mjs runtime/public/autopilot-view.mjs runtime/test/autopilot.test.mjs CHANGELOG.md
+          git commit -m 'feat: run BLACKHOLE independently from background AI'
+          git push origin HEAD:codex
