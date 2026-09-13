@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 
 export class WebSessionError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
+  constructor(status, message, extra = {}) { super(message); this.status = status; this.extra = extra; }
 }
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -68,7 +68,7 @@ export function createWebSessions({key, now = Date.now}) {
 
   function issue(req, device, remember) {
     const expiresAt = Date.parse(device.createdAt) + (remember ? REMEMBER_MS : SHORT_MS);
-    if (!Number.isSafeInteger(expiresAt) || expiresAt <= now()) throw new WebSessionError(409, '이전 브라우저 등록 기간이 끝났습니다. 새 연결 요청으로 다시 연결해 주세요.');
+    if (!Number.isSafeInteger(expiresAt) || expiresAt <= now()) throw new WebSessionError(409, '이전 브라우저 등록 기간이 끝났습니다. 새 연결 요청으로 다시 연결해 주세요.', {code: 'WEB_ENROLLMENT_EXPIRED'});
     const payload = Buffer.from(JSON.stringify({id: device.id, expiresAt})).toString('base64url');
     const value = `${payload}.${mac('web-cookie', payload)}`;
     const cookie = attributes(req).replace('=;', `=${value};`) + (remember ? `; Max-Age=${Math.max(1, Math.floor((expiresAt - now()) / 1000))}; Expires=${new Date(expiresAt).toUTCString()}` : '');
