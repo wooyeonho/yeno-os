@@ -2,9 +2,10 @@ name: Enforce independent core
 
 on:
   push:
-    branches: [codex]
+    branches:
+      - codex
     paths:
-      - .github/workflows/independent-core-enforcement.yml
+      - .github/independent-core-trigger
 
 permissions:
   contents: write
@@ -23,201 +24,7 @@ jobs:
           fetch-depth: 0
 
       - name: Apply explicit-only AI boundary
-        shell: bash
-        run: |
-          python <<'PY'
-          from pathlib import Path
-
-          def replace_one(path, old, new):
-              file = Path(path)
-              text = file.read_text(encoding='utf-8')
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{path}: expected one replacement, found {count}')
-              file.write_text(text.replace(old, new), encoding='utf-8')
-
-          replace_one(
-              'runtime/lib/provider-config.mjs',
-              "  return {...config, auto: env.YENO_AGENT_AUTORUN === 'true', selectionMode: automatic ? 'configured-order' : 'explicit',",
-              "  // Credentials remain available for owner-triggered calls, but a configured key\n  // never authorizes background model work by the operating core.\n  return {...config, auto:false, backgroundModelCalls:false, selectionMode: automatic ? 'configured-order' : 'explicit',",
-          )
-
-          replace_one(
-              'runtime/lib/autopilot.mjs',
-              "function aiAvailable(ctx){return !!ctx.config.ready&&ctx.aiUsedToday<ctx.settings.dailyAiLimit&&ctx.globalUsedToday<ctx.globalLimit;}",
-              "const backgroundModelCallsAllowed=ctx=>ctx.config.backgroundModelCalls!==false;\nfunction aiAvailable(ctx){return backgroundModelCallsAllowed(ctx)&&!!ctx.config.ready&&ctx.aiUsedToday<ctx.settings.dailyAiLimit&&ctx.globalUsedToday<ctx.globalLimit;}",
-          )
-
-          replace_one(
-              'runtime/lib/autopilot.mjs',
-              "    return !!ctx.config.ready&&(calls(job).length===0?aiAvailable(ctx):finalAnswer);",
-              "    // A settled answer can finish locally. Any path that would create a new\n    // provider call requires an explicit background authorization, which the\n    // production provider configuration deliberately never grants.\n    if(finalAnswer)return true;\n    return backgroundModelCallsAllowed(ctx)&&!!ctx.config.ready&&calls(job).length===0&&aiAvailable(ctx);",
-          )
-
-          replace_one(
-              'runtime/lib/autopilot.mjs',
-              "  if(!ctx.config.ready)blockers.unshift({id:'model',title:'연구 모델 연결',reason:'선택한 제공자의 키·모델·호출 한도 연결이 필요합니다.'});\n  if(ctx.aiUsedToday>=ctx.settings.dailyAiLimit||ctx.globalUsedToday>=ctx.globalLimit)blockers.unshift({id:'budget',title:'오늘 모델 호출 한도',reason:'자율 실행 또는 전체 호출 한도에 도달했습니다. 미확인·예약 호출도 포함하며 UTC 날짜가 바뀐 뒤 다시 확인합니다.'});",
-              "  if(!backgroundModelCallsAllowed(ctx))blockers.unshift({id:'model-policy',title:'AI 호출 정책 · 명시적 실행만',reason:'독립 운영 코어는 백그라운드에서 모델을 호출하지 않습니다. 질문·음성·연구·코딩을 연호님이 직접 실행한 경우에만 연결된 AI를 사용합니다.'});\n  else if(!ctx.config.ready)blockers.unshift({id:'model',title:'연구 모델 연결',reason:'선택한 제공자의 키·모델·호출 한도 연결이 필요합니다.'});\n  if(backgroundModelCallsAllowed(ctx)&&(ctx.aiUsedToday>=ctx.settings.dailyAiLimit||ctx.globalUsedToday>=ctx.globalLimit))blockers.unshift({id:'budget',title:'오늘 모델 호출 한도',reason:'자율 실행 또는 전체 호출 한도에 도달했습니다. 미확인·예약 호출도 포함하며 UTC 날짜가 바뀐 뒤 다시 확인합니다.'});",
-          )
-
-          replace_one(
-              'runtime/lib/autopilot.mjs',
-              "    if(ctx.config.ready&&ctx.tracks.some(track=>track.status==='ready')){",
-              "    if(backgroundModelCallsAllowed(ctx)&&ctx.config.ready&&ctx.tracks.some(track=>track.status==='ready')){",
-          )
-
-          replace_one(
-              'runtime/lib/autopilot.mjs',
-              "    summary=ctx.tracks.every(track=>['validation','blocked'].includes(track.status))?'연구 초안의 자동 반복을 멈추고 실제 검증 자료를 기다립니다. 공개 재난 관측은 설정에 따라 계속합니다.':'호출 한도와 실행 간격을 지키며 다음 작업을 기다립니다.';",
-              "    summary=!backgroundModelCallsAllowed(ctx)?'독립 운영 모드입니다. 규칙·스케줄러·저장된 기능으로 계속 동작하며, AI는 연호님이 명시적으로 실행할 때만 호출합니다.':ctx.tracks.every(track=>['validation','blocked'].includes(track.status))?'연구 초안의 자동 반복을 멈추고 실제 검증 자료를 기다립니다. 공개 재난 관측은 설정에 따라 계속합니다.':'호출 한도와 실행 간격을 지키며 다음 작업을 기다립니다.';",
-          )
-
-          replace_one(
-              'runtime/lib/autopilot.mjs',
-              "  return {mind:motivationStatus(state,rankedCandidates(state,ctx),decision,ctx.at),enabled:ctx.settings.enabled,dailyAiLimit:ctx.settings.dailyAiLimit,aiUsedToday:ctx.aiUsedToday,globalLimit:ctx.globalLimit,globalUsedToday:ctx.globalUsedToday,activeJobId:active?.id??null,nextAt,summary,tracks:ctx.tracks.map(({code,name,phase,status,reason,lastJobId})=>({code,name,phase,status,reason,lastJobId})),blockers,recentJobs:[...ctx.jobs].sort((a,b)=>created(b)-created(a)).slice(0,12).map(job=>job.id),lastError:ctx.settings.lastError};",
-              "  const backgroundModelCalls=backgroundModelCallsAllowed(ctx);\n  return {mind:motivationStatus(state,rankedCandidates(state,ctx),decision,ctx.at),enabled:ctx.settings.enabled,modelPolicy:backgroundModelCalls?'background-authorized':'explicit-only',backgroundModelCalls,dailyAiLimit:ctx.settings.dailyAiLimit,aiUsedToday:ctx.aiUsedToday,globalLimit:ctx.globalLimit,globalUsedToday:ctx.globalUsedToday,activeJobId:active?.id??null,nextAt,summary,tracks:ctx.tracks.map(({code,name,phase,status,reason,lastJobId})=>({code,name,phase,status,reason,lastJobId})),blockers,recentJobs:[...ctx.jobs].sort((a,b)=>created(b)-created(a)).slice(0,12).map(job=>job.id),lastError:ctx.settings.lastError};",
-          )
-
-          replace_one(
-              'runtime/lib/agent.mjs',
-              "  if(!config.ready||!config.auto||!state.modules.ai||state.emergencyStop)return null;",
-              "  if(config.backgroundModelCalls===false||!config.ready||!config.auto||!state.modules.ai||state.emergencyStop)return null;",
-          )
-
-          replace_one(
-              'runtime/public/autopilot-view.mjs',
-              "<div><small>오늘 자동 AI</small><strong>${count(info?.aiUsedToday)} <em>/ ${count(info?.dailyAiLimit)}회</em></strong></div>",
-              "<div><small>${info?.backgroundModelCalls===false?'백그라운드 AI':'오늘 자동 AI'}</small><strong>${info?.backgroundModelCalls===false?'꺼짐':count(info?.aiUsedToday)+' / '+count(info?.dailyAiLimit)+'회'}</strong></div>",
-          )
-
-          replace_one(
-              'runtime/public/autopilot-view.mjs',
-              "<p><strong>자동 AI 사용</strong><br>${count(info?.aiUsedToday)} / ${count(info?.dailyAiLimit)}회</p>",
-              "<p><strong>자동 AI 사용</strong><br>${info?.backgroundModelCalls===false?'사용 안 함 · 명시적 호출만':count(info?.aiUsedToday)+' / '+count(info?.dailyAiLimit)+'회'}</p>",
-          )
-
-          replace_one(
-              'runtime/public/autopilot-view.mjs',
-              "<p class=\"studio-note\">자동 AI 기본 한도는 하루 4회이며 전체 하루 ${count(info?.globalLimit)}회 한도 안에서 함께 사용합니다. 연구와 세계 현황은 6시간 간격으로 다음 작업을 확인합니다.</p>",
-              "<p class=\"studio-note\">${info?.backgroundModelCalls===false?'독립 운영 모드입니다. 평상시 목표 선택·자료 관측·검증된 기능 실행·결과 저장·복구에는 모델을 호출하지 않습니다. AI는 연호님이 질문·음성·연구·코딩을 명시적으로 실행할 때만 사용합니다.':'자동 AI 기본 한도는 하루 4회이며 전체 하루 '+count(info?.globalLimit)+'회 한도 안에서 함께 사용합니다. 연구와 세계 현황은 6시간 간격으로 다음 작업을 확인합니다.'}</p>",
-          )
-
-          Path('runtime/test/independent-core.test.mjs').write_text(r'''import test from 'node:test';
-import assert from 'node:assert/strict';
-import {randomUUID} from 'node:crypto';
-import {agentConfig} from '../lib/provider-config.mjs';
-import {automaticMission} from '../lib/agent.mjs';
-import {initialAutopilot,planAutopilot,getAutopilotStatus} from '../lib/autopilot.mjs';
-import {RESEARCH_TRACKS} from '../lib/research.mjs';
-
-const START='2026-09-13T00:00:00.000Z';
-const FUTURE='2026-09-13T01:00:00.000Z';
-const config=agentConfig({
-  YENO_AGENT_PROVIDER:'openai',
-  YENO_AGENT_DAILY_CALL_LIMIT:'4',
-  YENO_OPENAI_MODEL:'synthetic-model',
-  YENO_OPENAI_API_KEY:'synthetic-key',
-  YENO_AGENT_AUTORUN:'true',
-});
-function state(documents=false){
-  return {
-    autopilot:{...initialAutopilot(),enabled:true,enabledAt:START},
-    emergencyStop:false,
-    modules:{documents,ai:true},
-    jobs:[],
-    projects:RESEARCH_TRACKS.map(track=>({id:track.projectId,status:'active'})),
-    artifacts:{},
-    discovery:{enabled:true,lastRun:{startedAt:START,status:'completed',added:1,updated:0}},
-    ecosystem:{enabled:false,lastRun:null},
-  };
-}
-function settledResearchJob(track,{calls=1,step=1}={}){
-  return {
-    id:randomUUID(),type:'agent',title:'저장된 연구',input:'stored',status:'paused',pauseReason:'restart',
-    step,totalSteps:3,createdAt:START,updatedAt:START,error:null,version:1,artifacts:[],
-    deadlineAt:FUTURE,callLimit:1,projectId:track.projectId,
-    researchRequest:{version:1,question:'저장된 질문',query:track.defaultEnglishQuery,projectId:track.projectId,trackCode:track.code},
-    autopilot:{version:1,kind:'research',taskKey:`research:${track.code}:0`,phase:0,trackCode:track.code},
-    agentJournal:{provider:'openai',model:'synthetic-model',calls:Array.from({length:calls},()=>({id:randomUUID(),at:START,status:'settled',inputTokens:1,outputTokens:1})),history:[{role:'user',content:'저장된 질문'},...(calls?[{role:'assistant',content:'이미 받은 최종 답안',toolCalls:[]}]:[])]},
-  };
-}
-
-test('configured providers stay ready for explicit calls but never authorize background model work',()=>{
-  assert.equal(config.ready,true);
-  assert.equal(config.auto,false);
-  assert.equal(config.backgroundModelCalls,false);
-  assert.equal(config.provider,'openai');
-});
-
-test('automatic source review cannot create a model mission even when legacy autorun was requested',()=>{
-  const s=state(true);
-  assert.equal(automaticMission(s,{...config,auto:true}),null);
-});
-
-test('autopilot keeps local OS work running and selects no new AI research',()=>{
-  const withoutLocalWork=state(false);
-  assert.equal(planAutopilot(withoutLocalWork,{config,at:START}),null);
-  const status=getAutopilotStatus(withoutLocalWork,{config,at:START});
-  assert.equal(status.modelPolicy,'explicit-only');
-  assert.equal(status.backgroundModelCalls,false);
-  assert.match(status.summary,/독립 운영 모드/);
-  assert.ok(status.blockers.some(item=>item.id==='model-policy'));
-
-  const withLocalWork=state(true);
-  const plan=planAutopilot(withLocalWork,{config,at:START});
-  assert.equal(plan.kind,'world');
-  assert.equal(plan.motivation.signals.estimatedCalls,0);
-});
-
-test('restart may finish a settled local checkpoint but cannot start a new provider call',()=>{
-  const track=RESEARCH_TRACKS[0];
-  const settled=state(false);settled.jobs.push(settledResearchJob(track));
-  assert.deepEqual(planAutopilot(settled,{config,at:'2026-09-13T00:10:00.000Z'}),{kind:'resume',jobId:settled.jobs[0].id});
-
-  const needsCall=state(false);needsCall.jobs.push(settledResearchJob(track,{calls:0,step:0}));
-  assert.equal(planAutopilot(needsCall,{config,at:'2026-09-13T00:10:00.000Z'}),null);
-});
-''',encoding='utf-8')
-
-          Path('docs/INDEPENDENT_OS_20260913.md').write_text(r'''# BLACKHOLE 독립 OS 실행 경계
-
-## 불변 조건
-
-BLACKHOLE의 평상시 코어는 모델 제공자 없이 기동하고 계속 작동한다. 목표 후보의 규칙 기반 순위, 스케줄링, 요청 중복 방지, 상태 저장, 검증된 기능 실행, 결과 해시 확인, 중단·재개, 백업·복구는 로컬 런타임이 담당한다.
-
-외부 AI는 코어가 아니라 명시적으로 호출하는 가속기다. 다음 경우에만 사용한다.
-
-- 연호님이 질문·음성 대화·연구 실행을 직접 접수한 경우
-- 연호님이 코드 작성·수정을 직접 접수한 경우
-- 개발 과정에서 별도 도구가 소스 변경안을 만드는 경우
-
-환경에 API 키와 과거 `YENO_AGENT_AUTORUN=true`가 남아 있어도 자동 연구, 자료 갱신 뒤 자동 검토, 백그라운드 모델 호출은 시작하지 않는다. 연결된 키는 수동 요청을 실행할 준비 상태만 뜻한다.
-
-## AI 없이 계속 실행되는 범위
-
-- 호문쿨루스: 저장된 지표와 규칙으로 허용된 목표 후보의 우선순위를 계산
-- 커비: 이미 검증·활성화한 선언형 기능과 QuickJS JavaScript 기능 실행
-- 자비스 코어: 작업 큐, 요청 원장, 파일 결과, 상태·오류·복구 정보 제공
-- 공개 관측, 내부 문서 변환, 진단, 결과 재사용, For-Ai 점검, 로컬 영상 렌더링
-- 종료·재시작 뒤 저장된 작업과 결과 복구
-
-이미 모델 응답이 정산되어 최종 답안 체크포인트가 남아 있다면 새 호출 없이 파일 저장 단계를 마칠 수 있다. 새 모델 응답이 필요한 자동 작업은 시작하거나 재개하지 않는다.
-
-## 명시적 호출의 경계
-
-수동 호출도 기존 하루 호출 상한, 요청 ID, 호출 원장, 미확인 응답 재전송 금지, 전체 멈춤을 그대로 적용한다. AI를 끄거나 키가 없어도 독립 코어와 비-AI 기능은 중지되지 않는다.
-
-## 독립의 의미
-
-이는 모델 API로부터의 실행 독립성이다. 공개 관측처럼 네트워크 자료가 필요한 기능은 인터넷 연결이 필요하고, Koyeb 배포본은 Koyeb 인프라에서 실행된다. 운영 서버 재배포와 실제 휴대폰 검증은 소스 구현·자동 검사와 별도로 확인한다.
-''',encoding='utf-8')
-
-          changelog=Path('CHANGELOG.md')
-          marker='# 2026-09-13 — 독립 OS 코어와 명시적 AI 호출 경계'
-          if marker not in changelog.read_text(encoding='utf-8'):
-              entry=f'''{marker}\n\n- API 키가 설정돼 있어도 자동 연구와 자료 갱신 뒤 자동 모델 검토를 생성하지 않도록 백그라운드 호출 권한을 제거했다.\n- 질문·음성·연구·코딩을 사용자가 직접 실행한 경우의 모델 연결은 유지한다.\n- AI 0회 상태에서도 규칙 기반 판단, 공개 관측, 검증된 기능 실행, 결과 저장·복구가 계속되는 회귀 검사를 추가했다.\n- 이미 정산된 최종 답안은 새 호출 없이 로컬 파일 저장을 마칠 수 있지만, 새 모델 응답이 필요한 자동 작업은 재개하지 않는다.\n\n'''
-              changelog.write_text(entry+changelog.read_text(encoding='utf-8'),encoding='utf-8')
-          PY
+        run: python .github/scripts/enforce-independent-core.py
 
       - uses: actions/setup-node@v4
         with:
@@ -242,12 +49,12 @@ BLACKHOLE의 평상시 코어는 모델 제공자 없이 기동하고 계속 작
 
       - name: Commit verified boundary
         run: |
-          if git diff --quiet -- runtime/lib/provider-config.mjs runtime/lib/autopilot.mjs runtime/lib/agent.mjs runtime/public/autopilot-view.mjs runtime/test/independent-core.test.mjs docs/INDEPENDENT_OS_20260913.md CHANGELOG.md; then
+          if git diff --quiet -- runtime/lib/provider-config.mjs runtime/lib/autopilot.mjs runtime/lib/agent.mjs runtime/public/autopilot-view.mjs CHANGELOG.md; then
             echo 'No code changes required.'
             exit 0
           fi
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add runtime/lib/provider-config.mjs runtime/lib/autopilot.mjs runtime/lib/agent.mjs runtime/public/autopilot-view.mjs runtime/test/independent-core.test.mjs docs/INDEPENDENT_OS_20260913.md CHANGELOG.md
+          git add runtime/lib/provider-config.mjs runtime/lib/autopilot.mjs runtime/lib/agent.mjs runtime/public/autopilot-view.mjs CHANGELOG.md
           git commit -m 'feat: run BLACKHOLE independently from background AI'
           git push origin HEAD:codex
