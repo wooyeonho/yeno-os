@@ -12,14 +12,35 @@ def patch(path, old, new, marker=None):
     file.write_text(text.replace(old, new), encoding='utf-8')
 
 
-# Background model execution exists only for an explicitly enabled
-# non-production development/test process. Production ignores both legacy
-# autorun settings and any injected per-call background flag.
+# Background model work is denied unless the trusted provider configuration
+# explicitly grants it. Production provider configuration always returns false;
+# only non-production development mode can produce true.
 patch(
     'runtime/lib/autopilot.mjs',
     "const backgroundModelCallsAllowed=ctx=>ctx.config.backgroundModelCalls!==false;",
-    "const backgroundModelCallsAllowed=ctx=>process.env.NODE_ENV!=='production'&&process.env.YENO_DEVELOPMENT_BACKGROUND_MODEL_CALLS==='true'&&ctx.config.backgroundModelCalls!==false;",
-    marker="process.env.YENO_DEVELOPMENT_BACKGROUND_MODEL_CALLS==='true'&&ctx.config.backgroundModelCalls!==false",
+    "const backgroundModelCallsAllowed=ctx=>ctx.config.backgroundModelCalls===true;",
+    marker="const backgroundModelCallsAllowed=ctx=>ctx.config.backgroundModelCalls===true;",
+)
+patch(
+    'runtime/lib/agent.mjs',
+    "  if (config?.backgroundModelCalls === false) return null;",
+    "  if (config?.backgroundModelCalls !== true) return null;",
+    marker="if (config?.backgroundModelCalls !== true) return null;",
+)
+
+# Legacy autonomous planner fixtures intentionally exercise development mode;
+# make that permission explicit instead of relying on a missing field.
+patch(
+    'runtime/test/autopilot.fixture.mjs',
+    "const config={ready:true,dailyCallLimit:20};",
+    "const config={ready:true,dailyCallLimit:20,backgroundModelCalls:true};",
+    marker="backgroundModelCalls:true",
+)
+patch(
+    'runtime/test/ecosystem.test.mjs',
+    "const config=agentConfig({YENO_AGENT_PROVIDER:'nvidia',YENO_AGENT_MODEL:'moonshotai/kimi-k3',YENO_AGENT_API_KEY:'synthetic-key-only',YENO_AGENT_DAILY_CALL_LIMIT:'4',YENO_AGENT_AUTORUN:'true'});f.state.modules.ai=true;",
+    "const config=agentConfig({NODE_ENV:'test',YENO_DEVELOPMENT_BACKGROUND_MODEL_CALLS:'true',YENO_AGENT_PROVIDER:'nvidia',YENO_AGENT_MODEL:'moonshotai/kimi-k3',YENO_AGENT_API_KEY:'synthetic-key-only',YENO_AGENT_DAILY_CALL_LIMIT:'4',YENO_AGENT_AUTORUN:'true'});f.state.modules.ai=true;",
+    marker="YENO_DEVELOPMENT_BACKGROUND_MODEL_CALLS:'true',YENO_AGENT_PROVIDER:'nvidia'",
 )
 
 # Only a persisted step-2 draft is local-only. Earlier checkpoints may still
