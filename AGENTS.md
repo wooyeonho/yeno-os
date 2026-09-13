@@ -1,3 +1,7 @@
+## 2026-09-13 코드·음성 확장 (최신 구현)
+
+`docs/CODE_AND_VOICE_20260913.md`와 운영 검증 기록을 우선한다. `codeWorkshop`은 별도 영속 JavaScript 기능 registry이며 기존 declarative capabilities와 프로젝트·인증을 보존한다. 공개 GitHub 선택 파일/라이선스를 고정 커밋으로 가져와 QuickJS WASM에서 실행하고, 지정한 자동 코딩 작업을 최대2모델호출로 작성·시험·수정한다. 모든 시험은2회 재현; 실패한 후보는 활성 버전을 덮어쓰지 않는다. AI 끄기·전체 정지·호출 원장·단일 코드 작업·백업 복원 비활성을 유지한다. 상주 저장소 전체 수정/배포 작업자는 여전히 없으며 legacy `developerWorker:false`는 그 계약을 보존한다; `javascriptWorker:true`가 새 범위다. 음성은 브라우저 인식/합성과 한 번의 맥락 있는 실제 모델 응답이며 마이크·스피커 실기기 검증을 별도로 기록한다. 아래는 이전 이력과 여전히 적용되는 제약이다.
+
 # YENO OS development instructions
 
 ## Current product name

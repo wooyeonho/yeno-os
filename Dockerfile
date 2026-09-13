@@ -10,8 +10,11 @@ RUN apt-get update \
     && chmod 0700 /var/lib/yeno
 
 WORKDIR /opt/yeno
-COPY runtime/server.mjs runtime/service.mjs runtime/package.json ./runtime/
+COPY runtime/package.json runtime/package-lock.json ./runtime/
+RUN npm ci --prefix runtime --omit=dev --ignore-scripts --no-audit --no-fund
+COPY runtime/server.mjs runtime/service.mjs ./runtime/
 COPY runtime/lib/ ./runtime/lib/
+COPY runtime/capabilities/ ./runtime/capabilities/
 COPY runtime/public/ ./runtime/public/
 
 ENV NODE_ENV=production \

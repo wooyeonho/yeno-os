@@ -44,10 +44,12 @@ function estimate(state, reservation) {
   const pendingForAiCount = pending.filter(job => job.type === 'forai').length;
   const pendingWorldCount = pending.filter(job => job.type === 'world').length;
   const pendingCapabilityCount=pending.filter(job=>job.type==='capability').length;
+  const pendingCodeCount=pending.filter(job=>job.type==='code').length;
   const pendingResearchCount = state.jobs.filter(job=>record(job)&&PENDING.has(job.status)&&job.researchRequest).length;
   const pendingArchiveBytes = pendingWorldCount * estimateNewArtifacts(2 * 1024 * 1024, 3) + pendingVideoCount * estimateNewArtifacts(VIDEO_LIMITS.bytes)
     + pendingForAiCount * estimateNewArtifacts(FORAI_RESERVED_ARTIFACT_BYTES, 2)
     + pendingCapabilityCount * estimateNewArtifacts(256 * 1024)
+    + pendingCodeCount * estimateNewArtifacts(768 * 1024,3)
     + pendingResearchCount * estimateNewArtifacts(RESEARCH_RESERVED_ARTIFACT_BYTES, 4);
   const additionalArchiveBytes = estimateNewArtifacts(reservation.reserveVideoBytes)
     + estimateNewArtifacts(reservation.reserveTextBytes, 2);

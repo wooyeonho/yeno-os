@@ -1,0 +1,36 @@
+{
+  "date": "2026-09-13",
+  "sourceCommit": "2e436f0ed5b887f9194b349d3b4fd7edbdb15159",
+  "deploymentId": "2d839149-101a-48cf-b30f-3689219c9fa7",
+  "health": "Healthy",
+  "verification": {
+    "tests": 397,
+    "passed": 397,
+    "failed": 0,
+    "skipped": 0,
+    "authenticatedBrowserReload": true,
+    "physicalAndroidVerified": false
+  },
+  "observedAutonomousRun": {
+    "artifact": "capability-6847b9e8.md",
+    "capability": "evidence-gap-brief",
+    "version": "1.0.0",
+    "sourceSha256": "b960ec8af920525ac1d10871a6fa989d66ee484388b1e5287dd8b607e12de5b6",
+    "inputSha256": "707691ae982cff588f91d40f3b739f261c4c95427602ba7cedac4b8b73c4e202",
+    "dominantDrives": [
+      "pride",
+      "sloth"
+    ],
+    "bytes": 1010,
+    "openedArtifactInBrowser": true,
+    "actualInput": "Stored E01 EUREKA research evidence",
+    "outputFinding": "One abstract and one bibliographic record; full text and independent source data still required.",
+    "automaticAiCallsDisplayed": 0,
+    "feedback": "Artifact reference with hash and size saved; substantive accuracy and research impact not measured."
+  },
+  "limitations": [
+    "Constrained declarative JSON recipes, not arbitrary external program absorption.",
+    "No voice interface or autonomous code/deploy worker.",
+    "External product integrations and publishing remain incomplete."
+  ]
+}
