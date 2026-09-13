@@ -29,6 +29,7 @@ import {createWebSessions,WebSessionError} from './lib/web-session.mjs';
 import {createWebPairings} from './lib/web-pairing.mjs';
 import {planAutopilot,getAutopilotStatus,validateAutopilot,validateAutopilotJob} from './lib/autopilot.mjs';
 import {researchEvidenceCsv,researchForAiInput,researchVideoInput} from './lib/autopilot-outputs.mjs';
+import {CapabilityError,importCapability,verifyCapability,activateCapability,disableCapability,rollbackCapability,executeCapability,getCapabilityStatus,createCapabilityRequest,validateCapabilityRequest} from './lib/capabilities.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const VERSION='0.2.2';
@@ -71,6 +72,18 @@ export function createYenoServer(options={}) {
  if(store.recovered)event('State recovered from the verified previous backup.');
  if(store.recovered||(!aiEndpoint&&!agentSettings.ready&&!profiles.grok.ready))s.modules.ai=false;
  recoverAgentJournals(s.jobs);
+ if(!s.emergencyStop&&s.capabilities.entries.length===0&&s.capabilities.history.length===0){
+   try{
+     let registry=s.capabilities;
+     for(const name of ['evidence-gap-brief','failure-triage']){
+       const manifest=JSON.parse(fs.readFileSync(path.join(ROOT,'capabilities',`${name}.json`),'utf8'));
+       registry=importCapability(registry,manifest).registry;
+       registry=verifyCapability(registry,manifest.id).registry;
+       registry=activateCapability(registry,manifest.id).registry;
+     }
+     s.capabilities=registry;event('커비: 기본 기능2종의 원본·시험·활성화를 기록했습니다.');
+   }catch(error){releaseLock();throw error;}
+ }
  event('YENO runtime started.');store.save();
  function state(){return {autopilot:autopilotState(),bots:botStatus(s,profiles),name:'YENO OS',version:VERSION,apiVersion:API_VERSION,requestTracking:{retained:Object.keys(s.requestLedger).length,capacity:REQUEST_LEDGER_MAX_ENTRIES,cached:Object.keys(s.requests).length,cacheMaxBytes:REQUEST_CACHE_MAX_BYTES},revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,draftConfigured:!!aiEndpoint,model:agentSettings.ready?agentSettings.model:aiEndpoint?aiModel:null},agent:{providers:providerStatus(),configured:agentSettings.ready,provider:agentSettings.provider,model:agentSettings.model||null,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs),automaticReviews:agentSettings.ready&&agentSettings.auto&&s.modules.ai&&(s.discovery.enabled||s.ecosystem.enabled)&&!s.emergencyStop,tools:AGENT_TOOLS.map(tool=>tool.name),developmentExecution:false},discovery:{...s.discovery,repositories:DISCOVERY_REPOS},ecosystem:publicEcosystem(s.ecosystem),jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,world:worldOverview(s.jobs),capabilities:{worldEarthquakes:true,projectBots:true,localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,scheduledSourceDiscovery:true,boundedAgentLoop:true,ecosystemDiscovery:true,skillEvidenceIntake:true,developerWorker:false,autonomousProduction:true,diagnostics:true,evolution:'proposals-only',ai:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
  // A failed filesystem write leaves its outcome uncertain. Retain its request
@@ -85,13 +98,14 @@ export function createYenoServer(options={}) {
  function controlEcosystem(enabled){if(enabled&&s.emergencyStop)throw new HttpError(409,'전체 멈춤을 해제한 뒤 흡수를 시작하세요.');ecosystem.setEnabled(enabled);event(`Ecosystem intake ${enabled?'enabled':'disabled'}; no installation or model call.`);return {status:200,payload:{ecosystem:publicEcosystem(s.ecosystem)}};}
  function controlDiscovery(enabled){if(enabled&&s.emergencyStop)throw new HttpError(409,'Release emergency stop before enabling source discovery');discovery.setEnabled(enabled);event(`Official source discovery ${enabled?'enabled':'disabled'}; no model or coding execution.`);return {status:200,payload:{discovery:structuredClone(s.discovery)}};}
  const touch=job=>{job.updatedAt=now();job.version++;};
- const moduleFor=type=>['document','world','video','forai'].includes(type)?'documents':['ai','agent'].includes(type)?'ai':'diagnostics';
+ const moduleFor=type=>['document','world','video','forai','capability'].includes(type)?'documents':['ai','agent'].includes(type)?'ai':'diagnostics';
  function requireModule(name){if(!s.modules[name])throw new HttpError(409,`${name} module is disabled`);}
- function newJob(body,{questExecution=false}={}){
+ function newJob(body,{questExecution=false,capabilityExecution=false}={}){
    // The UI advertises AI when the bounded primary provider is configured.
    // Prefer its persisted budget and stop controls even if legacy credentials
    // remain configured. Only legacy-only installations use the old adapter.
-   const type=body.type==='ai'&&agentSettings.ready?'agent':body.type;if(!['document','diagnostics','evolution','ai','agent','world','video','forai'].includes(type))throw new HttpError(422,'Unsupported job type');
+   const type=body.type==='ai'&&agentSettings.ready?'agent':body.type;if(!['document','diagnostics','evolution','ai','agent','world','video','forai','capability'].includes(type))throw new HttpError(422,'Unsupported job type');
+   if(type==='capability'&&!capabilityExecution)throw new HttpError(422,'기능 실행 경로에서 검증한 입력이 필요합니다.');
    const jobConfig=body.provider?agentConfigForProvider(env,body.provider):agentSettings;
    if(type==='agent'&&!jobConfig.ready)throw new HttpError(409,'선택한 모델의 API 키·모델 이름·하루 호출 상한 연결이 필요합니다. 자율 점검에서 연결 상태를 확인하세요.');
    if(!(questExecution&&type==='agent'))requireModule(moduleFor(type));
@@ -157,7 +171,46 @@ export function createYenoServer(options={}) {
  }
  function questState(){return {...questsOverview(s),providers:providerStatus(),selectedProvider:agentSettings.provider,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs)};}
  function researchState(){return {tracks:RESEARCH_TRACKS.filter(track=>s.projects.some(p=>p.id===track.projectId&&p.status!=='archived')).map(track=>({...track,scope:track.scopeConstraints})),jobs:s.jobs.filter(job=>job.researchRequest).map(publicJob),providerReady:agentSettings.ready,usage:agentUsage(s.jobs),dailyCallLimit:agentSettings.dailyCallLimit,emergencyStop:s.emergencyStop};}
- function autopilotState(){return getAutopilotStatus(s,{config:agentSettings,at:now()});}
+ function capabilityJob(id,input,expectedHash){
+   const request=createCapabilityRequest(s.capabilities,id,input);
+   if(expectedHash&&request.hash!==expectedHash)throw new HttpError(409,'기능 버전이 바뀌었습니다. 현재 버전으로 새 작업을 확인하세요.');
+   assertProductionCapacity(s,{reserveTextBytes:256*1024});
+   const job=newJob({type:'capability',title:`흡수 기능 실행 · ${id}`,text:JSON.stringify(request.input)},{capabilityExecution:true});
+   job.capabilityRequest=request;return job;
+ }
+ function capabilityMutation(action,b){
+   if(!b.requestId)throw new HttpError(400,'지속 요청 번호가 필요합니다.');
+   const allowed={import:['manifest'],verify:['id','hash'],activate:['id','hash'],disable:['id'],rollback:['id'],run:['id','input']};
+   if(!allowed[action]||Object.keys(b).some(key=>!['requestId',...allowed[action]].includes(key)))throw new HttpError(400,'기능 작업 입력을 확인하세요.');
+   if(s.emergencyStop&&action!=='disable')throw new HttpError(409,'전체 멈춤 상태입니다.');
+   if(action==='run'){const job=capabilityJob(b.id,b.input);return {status:201,payload:{jobId:job.id,job:publicJob(job)}};}
+   const functions={import:()=>importCapability(s.capabilities,b.manifest),verify:()=>verifyCapability(s.capabilities,b.id,b.hash),activate:()=>activateCapability(s.capabilities,b.id,b.hash),disable:()=>disableCapability(s.capabilities,b.id),rollback:()=>rollbackCapability(s.capabilities,b.id)};
+   const output=functions[action]();
+   if(action!=='disable')assertProductionCapacity({...s,capabilities:output.registry});
+   s.capabilities=output.registry;event(`커비 기능 ${action}: ${b.id??b.manifest?.id}`);
+   return {status:200,payload:{result:output.result,capabilities:getCapabilityStatus(s.capabilities)}};
+ }
+ function capabilityCandidates(){
+   const active=new Set(getCapabilityStatus(s.capabilities).filter(item=>item.activeHash).map(item=>item.id)),candidates=[];
+   if(!s.modules.documents)return candidates;
+   const add=(id,input,goal,focus)=>{
+     if(!active.has(id)||!input.records.length)return;
+     const request=createCapabilityRequest(s.capabilities,id,input);
+     candidates.push({kind:'capability',taskKey:`cap:${id}:${request.hash}:${request.inputSha256}`,capabilityId:id,manifestHash:request.hash,input:request.input,goal,focus,successCriterion:'기능 시험과 입력 검사를 통과하고 실제 결과 파일의 해시를 보관한다.'});
+   };
+   const failures=s.jobs.filter(job=>job.status==='failed'&&job.type!=='capability').slice(0,30);
+   add('failure-triage',{records:failures.map(job=>({id:job.id,title:job.title,status:job.status,error:String(job.error??'').slice(0,400),nextStep:job.agentJournal?.calls?.some(call=>call.status!=='settled')?'이전 응답 미확인: 재호출 없이 호출 기록 확인':'보관된 입력으로 원인 재현, 수정 전후 결과 비교'}))},'반복 실패의 보존 기록으로 원인 점검표를 만든다.','wrath');
+   const parent=s.jobs.find(job=>job.status==='completed'&&job.autopilot?.kind==='research');
+   if(parent&&active.has('evidence-gap-brief')){
+     try{
+       const {bundle}=verifiedAutopilotParent(parent.id),abstracts=bundle.sources.filter(source=>source.readLevel==='abstract').length;
+       add('evidence-gap-brief',{records:[{title:parent.title,evidenceCount:abstracts,priority:abstracts===0?10:7,nextStep:`초록 ${abstracts}건·서지 ${bundle.sources.length-abstracts}건. 원문과 독립 원자료를 확보한 뒤 가설을 검증한다.`}]},'저장된 연구에서 실제 확인 범위와 부족한 검증 근거를 정리한다.','pride');
+     }catch{/* Damaged/unavailable evidence cannot become capability input. */}
+   }
+   return candidates;
+ }
+ function autopilotState(){return {...getAutopilotStatus(s,{config:agentSettings,at:now(),capabilities:capabilityCandidates()}),capabilities:getCapabilityStatus(s.capabilities)};}
+
  function controlAutopilot(body){
    if(!body.requestId||Object.keys(body).some(key=>!['requestId','enabled','dailyAiLimit'].includes(key))||typeof body.enabled!=='boolean'||(body.dailyAiLimit!==undefined&&(!Number.isInteger(body.dailyAiLimit)||body.dailyAiLimit<1||body.dailyAiLimit>4)))throw new HttpError(400,'자동 운영 상태와 하루 AI 호출 상한(1~4회)을 확인하세요.');
    if(body.enabled&&s.emergencyStop)throw new HttpError(409,'전체 멈춤을 해제한 뒤 자동 운영을 시작하세요.');
@@ -175,7 +228,7 @@ export function createYenoServer(options={}) {
  }
  function runAutopilot(){
    if(controllers.size)return;
-   const plan=planAutopilot(s,{config:agentSettings,at:now()});if(!plan)return;
+   const plan=planAutopilot(s,{config:agentSettings,at:now(),capabilities:capabilityCandidates()});if(!plan)return;
    ensureDurable();
    if(plan.kind==='resume'){
      const job=s.jobs.find(job=>job.id===plan.jobId);job.status='queued';delete job.pauseReason;touch(job);save();return;
@@ -193,12 +246,13 @@ export function createYenoServer(options={}) {
      if(plan.previousJobId)verifiedAutopilotParent(plan.previousJobId);
      const result=startResearch({requestId:`autopilot:${uid()}`,projectId:plan.projectId,question:plan.question,query:plan.query});
      job=s.jobs.find(job=>job.id===result.payload.job.id);
+   }else if(plan.kind==='capability'){job=capabilityJob(plan.capabilityId,plan.input,plan.manifestHash);job.title=plan.goal.slice(0,160);
    }else{
      const {parent,bundle,answer}=verifiedAutopilotParent(plan.parentJobId);
      const input=plan.kind==='video'?researchVideoInput(parent,bundle,answer):researchForAiInput(parent,bundle,answer);
      const result=productionJob({requestId:`autopilot:${uid()}`,kind:plan.kind,input});job=s.jobs.find(job=>job.id===result.payload.job.id);
    }
-   job.autopilot={version:1,kind:plan.kind,taskKey:plan.taskKey,...(plan.kind==='research'?{phase:plan.phase,trackCode:plan.trackCode}:{}),...(plan.parentJobId||plan.previousJobId?{parentJobId:plan.parentJobId??plan.previousJobId}:{})};
+   job.autopilot={version:1,kind:plan.kind,taskKey:plan.taskKey,...(plan.motivation?{motivation:structuredClone(plan.motivation)}:{}),...(plan.kind==='capability'?{capabilityId:plan.capabilityId,manifestHash:plan.manifestHash}:{}),...(plan.kind==='research'?{phase:plan.phase,trackCode:plan.trackCode}:{}),...(plan.parentJobId||plan.previousJobId?{parentJobId:plan.parentJobId??plan.previousJobId}:{})};
    validateAutopilotJob(job,s);
    }catch(error){s.jobs=before.jobs;s.quests=before.quests;s.events=before.events;throw error;}
    s.autopilot.lastError=null;s.autopilot.retryAt=null;
@@ -432,6 +486,10 @@ export function createYenoServer(options={}) {
          const controller=new AbortController();controllers.set(job.id,controller);
          try{const provenance=job.autopilot?.kind==='forai'?verifiedAutopilotParent(job.autopilot.parentJobId):null;const result=await runForAiAudit({input:validateForAiInput(JSON.parse(job.input)),signal:controller.signal,...(provenance?{generatedFrom:{jobId:provenance.parent.id,answerSha256:provenance.answerSha256}}:{})});if(!valid())return;job.draft=result.report;job.productionEvidence=result.evidence;}
          finally{if(controllers.get(job.id)===controller)controllers.delete(job.id);}
+       }else if(job.type==='capability'){
+         validateCapabilityRequest(job.capabilityRequest,s.capabilities);
+         const result=executeCapability(s.capabilities,job.capabilityRequest.id,job.capabilityRequest.input,{hash:job.capabilityRequest.hash,runId:job.id});
+         if(!valid())return;s.capabilities=result.registry;job.draft=result.result.markdown;
        }else if(job.type==='document'){
          const paras=job.normalized.split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean);
          job.draft=job.operatingReport?`${job.normalized}\n\n---\n출처: YENO에 저장된 작업·프로젝트·자료의 생성 시점 상태.\n보고서 입력 SHA-256: ${job.inputSha256}\n`:`# ${job.title.replace(/[\r\n]/g,' ')}\n\n작성 시각: ${now()}\n\n## 입력 내용을 문서로 정리\n${paras.map((p,i)=>`### ${i+1}\n\n${p}`).join('\n\n')}\n\n## 출처와 처리 내역\n- 출처: ${job.sourceReport?'YENO에 등록된 자료와 검토 기록':job.projectReport?'YENO에 등록된 프로젝트 정보와 소유자의 요청':'연호님이 이 작업에 입력한 텍스트'}\n- 처리: 유니코드·줄바꿈 정규화, 빈 줄 기준 문단 분리, 제목·출처 부착\n- 외부 조사 또는 AI 호출: 없음\n- 입력 SHA-256: ${job.inputSha256}\n- 원문 의미를 해석하거나 사실 확인한 문서가 아닙니다.\n`;
@@ -531,7 +589,7 @@ export function createYenoServer(options={}) {
      if(!url.pathname.startsWith('/api/')){
        if(req.method!=='GET'&&req.method!=='HEAD')throw new HttpError(405,'Method not allowed');
        const allowed={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/command-request.mjs':'command-request.mjs','/source-reference-labels.mjs':'source-reference-labels.mjs','/world-view.mjs':'world-view.mjs','/studio-view.mjs':'studio-view.mjs','/studio.css':'studio.css','/absorption-routing.mjs':'absorption-routing.mjs','/world-land.svg':'world-land.svg','/style.css':'style.css','/manifest.webmanifest':'manifest.webmanifest','/icon.svg':'icon.svg','/web-client.mjs':'web-client.mjs','/sw.js':'sw.js','/offline.html':'offline.html'};
-       Object.assign(allowed,{'/autopilot-view.mjs':'autopilot-view.mjs','/research-view.mjs':'research-view.mjs','/hankki/answer':'hankki-answer.html','/hankki-answer.mjs':'hankki-answer.mjs','/hankki-answer.css':'hankki-answer.css'});
+       Object.assign(allowed,{'/cockpit.css':'cockpit.css','/capability-view.mjs':'capability-view.mjs','/autopilot-view.mjs':'autopilot-view.mjs','/research-view.mjs':'research-view.mjs','/hankki/answer':'hankki-answer.html','/hankki-answer.mjs':'hankki-answer.mjs','/hankki-answer.css':'hankki-answer.css'});
        Object.assign(allowed,{'/icon-192.png':'icon-192.png','/icon-512.png':'icon-512.png','/device-connect.mjs':'device-connect.mjs'});
        const filename=allowed[url.pathname];if(!filename)throw new HttpError(404,'Not found');const file=path.join(ROOT,'public',filename);if(!fs.existsSync(file))throw new HttpError(404,'UI not available');const contentTypes={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.png':'image/png'};res.writeHead(200,{'Content-Type':contentTypes[path.extname(file)]??'application/octet-stream'});if(req.method==='HEAD')return res.end();return fs.createReadStream(file).pipe(res);
      }
@@ -681,6 +739,7 @@ export function createYenoServer(options={}) {
      const requestMatch=url.pathname.match(/^\/api\/requests\/([^/]+)$/);
      if(req.method==='GET'&&requestMatch){let id;try{id=decodeURIComponent(requestMatch[1]);}catch{throw new HttpError(400,'Invalid encoded requestId');}return respond(res,200,{request:lookupRequest(s,id)});}
      if(req.method==='GET'&&url.pathname==='/api/state')return respond(res,200,state());
+     if(req.method==='GET'&&url.pathname==='/api/abilities')return respond(res,200,{capabilities:getCapabilityStatus(s.capabilities)});
      if(req.method==='GET'&&url.pathname==='/api/studio')return respond(res,200,studioOverview(s.studio));
      if(req.method==='GET'&&url.pathname==='/api/capabilities'){const video=await productionAvailability();return respond(res,200,{...productionCapabilities(s,{videoAvailable:video.available,providerReady:agentSettings.ready}),storage:productionCapacity(s)});}
      if(req.method==='GET'&&url.pathname==='/api/studio/export'){
@@ -699,6 +758,8 @@ export function createYenoServer(options={}) {
      if(req.method!=='POST')throw new HttpError(404,'Not found');
      const b=await body(req);
      const result=mutation(req,url,b,()=>{
+       const capabilityMatch=url.pathname.match(/^\/api\/capabilities\/(import|verify|activate|disable|rollback|run)$/);
+       if(capabilityMatch)return capabilityMutation(capabilityMatch[1],b);
        if(url.pathname==='/api/studio')return studioMutation(b);
        if(url.pathname==='/api/production/run')return productionJob(b);
        if(url.pathname==='/api/research/run')return startResearch(b);
@@ -801,9 +862,9 @@ export function createYenoServer(options={}) {
        const restoreMatch=url.pathname.match(/^\/api\/snapshots\/([a-f0-9-]+)\/restore$/);
        if(restoreMatch){if(b.confirm!==true)throw new HttpError(400,'Explicit confirm:true is required');const snapshot=s.snapshots.find(x=>x.id===restoreMatch[1]);if(!snapshot)throw new HttpError(404,'Snapshot not found');if(s.jobs.some(j=>['running','queued'].includes(j.status)))throw new HttpError(409,'Pause or stop all active jobs before restoring');const pre=takeSnapshot(`복원 전 자동 저장 — ${snapshot.label}`);s.memories=structuredClone(snapshot.data.memories);s.concurrency=snapshot.data.settings.concurrency;s.modules=structuredClone(snapshot.data.settings.modules);if(!aiEndpoint&&!agentSettings.ready&&!profiles.grok.ready)s.modules.ai=false;event(`Memory/settings restored: ${snapshot.label}. Job and event history preserved.`);return {status:200,payload:{snapshot:publicSnapshot(snapshot),preRestoreSnapshot:publicSnapshot(pre),state:state()}};}
        throw new HttpError(404,'Not found');
-     },{required:versioned||!!principal.web,safetyAction:(url.pathname==='/api/studio'&&isStudioSafetyAction(s.studio,b))||(url.pathname==='/api/bots'&&b.action==='stop')||(url.pathname==='/api/commands'&&/^(?:봇|자동)\s*운영\s*중지$/.test(b.text??''))||(url.pathname==='/api/control'&&b.action==='stop')||(['/api/discovery','/api/ecosystem','/api/autopilot'].includes(url.pathname)&&b.enabled===false)});
+     },{required:versioned||!!principal.web,safetyAction:url.pathname==='/api/capabilities/disable'||(url.pathname==='/api/studio'&&isStudioSafetyAction(s.studio,b))||(url.pathname==='/api/bots'&&b.action==='stop')||(url.pathname==='/api/commands'&&/^(?:봇|자동)\s*운영\s*중지$/.test(b.text??''))||(url.pathname==='/api/control'&&b.action==='stop')||(['/api/discovery','/api/ecosystem','/api/autopilot'].includes(url.pathname)&&b.enabled===false)});
      respond(res,result.status,result.payload);
-   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof ResearchError||error instanceof WebSessionError||error instanceof ProductionCapacityError||error instanceof StudioError||error instanceof VideoError||error instanceof ForAiError||error instanceof QuestError||error instanceof BotError||error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError||error instanceof RequestLedgerError;respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
+   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof CapabilityError||error instanceof ResearchError||error instanceof WebSessionError||error instanceof ProductionCapacityError||error instanceof StudioError||error instanceof VideoError||error instanceof ForAiError||error instanceof QuestError||error instanceof BotError||error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError||error instanceof RequestLedgerError;respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
  });
  server.requestTimeout=15000;server.headersTimeout=10000;
  function shutdown(){if(closed)return;closed=true;discovery.close();ecosystem.close();clearTimeout(schedulerTimer);for(const job of s.jobs)if(['running','queued'].includes(job.status)){job.status='paused';job.pauseReason='shutdown';touch(job);}for(const controller of controllers.values())controller.abort();event('Runtime stopped; unfinished jobs paused.');try{save();}finally{releaseLock();server.close();}}

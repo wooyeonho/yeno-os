@@ -1,0 +1,28 @@
+{
+  "deployedCommit": "ccab06476072b150449c9fa07be9ff2f3924be4b",
+  "deploymentId": "03195be3-fd59-484a-8eb7-b3680fd9f471",
+  "instance": "75b94763",
+  "deploymentState": "Healthy",
+  "tests": {
+    "total": 36,
+    "passed": 36,
+    "failed": 0,
+    "skipped": 0
+  },
+  "browser": {
+    "userSelectedMethod": "device",
+    "ownerApprovalConfirmed": true,
+    "operatingRoomOpened": true,
+    "storedJobCountBefore": 55,
+    "storedJobCountAfter": 56,
+    "createdArtifact": "document-f96c6207.md",
+    "artifactCreatedAt": "2026-09-13T01:40:49.089Z",
+    "artifactOpened": true,
+    "reloadWithoutKeyEntry": true,
+    "sameArtifactReopened": true,
+    "automaticOperationEnabled": true,
+    "physicalAndroidBrowserVerified": false
+  },
+  "newModelCallsForVerification": 0,
+  "scope": "Rebuilt connection flow; broader project completion is not claimed."
+}

@@ -11,6 +11,7 @@ RUN apt-get update \
 WORKDIR /opt/yeno
 COPY runtime/server.mjs runtime/service.mjs runtime/package.json ./runtime/
 COPY runtime/lib/ ./runtime/lib/
+COPY runtime/capabilities/ ./runtime/capabilities/
 COPY runtime/public/ ./runtime/public/
 COPY scripts/start-koyeb.sh ./scripts/
 COPY scripts/verify-quest-live.mjs ./scripts/

@@ -91,7 +91,7 @@ test('native timer selects world, canonical research, private For-Ai and derived
     assert.ok(jobs.filter(job => ['queued', 'running'].includes(job.status)).length <= 1, 'only one automatic task executes at once');
     return ['world', 'research', 'forai', 'video'].every(kind => jobs.some(job => job.autopilot.kind === kind && job.status === 'completed'));
   }, 'all four native selected outputs');
-  assert.equal(jobs.length, 4); assert.equal(modelCalls, 1); assert.equal(researchReads, 2); assert.equal(worldReads, 2); assert.equal(renders, 1);
+  assert.equal(jobs.length, 5); assert.equal(jobs.filter(job=>job.autopilot.kind==='capability').length,1); assert.equal(modelCalls, 1); assert.equal(researchReads, 2); assert.equal(worldReads, 2); assert.equal(renders, 1);
   const research = jobs.find(job => job.autopilot.kind === 'research');
   assert.equal(research.projectId, e01.projectId); assert.equal(research.autopilot.trackCode, 'E01');
   assert.equal(research.agent.calls, 1); assert.equal(research.agent.unknownCalls, 0);
@@ -156,7 +156,7 @@ test('live verifier submits only the fixed control request and verifies native o
   assert.equal(proof.newModelCalls, 1); assert.equal(proof.autopilotAfter.enabled, true);
   assert.ok(output.some(line => line.startsWith('AUTOPILOT_VERIFIED '))); assert.ok(!output.join('\n').includes(owner)); assert.ok(!output.join('\n').includes(providerKey));
   const replay = await verifyAutopilot({ env: { YENO_TOKEN: owner }, fetchImpl: transport, enable: true, timeoutMs: 3_000, write: line => output.push(line) });
-  assert.equal(replay.newModelCalls, 0); assert.equal(replay.research.jobId, proof.research.jobId); assert.equal(replay.video.file.sha256, proof.video.file.sha256); assert.equal(app.jobs().length, 4);
+  assert.equal(replay.newModelCalls, 0); assert.equal(replay.research.jobId, proof.research.jobId); assert.equal(replay.video.file.sha256, proof.video.file.sha256); assert.equal(app.jobs().length, 5);
 });
 
 test('global stop aborts automatic evidence reads, disables selection and release or enable replay cannot resume work', { timeout: 12_000 }, async t => {
