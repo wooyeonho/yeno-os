@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Verify exact authored bytes and create unreferenced candidate commit
+      - name: Verify authored bytes and prepare source-only tree
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -41,17 +41,12 @@ jobs:
                   s = s[:i] + replacement + s[j:]
                   previous = i
               assert hashlib.sha256(s.encode('utf-8')).hexdigest() == entry['after'], str(p)
-              item = {'path':str(p),'mode':'100644','type':'blob'}
-              if entry['delete']:
-                  assert str(p) == '.github/workflows/developer-worker-bootstrap.yml' and s == ''
-                  item['sha'] = None
-              else:
-                  item['content'] = s
-              tree.append(item)
-          cleanup = ['.blackhole-install/capsule-'+i+'.txt' for i in parts]
-          cleanup += ['.github/workflows/developer-worker-install.yml']
-          for path in cleanup:
-              tree.append({'path':path,'mode':'100644','type':'blob','sha':None})
+              if str(p).startswith('.github/'):
+                  continue
+              assert not entry['delete']
+              tree.append({'path':str(p),'mode':'100644','type':'blob','content':s})
+          for i in parts:
+              tree.append({'path':'.blackhole-install/capsule-'+i+'.txt','mode':'100644','type':'blob','sha':None})
           def api(path, data=None):
               request = urllib.request.Request('https://api.github.com/repos/wooyeonho/yeno-os/'+path,
                   data=None if data is None else json.dumps(data).encode(),
@@ -61,9 +56,9 @@ jobs:
           parent = os.environ['GITHUB_SHA']
           old = api('git/commits/'+parent)
           result = api('git/trees', {'base_tree':old['tree']['sha'],'tree':tree})
-          commit = api('git/commits', {'message':'feat: add bounded repository developer worker and verification gates','tree':result['sha'],'parents':[parent]})
-          print('BLACKHOLE_CANDIDATE_COMMIT='+commit['sha'])
+          print('BLACKHOLE_INTERMEDIATE_TREE='+result['sha'])
           print('BLACKHOLE_PARENT='+parent)
           print('BLACKHOLE_SOURCE_PATHS='+str(len(allowed)))
+          # Workflow changes require the separate authorized GitHub connector.
           # No branch update, deployment, model call, or candidate-code execution.
           PY
