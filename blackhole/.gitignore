@@ -1,0 +1,5 @@
+data/black-hole.state.json
+data/black-hole.state.json.tmp
+data/black-hole.events.jsonl
+.env
+node_modules/

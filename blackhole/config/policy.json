@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "system": {
+    "name": "Black Hole",
+    "version": "0.1.0",
+    "mode": "OFFLINE_FIRST",
+    "owner": "연호님",
+    "defaultDataDirectory": "data"
+  },
+  "hardGates": {
+    "safety": true,
+    "authority": true,
+    "budget": true,
+    "truthfulness": true,
+    "noAutomaticPayments": true,
+    "noAutomaticInvestments": true,
+    "noUnapprovedPublishing": true,
+    "noSecretExposure": true
+  },
+  "initialLimits": {
+    "maxQuestCostUsd": 0,
+    "maxQuestDurationMinutes": 120,
+    "maxConcurrentRuns": 1,
+    "defaultApprovalStatus": "pending"
+  },
+  "providers": [
+    {
+      "id": "openai",
+      "label": "OpenAI-compatible",
+      "apiKeyEnv": "OPENAI_API_KEY",
+      "baseUrlEnv": "OPENAI_BASE_URL",
+      "modelEnv": "OPENAI_MODEL",
+      "defaultBaseUrl": "https://api.openai.com/v1",
+      "defaultModel": "gpt-4.1-mini",
+      "protocol": "responses"
+    },
+    {
+      "id": "anthropic",
+      "label": "Anthropic",
+      "apiKeyEnv": "ANTHROPIC_API_KEY",
+      "baseUrlEnv": "ANTHROPIC_BASE_URL",
+      "modelEnv": "ANTHROPIC_MODEL",
+      "defaultBaseUrl": "https://api.anthropic.com",
+      "defaultModel": "claude-3-5-haiku-latest",
+      "protocol": "messages"
+    },
+    {
+      "id": "code-astra",
+      "label": "Code Astra (OpenAI-compatible endpoint)",
+      "apiKeyEnv": "CODE_ASTRA_API_KEY",
+      "baseUrlEnv": "CODE_ASTRA_BASE_URL",
+      "modelEnv": "CODE_ASTRA_MODEL",
+      "defaultBaseUrl": "",
+      "defaultModel": "",
+      "protocol": "responses"
+    }
+  ]
+}

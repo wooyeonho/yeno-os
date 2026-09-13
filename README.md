@@ -39,3 +39,14 @@ npm start -- --no-open
 - [변경 기록](CHANGELOG.md)
 
 Codex Cloud는 개발 환경입니다. 노트북과 앱이 꺼져 있어도 일을 이어갈 YENO 본체는 별도 상주 서버에 배포해야 합니다.
+
+## Black Hole — 일곱 욕망 실행 기반
+
+[`blackhole/`](blackhole/README.md)에는 [`docs/BLACK_HOLE_SEVEN_DRIVES_STRATEGY.md`](docs/BLACK_HOLE_SEVEN_DRIVES_STRATEGY.md) 설계를 실제로 돌려보는 독립된 Node.js 20+ 무의존성 MVP가 있다. 일곱 욕망의 퀘스트 제안, 승인·실행·증거·독립 평가·스킬 추출·제한 활성화 흐름, wealth/honor/fame 성과 장부를 구현한다. `runtime/`의 YENO 코어와는 별도 모듈이며 자동으로 연결되지 않는다.
+
+```bash
+npm run test:blackhole
+npm --prefix blackhole run blackhole -- status
+```
+
+실제 API 키가 없으면 공급자 호출을 성공으로 표시하지 않는다. 승인·결제·게시·민감정보 전송은 이 MVP가 자동으로 수행하지 않는다.

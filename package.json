@@ -7,6 +7,7 @@
   "scripts": {
     "verify:baseline": "node scripts/verify-baseline.mjs",
     "test": "npm --prefix runtime test",
-    "start": "npm --prefix runtime start --"
+    "start": "npm --prefix runtime start --",
+    "test:blackhole": "npm --prefix blackhole test"
   }
 }
