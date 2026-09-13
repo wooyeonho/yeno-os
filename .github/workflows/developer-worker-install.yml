@@ -7,58 +7,48 @@ permissions:
   contents: write
 jobs:
   apply:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Verify authored bytes and prepare source-only tree
+      - name: Verify fixed source bytes and create source-only tree
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
-          import base64, hashlib, json, lzma, os, pathlib, urllib.request
-          assert os.environ['GITHUB_REPOSITORY'] == 'wooyeonho/yeno-os'
-          assert os.environ['GITHUB_REF'] == 'refs/heads/blackhole/developer-worker-20260913'
-          parts = ['0','1','2','3a','3b','4']
-          encoded = ''.join(pathlib.Path('.blackhole-install/capsule-'+i+'.txt').read_text().strip() for i in parts)
-          payload = base64.b64decode(encoded, validate=True)
-          assert hashlib.sha256(payload).hexdigest() == '3df2cdf87e215b9be0d268ca01e21799fed2cdd3432ee41fbdf7ab6720f9e328'
-          entries = json.loads(lzma.decompress(payload, memlimit=128*1024*1024))
-          allowed = ['.github/workflows/developer-worker-bootstrap.yml','.github/workflows/developer-worker.yml','AGENTS.md','CHANGELOG.md','docs/DEVELOPER_WORKER_20260913.md','package.json','runtime/lib/agent.mjs','runtime/lib/backup.mjs','runtime/lib/job-view.mjs','runtime/lib/repository-patch.mjs','runtime/lib/store.mjs','runtime/server.mjs','runtime/test/repository-api.test.mjs','runtime/test/repository-patch.test.mjs','workers/developer/Verification.Dockerfile','workers/developer/cli.mjs','workers/developer/gateways.mjs','workers/developer/gateways.test.mjs','workers/developer/verify-runtime.mjs','workers/developer/worker.mjs','workers/developer/worker.test.mjs']
-          assert [e['path'] for e in entries] == allowed
-          tree = []
-          for entry in entries:
-              p = pathlib.Path(entry['path'])
-              assert not any(q.is_symlink() for q in [p,*p.parents])
-              before = p.read_bytes() if p.exists() else b''
-              assert hashlib.sha256(before).hexdigest() == entry['before'], str(p)
-              s = before.decode('utf-8')
-              previous = len(s)
-              for i,j,replacement in reversed(entry['edits']):
-                  assert 0 <= i <= j <= previous
-                  s = s[:i] + replacement + s[j:]
-                  previous = i
-              assert hashlib.sha256(s.encode('utf-8')).hexdigest() == entry['after'], str(p)
-              if str(p).startswith('.github/'):
-                  continue
-              assert not entry['delete']
-              tree.append({'path':str(p),'mode':'100644','type':'blob','content':s})
-          for i in parts:
-              tree.append({'path':'.blackhole-install/capsule-'+i+'.txt','mode':'100644','type':'blob','sha':None})
-          def api(path, data=None):
-              request = urllib.request.Request('https://api.github.com/repos/wooyeonho/yeno-os/'+path,
-                  data=None if data is None else json.dumps(data).encode(),
-                  headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28'})
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  return json.load(response)
-          parent = os.environ['GITHUB_SHA']
-          old = api('git/commits/'+parent)
-          result = api('git/trees', {'base_tree':old['tree']['sha'],'tree':tree})
+          import base64,hashlib,json,lzma,os,pathlib,urllib.request
+          assert os.environ['GITHUB_REPOSITORY']=='wooyeonho/yeno-os'
+          assert os.environ['GITHUB_REF']=='refs/heads/blackhole/developer-worker-20260913'
+          parts=['0','1','2','3a','3b','4']
+          data=base64.b64decode(''.join(pathlib.Path('.blackhole-install/capsule-'+i+'.txt').read_text().strip() for i in parts),validate=True)
+          assert hashlib.sha256(data).hexdigest()=='3df2cdf87e215b9be0d268ca01e21799fed2cdd3432ee41fbdf7ab6720f9e328'
+          entries=json.loads(lzma.decompress(data,memlimit=128*1024*1024))
+          assert len(entries)==21
+          tree=[]
+          for e in entries:
+              p=pathlib.Path(e['path'])
+              assert not p.is_absolute() and '..' not in p.parts
+              assert not any(x.is_symlink() for x in [p,*p.parents])
+              b=p.read_bytes() if p.exists() else b''
+              assert hashlib.sha256(b).hexdigest()==e['before'],str(p)
+              s=b.decode();limit=len(s)
+              for i,j,replacement in reversed(e['edits']):
+                  assert 0<=i<=j<=limit
+                  s=s[:i]+replacement+s[j:];limit=i
+              assert hashlib.sha256(s.encode()).hexdigest()==e['after'],str(p)
+              if str(p).startswith('.github/'):continue
+              assert not e['delete']
+              tree.append(dict(path=str(p),mode='100644',type='blob',content=s))
+          for i in parts:tree.append(dict(path='.blackhole-install/capsule-'+i+'.txt',mode='100644',type='blob',sha=None))
+          def api(p,data=None):
+              req=urllib.request.Request('https://api.github.com/repos/wooyeonho/yeno-os/'+p,data=None if data is None else json.dumps(data).encode(),headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json'})
+              with urllib.request.urlopen(req,timeout=30) as r:return json.load(r)
+          parent=os.environ['GITHUB_SHA']
+          base=api('git/commits/'+parent)['tree']['sha']
+          result=api('git/trees',dict(base_tree=base,tree=tree))
           print('BLACKHOLE_INTERMEDIATE_TREE='+result['sha'])
           print('BLACKHOLE_PARENT='+parent)
-          print('BLACKHOLE_SOURCE_PATHS='+str(len(allowed)))
-          # Workflow changes require the separate authorized GitHub connector.
-          # No branch update, deployment, model call, or candidate-code execution.
+          # No workflow writes, ref updates, candidate execution, or model calls.
           PY
