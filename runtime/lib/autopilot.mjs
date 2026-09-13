@@ -116,11 +116,8 @@ function resumeAllowed(job,state,ctx){
     // earlier checkpoints still need their provider and existing call budget.
     const finalAnswer=finalResearchCheckpoint(job);
     if(job.step===2&&finalAnswer&&typeof job.draft==='string'&&job.draft.trim().length>0)return true;
-    // A settled answer can finish locally. Any path that would create a new
-    // provider call needs explicit background authorization, which production
-    // provider configuration deliberately never grants.
-    if(finalAnswer)return true;
-    return backgroundModelCallsAllowed(ctx)&&!!ctx.config.ready&&calls(job).length===0&&aiAvailable(ctx);
+    if(!backgroundModelCallsAllowed(ctx))return false;
+    return !!ctx.config.ready&&(calls(job).length===0?aiAvailable(ctx):finalAnswer);
   }
   if(job.type==='capability'&&job.step<2&&!state.capabilities?.entries?.some(e=>e.id===job.capabilityRequest?.id&&e.activeHash===job.capabilityRequest?.hash))return false;
   return state.modules?.documents===true;

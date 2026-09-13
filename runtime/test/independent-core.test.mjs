@@ -130,7 +130,8 @@ test('autopilot keeps local OS work running and selects no new AI research', () 
 
 test('restart may finish a settled local checkpoint but cannot start a new provider call', () => {
   const track = RESEARCH_TRACKS[0];
-  const settled = autopilotState(false); settled.jobs.push(settledResearchJob(track));
+  const settled = autopilotState(false); settled.jobs.push(settledResearchJob(track, { step: 2 }));
+  settled.jobs[0].draft = '새 호출 없이 저장할 검증 전 연구 초안';
   assert.deepEqual(planAutopilot(settled, { config, at: '2026-09-13T00:10:00.000Z' }), { kind: 'resume', jobId: settled.jobs[0].id });
 
   const needsCall = autopilotState(false); needsCall.jobs.push(settledResearchJob(track, { calls: 0, step: 0 }));
