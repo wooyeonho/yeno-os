@@ -1,3 +1,10 @@
+## 2026-09-13 — repository developer worker candidate
+
+- Added commit/hash-bound patch drafting using the existing provider budget and receipt ledger.
+- Added separate Docker patch/test/one-repair worker, immutable acceptance tests, stop/unknown holds, draft-PR adapter, exact-commit approval and forward code rollback.
+- Added full isolated CI and explicit distinction between implemented, tested and connected/deployed.
+- Production branch, runtime credentials and owner data unchanged. See docs/DEVELOPER_WORKER_20260913.md for limits and verification.
+
 # 2026-09-12 — 목표 실행 운영 배포와 실제 Gemini 결과
 
 기존 Koyeb 서비스에 f98cfa4c 배포568d3cc3의 Healthy/Active를 확인했다. Gemini 목표1개·모델호출1회로 5,142바이트 대본 결과를 실제 생성했다. 기존 데이터 보존·동일 요청 동일 작업·공개 HTTPS 다운로드200·SHA-256 일치를 검증했다. 하루4회 상한과 자동 검토off 유지. 호출 상한 도달·두 번째 모델과 폰 실기기 미검증을 상태 기록에 명시했다. 새 결제·호출 상한 확대·APK 재설치·실제 게시 없음.

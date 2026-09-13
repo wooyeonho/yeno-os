@@ -1,3 +1,4 @@
+import {validateRepositoryJob} from './repository-patch.mjs';
 import {initialCodeWorkshop,validateCodeWorkshop,disableCodeForRestore} from './code-workshop.mjs';
 import {validateCodeJob} from './code-jobs.mjs';
 import {initialCapabilities,validateCapabilities,validateCapabilityRequest,capabilityInputSha256,disableAllCapabilitiesForRestore} from './capabilities.mjs';
@@ -44,7 +45,7 @@ function initializeQuestCollections(state) {
  validateCapabilities(state.capabilities);
  if(!Object.hasOwn(state,'codeWorkshop'))state.codeWorkshop=initialCodeWorkshop();
  validateCodeWorkshop(state.codeWorkshop);
- for(const job of state.jobs)validateCodeJob(job,state.codeWorkshop);
+ for(const job of state.jobs){validateCodeJob(job,state.codeWorkshop);validateRepositoryJob(job);}
  for(const job of state.jobs){if(job.type==='capability'){validateCapabilityRequest(job.capabilityRequest,state.capabilities);if(capabilityInputSha256(JSON.parse(job.input))!==job.capabilityRequest.inputSha256)throw new Error('Capability job input mismatch');}else if(job.capabilityRequest)throw new Error('Unexpected capability request');}
  validateAutopilot(state.autopilot);
  for(const job of state.jobs)validateAutopilotJob(job,state);
