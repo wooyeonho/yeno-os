@@ -103,7 +103,27 @@
       <section id="tab-settings" class="tab-panel" hidden><div class="section-heading"><h2>능력과 실행 규모</h2></div><div class="panel"><div class="setting-row"><div><h3>동시에 일하는 수</h3><p>처음에는 1개로 시작하세요. 줄이면 새 작업 배정부터 줄어듭니다.</p></div><select id="concurrency" aria-label="동시에 일하는 수"><option value="1">1개</option><option value="2">2개</option><option value="3">3개</option></select></div><div id="module-settings"></div></div><div class="panel"><h3>본체 연결</h3><p id="runtime-info" class="muted">연결 전</p><button id="disconnect-mobile" class="button subtle">이 기기 연결 해제</button><p class="muted">이 조종석을 제공하는 실행 본체에 연결합니다. 상주 서버를 사용하면 노트북이 꺼져 있어도 서버에 맡긴 작업을 확인할 수 있습니다.</p></div><div class="panel"><h3>현재 가능한 작업</h3><p>프로젝트 관리·브리핑·작업 준비 문서, 기억 저장·검색, 제공한 내용의 문서화, 본체 진단, 실행 이력 기반 개선 제안. 외부 AI를 설정하면 AI 작성 작업을 직접 실행할 수 있습니다.</p><p class="muted">자유로운 PC 앱 조작·음성·운영 코드 자동 개선은 아직 연결하지 않았습니다.</p></div></section>
     </main>
   </div>
-  <div id="pair-screen" class="pair-screen"><div class="pair-card"><form id="pair-form" novalidate><div class="brand"><span class="brand-icon">●</span><span>BLACKHOLE<small>YOUR PERSONAL RUNTIME</small></span></div><h2>내 운영실을 여세요.</h2><p>영상·여기·한끼안부·소설·For-Ai를 한곳에서 이어갑니다. 기존 개인 연결 키로 처음 한 번 연결하세요.</p><label for="pair-token">개인 연결 키</label><input id="pair-token" type="password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" aria-describedby="pair-key-hint pair-error" required minlength="16" placeholder="저장한 개인 연결 키 · 16자 이상"><button id="pair-key-toggle" class="button subtle" type="button" aria-controls="pair-token" aria-pressed="false">키 보기</button><small id="pair-key-hint">영문·숫자·기호로 된 연결 키를 그대로 입력하세요. 앞뒤 공백과 대소문자를 확인해 주세요.</small><label class="web-remember"><input id="remember-browser" type="checkbox" checked> 내 기기에서 30일 동안 연결 유지</label><small>개인 연결 키는 저장하지 않습니다. 선택을 끄면 8시간 연결됩니다. 미확인 작업은 이 브라우저에 보관되므로 개인 기기에서 사용하세요.</small><p id="pair-error" class="form-error" role="alert"></p><button class="button primary" type="submit">운영실 열기</button></form><button id="web-retry" class="button subtle" hidden>다른 탭을 닫았어요 · 다시 연결</button></div></div>
+  <div id="pair-screen" class="pair-screen"><div class="pair-card">
+    <div class="brand"><span class="brand-icon">●</span><span>BLACKHOLE<small>YOUR PERSONAL RUNTIME</small></span></div>
+    <h2>내 블랙홀에 연결</h2>
+    <p>기기를 한 번 확인하면, 맡긴 일과 결과를 여기서 계속 이어갑니다.</p>
+    <label class="web-remember"><input id="remember-browser" type="checkbox" checked> 내 기기에서 30일 동안 연결 유지</label>
+    <button id="device-connect" class="button primary" type="button">이 기기 연결</button>
+    <p id="device-connect-status" role="status" aria-live="polite">연결을 요청한 뒤 소유자 확인을 받으세요.</p>
+    <code id="device-connect-reference" hidden></code>
+    <details class="connection-alternative"><summary>기존 연결 키 사용</summary>
+      <form id="pair-form" novalidate>
+        <label for="pair-token">개인 연결 키</label>
+        <input id="pair-token" type="password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" aria-describedby="pair-key-hint pair-error" required minlength="16" placeholder="저장한 개인 연결 키">
+        <button id="pair-key-toggle" class="button subtle" type="button" aria-controls="pair-token" aria-pressed="false">키 보기</button>
+        <small id="pair-key-hint">저장한 키를 알고 있을 때만 사용하세요.</small>
+        <button class="button primary" type="submit">운영실 열기</button>
+      </form>
+    </details>
+    <p id="pair-error" class="form-error" role="alert"></p>
+    <small>개인 기기에서 사용하세요. 연결 유지 선택을 끄면 8시간 연결됩니다.</small>
+    <button id="web-retry" class="button subtle" hidden>다른 탭을 닫았어요 · 다시 연결</button>
+  </div></div>
   <dialog id="project-dialog" aria-labelledby="project-form-title">
     <form id="project-form">
       <div class="dialog-top"><h2 id="project-form-title">프로젝트 추가</h2><button type="button" class="button subtle" data-close="project-dialog">닫기</button></div>

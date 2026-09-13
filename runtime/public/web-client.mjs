@@ -1,3 +1,4 @@
+import {deviceConnect} from './device-connect.mjs';
 // Browser credentials remain in HttpOnly cookies. Only exact unresolved
 // request payloads and public core identity are kept in local storage.
 export function scopedStorage(storage, scope) {
@@ -46,7 +47,7 @@ export async function connectBrowser({document: doc = document, fetchImpl = fetc
   keyToggle?.addEventListener('blur', hideKey);
   doc.addEventListener?.('visibilitychange', () => { if (doc.hidden) hideKey(); });
   const lock = await holdControllerLock({locks, events, onRelease: () => { live = false; generation++; keyInput.value = ''; hideKey(); },
-    onBlocked: () => { showError('다른 탭에서 운영실을 사용 중입니다. 그 탭을 닫고 아래에서 다시 연결하세요.'); form.querySelectorAll('input,button').forEach(input=>{input.disabled=true;}); $('web-retry').hidden = false; }});
+    onBlocked: () => { showError('다른 탭에서 운영실을 사용 중입니다. 그 탭을 닫고 아래에서 다시 연결하세요.'); form.querySelectorAll('input,button').forEach(input=>{input.disabled=true;}); if ($('device-connect')) $('device-connect').disabled = true; $('web-retry').hidden = false; }});
   $('web-retry').addEventListener('click', () => location.reload());
   if (!lock) return new Promise(() => {});
   // Verify persistence before accepting a task or creating a browser device.
@@ -92,6 +93,13 @@ export async function connectBrowser({document: doc = document, fetchImpl = fetc
   }
   let resolveLogin;
   const loginReady = new Promise(resolve => { resolveLogin = resolve; });
+  deviceConnect({document: doc, json, events, isLive: () => live && !metadata,
+    onConnected: value => {
+      loginAttempted = true;
+      const scoped = activate(value);
+      if (!first) { location.reload(); return; }
+      first = false; resolveLogin(scoped);
+    }});
   function newEnrollment() {
     const pending = {requestId: crypto.randomUUID(), name: 'BLACKHOLE 휴대폰 브라우저', remember: $('remember-browser').checked};
     storage.setItem('blackhole-web-login-request-v1', JSON.stringify(pending));
