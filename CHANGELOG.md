@@ -8,6 +8,7 @@
 - **버그 수정 (라벨 정확성)**: `developerEvidenceStatus`가 `attempts.some(a=>a.passed)`만으로 `docker-verified`를 판정해, `isolation`이 `'synthetic-test-adapter'`(테스트용 가짜 러너)여도, 혹은 `patchSha256`이 아직 `null`이어도 진짜 Docker 검증과 동일하게 표시됐다. `docker-verified`는 이제 (1) 통과한 시도 중 `isolation === 'docker-no-network'`인 것이 있고 (2) `patchSha256`이 채워져 있을 때만(그 값은 `/api/developer/evidence`에서 이미 코어의 실제 저장 아티팩트 해시와 대조됨) 반환한다. 그 밖의 통과(가짜 어댑터, 또는 해시가 아직 없는 경우)는 새 상태 `test-adapter-verified`로 구분해, 소유자가 실제로 승격 판단에 쓸 수 있는 라벨과 시험용 라벨이 절대 섞이지 않게 했다.
   - `runtime/test/repository-patch.test.mjs`에 회귀 시험을 추가하고, `workers/developer/core-integration.test.mjs`의 synthetic 경로(진짜 Docker가 아님을 스스로 명시하는 어댑터) 기대값을 `test-adapter-verified`로 바로잡았다(`DEVELOPER_DOCKER_REQUIRED=1`로 실행되는 실제 Docker 경로는 여전히 `docker-verified`를 기대한다).
 - 전체 회귀: 로컬 476개 중 444 통과, 25 실패(이전과 완전히 동일한 사전 환경 한계 — WASM 샌드박스·UI DOM·Node 네이티브 전역 부재), 7 건너뜀. `npm run test:developer` 78개 중 75 통과, 3 건너뜀(로컬 Docker 부재).
+- 이 커밋에 대한 실제 GitHub Actions 검증: run `34779646920`, head `976eb0df9f084ede491ec5ac033bc87ab2075bc9`, conclusion success, artifact `10324741353` / SHA-256 `c7f3a52de58addf02911f0dff5b8dcceaca8da0006287c617ab2b07134bc2651`. 네트워크 없는 읽기 전용 비루트 컨테이너에서 실패→1회 수리→재시험 경로를 포함한 실제 Docker 시험이 이번에도 통과했다.
 
 # 2026-09-13 — runtime/public 잠금, evidence 실제 연결과 신뢰 경계 수정
 
