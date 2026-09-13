@@ -1,0 +1,49 @@
+name: Apply development-only AI gate
+
+on:
+  push:
+    branches:
+      - codex
+    paths:
+      - .github/apply-development-only-ai-gate
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-development-only-ai-gate
+  cancel-in-progress: false
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex
+          fetch-depth: 0
+      - name: Apply development-only background AI boundary
+        run: python .github/scripts/finish-independent-core-2.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install locked test dependencies
+        run: |
+          npm ci --prefix runtime --ignore-scripts --no-audit --no-fund
+          npm ci --prefix apps/controller --ignore-scripts --no-audit --no-fund
+      - name: Verify independent core boundary
+        run: |
+          node --check runtime/server.mjs
+          node --check runtime/lib/autopilot.mjs
+          node --check runtime/lib/independent-core.mjs
+          node --test runtime/test/independent-core.test.mjs runtime/test/autopilot.test.mjs runtime/test/provider-config.test.mjs runtime/test/autopilot-ui.test.mjs
+      - name: Commit verified source and remove temporary gate
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm -f .github/apply-development-only-ai-gate .github/scripts/finish-independent-core-2.py .github/workflows/apply-development-only-ai-gate.yml
+          git add runtime/lib/autopilot.mjs runtime/server.mjs runtime/test/independent-core.test.mjs
+          git add -A
+          git commit -m 'fix: restrict background AI to development mode'
+          git push origin HEAD:codex
