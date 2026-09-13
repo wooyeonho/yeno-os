@@ -1,0 +1,50 @@
+name: Finish independent core
+
+on:
+  push:
+    branches:
+      - codex
+    paths:
+      - .github/finish-independent-core-trigger
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finish-independent-core
+  cancel-in-progress: false
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex
+          fetch-depth: 0
+      - name: Apply remaining boundary fixes
+        run: python .github/scripts/finish-independent-core-2.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install locked test dependencies
+        run: |
+          npm ci --prefix runtime --ignore-scripts --no-audit --no-fund
+          npm ci --prefix apps/controller --ignore-scripts --no-audit --no-fund
+      - name: Verify model-optional core
+        run: |
+          node --check runtime/server.mjs
+          node --check runtime/lib/independent-core.mjs
+          node --test runtime/test/independent-core.test.mjs runtime/test/autopilot.test.mjs runtime/test/provider-config.test.mjs runtime/test/autopilot-ui.test.mjs
+      - name: Commit verified source changes
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add runtime/server.mjs runtime/test/independent-core.test.mjs
+          if git diff --cached --quiet; then
+            echo 'No source changes required.'
+            exit 0
+          fi
+          git commit -m 'fix: finish model-free local recovery boundary'
+          git push origin HEAD:codex
