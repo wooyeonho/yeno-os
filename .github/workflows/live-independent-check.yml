@@ -1,0 +1,37 @@
+name: Verify live independent BLACKHOLE
+
+on:
+  push:
+    branches:
+      - codex
+    paths:
+      - .github/live-independent-check-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Wait for the verified deploy branch on public HTTPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='https://global-iris-gyeol-98386a17.koyeb.app/autopilot-view.mjs'
+          marker='사용 안 함 · 명시적 호출만'
+          for attempt in $(seq 1 24); do
+            body="$(curl -fsSL --connect-timeout 10 --max-time 25 -H 'Cache-Control: no-cache' "${url}?independent=8ae0924d-${attempt}" || true)"
+            if grep -Fq "$marker" <<<"$body"; then
+              echo "LIVE_INDEPENDENT_CORE=verified"
+              echo "attempt=$attempt"
+              printf '%s' "$body" | sha256sum
+              curl -fsSL --connect-timeout 10 --max-time 25 -o /dev/null -w 'homepage_http=%{http_code}\n' 'https://global-iris-gyeol-98386a17.koyeb.app/'
+              exit 0
+            fi
+            echo "attempt=$attempt marker_not_visible"
+            sleep 10
+          done
+          echo 'The deploy branch is updated, but the live Koyeb service has not exposed the new independent-core asset.' >&2
+          exit 1

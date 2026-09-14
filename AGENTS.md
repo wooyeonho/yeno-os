@@ -1,3 +1,29 @@
+## 2026-09-14 휴대폰 단일 인수 시나리오 — "정해줘" 왕복이 자동시험으로 통과함 (전체는 아님)
+
+`runtime/lib/decide.mjs`가 음성 "지금 가장 먼저 해야 할 일을 정해줘"를 실제 호문쿨루스 일곱 동기 채점에 연결한다 — 오직 이미 저장된 `status:'proposed'` 목표만 후보로 삼고, 없으면 지어내지 않는다(`decideQuest`가 `null` 반환, `/api/voice`는 일반 대화로 자연 대체). `POST /api/voice`가 이 문구를 감지하면 `decideAndRunQuest()`로 실제 `runQuest()`를 실행하고 선택 이유(`decision.announcement`)를 함께 돌려주며, `voice-view.mjs`가 결과 도착 전에 그 이유를 먼저 읽는다. `runtime/test/phone-acceptance.test.mjs`가 목표 저장 → 정해줘 음성 → 자비스 실행 → 커비 재사용(선언형 기능, 서로 다른 입력 2건) → 성장 등급 반영 → 장부 기록 → **실제 재시작 후 전부 보존**까지 실제 HTTP API로 자동 확인한다.
+
+범위 밖으로 정직하게 남긴 것: 물리 휴대폰·실제 마이크/스피커 검수(브라우저 음성 UI 자체는 기존 것 그대로), 코드형 커비(`code-workshop.mjs`)의 QuickJS 실행 경로(이 컨테이너의 기존 환경 한계라 선언형 커비로 같은 메커니즘을 증명), 능력이 없을 때 커비가 **자동으로** 후보를 탐색·등록하는 것(이번엔 부팅 시 이미 등록된 기능을 재사용했을 뿐).
+
+## 2026-09-14 성장 엔진 (E→D→C→B→A→S) — 첫 조각만 구현됨
+
+`runtime/lib/growth.mjs`가 `capabilities.mjs`/`code-workshop.mjs` 레지스트리의 실제 이력(`활성화`·`run`·`rollback`)만으로 각 기능의 등급을 계산한다. `/api/state`의 `growth.capabilities`/`growth.code`에서 확인한다. D(활성화+실제 실행)와 C(서로 다른 입력에서 재사용, **동일 입력 재실행은 불인정**)는 실제로 판정한다. B(조합과 복구)는 복구만 기록 가능하고 조합을 기록하는 구조가 없어 항상 막힌다. A(개입 횟수 추적 없음)와 S(장부가 `self_reported`만 지원, 외부 검증 경로 없음)도 항상 막힌다 — 이는 결함이 아니라 지금 증명할 수 없는 것을 그대로 보고하는 것이다. 다음 단계는 이 문서에서 이미 여러 차례 정리된 "휴대폰 단일 인수 시나리오"(자비스 음성 → 호문쿨루스 판단 → 자비스 실행 → 커비 처리 → 성장 엔진 판정 → 재실행 후 유지)의 나머지 조각들 — 폰 네이티브 UI, 호문쿨루스 결정 화면, 커비 보유 스킬 목록, 기능 조합 추적, 개입 횟수 추적, 장부 외부 검증 — 이며 이 커밋은 그중 성장 등급 계산 하나만 끝냈다.
+
+## 2026-09-13 저장소 개발 워커 통합 (최신 구현, 3차 정합성·라벨 수정 반영)
+
+`workers/developer/`와 `runtime/lib/repository-patch.mjs`를 우선한다. 저장소 패치 작업(`job.repositoryTask`)은 `independent-core-engine.mjs`에서 `development-model-call`로 분류되며, 코드 생성·수리 모드와 동일하게 명시적 개발 요청에서만 모델을 호출한다. 운영 코어는 Docker 소켓을 갖지 않으며 저장소 시험을 직접 실행하지 않는다. 별도 신뢰 개발 호스트의 `workers/developer/cli.mjs`가 코어의 `/api/developer/plan`에서 받은 계획을 네트워크 없는 비루트 컨테이너에서 시험·최대 1회 수리하고, 승인된 정확한 커밋에서만 GitHub로 승격한다. 모델 패치는 시험·워크플로·인증·예산·워커 자신을 변경할 수 없다.
+
+`editablePath()`(`runtime/lib/repository-patch.mjs`)의 `runtime/lib/`와 `runtime/public/` 판정은 둘 다 차단 목록이 아니라 **허용 목록**이다. `ALLOWED_LIB_FILES`·`ALLOWED_PUBLIC_FILES` 모두 현재 비어 있다 — 개별 보안 검토를 거쳐 명시적으로 등록하기 전까지는 두 디렉터리의 어떤 파일도, 신설 파일을 포함해 모델이 수정할 수 없다. `runtime/public/`은 소유자 브라우저에 그대로 서빙되므로(Docker 시험의 `--network none`은 배포 후 실제 브라우저에서 실행되는 JS의 네트워크 접근과 무관하다) `runtime/lib/`과 동일한 기본 거부가 적용된다.
+
+Docker 기반 시험(패치 실패→1회 수리→재시험, 네트워크 없는 읽기 전용 비루트 컨테이너)은 **GitHub Actions CI에서 실제로 실행되어 통과했다** (`.github/workflows/developer-worker.yml`의 `verify` 잡). 최신 검증 실행 기록은 CHANGELOG.md를 따른다. 로컬 개발 컨테이너에는 Docker가 없어 `DEVELOPER_DOCKER_REQUIRED=1` 시험만 로컬에서 skip되며, 이를 "미검증"으로 적지 않는다 — CI 로그가 실제 증거다.
+
+워커가 실제로 확인한 Docker 시험 결과·후보 커밋·GitHub Draft PR·CI 실행·소유자 승인·승격/롤백은 `workers/developer/cli.mjs`가 **매 단계마다 자동으로** `POST /api/developer/evidence`를 호출해 코어 상태(`job.developerEvidence`)와 암호화 백업에 되돌린다(`CoreGateway.reportEvidence`, `gateways.mjs`의 `dockerEvidenceFrom`/`reportEvidenceDurably`). 이 접수 전까지 저장소 패치 작업의 `repositoryPlan.executionStatus`는 `patch-drafted`일 뿐이며, 실제로 Docker 검증까지 됐다는 뜻이 아니다. 단계는 `patch-drafted → docker-failed|test-adapter-verified|docker-verified → awaiting-ci → awaiting-approval → approved → promoted → rolled-back` 순으로만 전진한다. `docker-verified`는 통과한 시도의 `isolation`이 실제로 `'docker-no-network'`이고 `patchSha256`이 채워져 있을 때만 반환되며(그 값은 아래 문단대로 코어의 실제 저장 아티팩트 해시와 대조된다), 그 밖의 통과(시험용 어댑터, 또는 해시가 아직 없는 경우)는 `test-adapter-verified`로만 표시된다 — 소유자가 승격 판단에 쓰는 라벨과 시험용 라벨은 절대 섞이지 않는다.
+
+evidence 보고 자체가 코어에 닿지 못하고 실패해도(네트워크 단절 등) Docker 시험이나 GitHub 승격/롤백처럼 이미 일어난 사실이 조용히 유실되지 않는다. `reportEvidenceDurably`가 실패한 보고를 `<record>.evidence-pending.json`에 원자적으로 남기고, 같은 `--journal`로 `run`을 다시 실행하면(저널이 이미 종료 상태라 모델·Docker·GitHub 작업은 반복하지 않는다) 그 evidence를 재전송하며, `promote`/`rollback`도 evidence 보고가 실패하면 exit code 1로 정합화가 필요함을 드러낸다(이미 끝난 GitHub 쓰기 자체는 절대 반복하지 않는다). Docker·GitHub 작업 없이 parked evidence만 다시 보내려면 `cli.mjs sync-evidence --pending <path>`를 쓴다. 재전송이 안전한 이유는 `mergeDeveloperEvidence`가 이미 접수된 사실과 동일한 재보고를 충돌이 아니라 멱등 처리로 받아들이기 때문이다.
+
+`/api/developer/evidence`는 소유자 pairing 토큰 또는 `platform:'developer-worker'`로 등록한 기기만 호출할 수 있고(일반 브라우저·기기 토큰은 403), `patchSha256`을 신고하면 코어가 실제로 저장한 패치 아티팩트의 SHA-256과 대조하며, `attempts[].passed`는 신고값을 믿지 않고 `exitCode===0 && !timedOut && !outputOverflow`에서 코어가 직접 계산한다. 롤백 증거는 `{rollbackCommit, revertedPromotionCommit}`로 구분한다 — 실제 `approveRollback()`은 새 forward-revert 커밋을 만들며 그 SHA는 되돌리는 promotion 커밋과 절대 같지 않다. 두 번째 신고부터는 **부분 패치**를 보낼 수 있다(`mergeDeveloperEvidence`) — 이미 접수된 필드는 그대로 두고 새 필드만 보내면 코어가 이전 기록 위에 병합하며, 이미 접수된 사실은 이후 제출로 뒤집거나 지울 수 없다. `promote`/`rollback` CLI 명령이 서로 다른(별도 시점의) 프로세스로 실행되는 실제 운영 방식과 이 부분 패치 방식은 짝을 이룬다.
+
+첫 실제 승격은 `codex`와 운영 배포 브랜치 `yeno-koyeb-pilot`의 트리가 이미 다르기 때문에 `production_base_tree_mismatch`로 반드시 차단된다. 이 조건을 완화하지 않는다 — 대신 연호님이 먼저 검증된 `codex` 트리를 `yeno-koyeb-pilot`에 수동 동기화하고 Koyeb Healthy·운영 데이터 보존을 확인한 뒤에만 첫 승격을 시도한다.
+
 ## 2026-09-13 모델 선택형 독립 OS 코어 계약 (최신 구현)
 
 `docs/INDEPENDENT_OS_20260913.md`와 `runtime/lib/independent-core.mjs`를 우선한다. BLACKHOLE의 영속 코어는 모델 공급자나 API 키 없이 부팅·인증·상태 저장·작업 큐·결과 파일·복구·로컬 기능 실행이 가능해야 한다. 모델은 `model-call` 또는 `development-model-call`로 분류된 유한 작업에서만 선택적으로 사용한다. 모든 새 작업 유형은 실행 전 `executionBoundary`에 등록하며, 미등록 유형은 `unclassified`로 실패 폐쇄한다. 로컬 작업을 편의상 모델 경로로 우회하지 않는다. 무키 실제 서버·커비 실행·재시작 복구 회귀 검사를 제거하거나 완화하지 않는다. 아래 코드·음성 확장과 이전 제약도 계속 적용한다.
