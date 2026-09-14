@@ -1,3 +1,7 @@
+## 2026-09-14 휴대폰 성장 화면 — 현재 퀘스트·호문쿨루스 판단·커비 등급·장부를 한 화면에서
+
+`runtime/public/growth-view.mjs`가 기존 조종석(`app.js`/`index.html`)에 "성장" 탭으로 연결돼 있다. 다른 `*-view.mjs`처럼 순수 표시 모듈이며(`createGrowthView({root,onNavigate,storage})`), 자체 fetch·변경 요청이 없다 — 표시값은 전부 이미 있는 `/api/state`·`/api/quests` 응답에서만 온다. 지어낸 레벨·경험치·퍼센트는 없다. "새로 확인"/"승급" 배지는 이 브라우저가 그 기능 id에 대해 마지막으로 저장해 둔 등급과의 실제 비교 결과이며(앱이 이미 쓰는 기기별 scoped storage 사용), 추정한 최근성 창이 아니다. `runtime/test/growth-ui.test.mjs`가 jsdom 단위 시험(정직한 빈 상태·동기 사유·등급 배지·새로확인/승급 diff·멈춤 퀘스트·XSS 안전성·고정폭 미사용)과 실제 HTTP 왕복 시험(퀘스트 실행 → 실제 성과 기록 → 커비 자동 흡수 → 실제 API 응답으로 렌더 → **재시작 후에도 동일** 확인)을 모두 검증한다.
+
 ## 2026-09-14 커비 자동 흡수 — 첫 조각만 구현됨 (`ledger-digest` 기능 하나)
 
 `runtime/lib/kirby.mjs`가 소유자의 수동 `import`/`verify`/`activate` 없이도 커비가 스스로 새 기능을 흡수하게 한다. 실제로 저장된 부·명예·인지도 장부의 숫자 측정값 있는 `outcome`이 존재하고, 이미 저장소에 검토돼 있는 원본(`runtime/capabilities/ledger-digest.json`, 필터·정렬·행 제한만 하는 선언형 기능)이 아직 활성화되지 않았을 때만 흡수를 시도한다 — 목표 문장이나 모델 호출로 후보를 지어내지 않는다. 시도는 `capabilities.mjs`의 기존 `importCapability`→`verifyCapability`(fixture 재실행, 결정적·네트워크 없음)→`activateCapability`를 그대로 통과해야 하며, fixture 시험에 불합격하면 비활성 상태로 정직하게 남고(시도 기록은 지워지지 않는다) 절대 활성화되지 않는다 — 이 비활성 유지 자체가 복구 경로다. `POST /api/outcomes` 직후 자동 트리거되며, 활성화된 뒤에는 `capabilityCandidates()`/`autopilot.mjs`의 허용 목록에 들어가 `failure-triage`/`evidence-gap-brief`와 동일하게 동기 채점 대상이 된다. 아래 "휴대폰 단일 인수 시나리오" 항목의 "능력이 없을 때 커비가 자동으로 후보를 탐색·등록하는 것"은 이 커밋 이전 상태를 기록한 것이며, 지금은 `ledger-digest` 한 종류에 대해서만 그 자동 탐색·등록이 실제로 구현돼 있다.
