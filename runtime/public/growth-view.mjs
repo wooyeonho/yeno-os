@@ -81,13 +81,11 @@ export function createGrowthView({root, onNavigate = () => {}, storage = null}) 
     const ledgers = questData?.ledgers || {};
 
     root.innerHTML = `
-      <section class="cockpit-hero" aria-label="지금 상태" data-core-state="${state?.emergencyStop ? 'stopped' : activeQuest ? 'running' : 'waiting'}">
-        <div class="cockpit-hero-copy">
-          <span class="eyebrow">지금 하는 일</span>
-          ${activeQuest
-            ? `<h3>${esc(activeQuest.goal)}</h3><p>${esc(activeQuest.successCriterion)}</p><span class="status ${activeQuest.status === 'completed' ? 'completed' : ''}">${esc(QUEST_STATUS_LABEL[activeQuest.status] || activeQuest.status)}</span>`
-            : `<h3>${questData ? '지금 실행 중인 목표가 없습니다.' : '본체 상태를 불러오는 중입니다.'}</h3><p>새 목표를 저장하거나 “지금 가장 먼저 해야 할 일을 정해줘”라고 말해보세요.</p>`}
-        </div>
+      <section class="cockpit-mind" aria-label="지금 상태">
+        <div class="cockpit-section-heading"><div><span class="eyebrow">지금 하는 일</span></div></div>
+        ${activeQuest
+          ? `<h3>${esc(activeQuest.goal)}</h3><p>${esc(activeQuest.successCriterion)}</p><span class="status ${activeQuest.status === 'completed' ? 'completed' : ''}">${esc(QUEST_STATUS_LABEL[activeQuest.status] || activeQuest.status)}</span>`
+          : `<h3>${questData ? '지금 실행 중인 목표가 없습니다.' : '본체 상태를 불러오는 중입니다.'}</h3><p>새 목표를 저장하거나 “지금 가장 먼저 해야 할 일을 정해줘”라고 말해보세요.</p>`}
       </section>
 
       <section class="cockpit-mind" aria-label="일곱 욕망과 선택 이유">

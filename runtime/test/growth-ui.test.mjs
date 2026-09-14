@@ -143,6 +143,18 @@ test('renders with no fixed pixel widths (would break a narrow phone screen) and
   h.close();
 });
 
+// jsdom has no CSS layout engine, so it cannot measure the actual pixel
+// squeeze this caused (see scripts/verify-mobile-viewport.mjs, which found
+// and proved this exact defect with a real Chromium at real phone
+// viewports). This is the fast, always-runs-in-CI half of that guard: a
+// deterministic check that the specific misused class never comes back.
+test('never reuses .cockpit-hero (a two-column grid built for the autopilot core-orbit visual) for single-content sections',()=>{
+  const h=setup();
+  h.view.updateState(fixtureState(),fixtureQuestData());
+  assert.doesNotMatch(h.root.innerHTML,/class="cockpit-hero"/, '.cockpit-hero has a fixed 290px first column meant for a second grid item that this screen never renders - see runtime/public/growth-view.mjs history');
+  h.close();
+});
+
 // --- real server data, including a real restart, feeding the same view ---
 // The fixtures above prove the view renders correctly; this proves the real
 // /api/state and /api/quests responses actually have the shape those
