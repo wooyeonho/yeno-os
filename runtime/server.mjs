@@ -38,8 +38,12 @@ import {CodeSandboxError} from './lib/code-sandbox.mjs';
 import {growthOverview} from './lib/growth.mjs';
 import {decideQuest,isDecideRequest} from './lib/decide.mjs';
 import {DRIVE_DEFINITIONS} from './lib/motivation.mjs';
+import {tryAutoAcquireLedgerDigest} from './lib/kirby.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
+// Kirby's only auto-acquisition candidate: a manifest already reviewed and
+// committed in this repo, never model output or a runtime-generated file.
+const LEDGER_DIGEST_MANIFEST=JSON.parse(fs.readFileSync(path.join(ROOT,'capabilities','ledger-digest.json'),'utf8'));
 const VERSION='0.2.2';
 const API_VERSION='1';
 const MAX_BODY=256*1024;
@@ -258,6 +262,21 @@ export function createYenoServer(options={}) {
    s.capabilities=output.registry;event(`커비 기능 ${action}: ${b.id??b.manifest?.id}`);
    return {status:200,payload:{result:output.result,capabilities:getCapabilityStatus(s.capabilities)}};
  }
+ // Kirby자동흡수: called right after real ledger evidence lands. Never runs
+ // ahead of the evidence that justifies it, and a failed isolated trial
+ // (fixture mismatch) commits only the honest, inactive import record -
+ // never an active, unverified capability.
+ function kirbyAutoAcquire(){
+   if(s.emergencyStop)return null;
+   const acquisition=tryAutoAcquireLedgerDigest(s,LEDGER_DIGEST_MANIFEST);
+   if(!acquisition)return null;
+   assertProductionCapacity({...s,capabilities:acquisition.registry});
+   s.capabilities=acquisition.registry;
+   event(acquisition.result.acquired
+     ?`커비 자동 흡수: ${acquisition.result.id} 원본·시험·활성화 완료 · ${acquisition.reason}`
+     :`커비 자동 흡수 시도: ${acquisition.result.id} 시험 불합격으로 비활성 상태 유지 · ${acquisition.result.error}`);
+   return acquisition.result;
+ }
  function capabilityCandidates(){
    const active=new Set(getCapabilityStatus(s.capabilities).filter(item=>item.activeHash).map(item=>item.id)),candidates=[];
    if(!s.modules.documents)return candidates;
@@ -268,6 +287,7 @@ export function createYenoServer(options={}) {
    };
    const failures=s.jobs.filter(job=>job.status==='failed'&&job.type!=='capability').slice(0,30);
    add('failure-triage',{records:failures.map(job=>({id:job.id,title:job.title,status:job.status,error:String(job.error??'').slice(0,400),nextStep:job.agentJournal?.calls?.some(call=>call.status!=='settled')?'이전 응답 미확인: 재호출 없이 호출 기록 확인':'보관된 입력으로 원인 재현, 수정 전후 결과 비교'}))},'반복 실패의 보존 기록으로 원인 점검표를 만든다.','wrath');
+   add('ledger-digest',{records:s.outcomes.filter(o=>typeof o.value==='number').slice(0,30).map(o=>({ledger:o.ledger,summary:o.summary,value:o.value,unit:o.unit}))},'실측 성과 원장을 정리해 다음 우선순위를 확인한다.','greed');
    const parent=s.jobs.find(job=>job.status==='completed'&&job.autopilot?.kind==='research');
    if(parent&&active.has('evidence-gap-brief')){
      try{
@@ -897,7 +917,7 @@ export function createYenoServer(options={}) {
        }
        const questAction=url.pathname.match(/^\/api\/quests\/([a-f0-9-]+)\/(run|review)$/);
        if(questAction){if(!b.requestId)throw new HttpError(400,'Persistent requestId required');if(Object.keys(b).some(k=>!(questAction[2]==='run'?['requestId']:['requestId','provider','maxCalls']).includes(k)))throw new HttpError(400,'Unknown goal action field');return questAction[2]==='run'?runQuest(questAction[1]):reviewQuest(questAction[1],b);}
-       if(url.pathname==='/api/outcomes'){if(!b.requestId)throw new HttpError(400,'Persistent requestId required');verifiedQuestArtifact(findQuest(b.questId),b.artifactId);const outcome=recordQuestOutcome(b,s);s.outcomes.unshift(outcome);event('Owner-reported outcome recorded with an actual output reference.');return {status:201,payload:{outcome}};}
+       if(url.pathname==='/api/outcomes'){if(!b.requestId)throw new HttpError(400,'Persistent requestId required');verifiedQuestArtifact(findQuest(b.questId),b.artifactId);const outcome=recordQuestOutcome(b,s);s.outcomes.unshift(outcome);event('Owner-reported outcome recorded with an actual output reference.');const kirbyAcquisition=kirbyAutoAcquire();return {status:201,payload:{outcome,...(kirbyAcquisition?{kirbyAcquisition}:{})}};}
        if(url.pathname==='/api/bots'){if(!b.requestId)throw new BotError(400,'Persistent requestId required');if(b.action==='start')return startBots(b);if(Object.keys(b).some(k=>!['action','requestId'].includes(k)))throw new BotError(400,'Unknown bot control field');return controlBots(b.action);}
        if(url.pathname==='/api/ecosystem'){
          if(typeof b.enabled!=='boolean'||Object.keys(b).some(key=>!['enabled','requestId'].includes(key))||!b.requestId)throw new HttpError(400,'Provide enabled:boolean and persistent requestId');
