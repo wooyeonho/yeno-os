@@ -8,6 +8,7 @@ const {createAutopilotView} = await import('/autopilot-view.mjs');
 const {createCodeView} = await import('/code-view.mjs');
 const {createVoiceView} = await import('/voice-view.mjs');
 const {createResearchView} = await import('/research-view.mjs');
+const {createGrowthView} = await import('/growth-view.mjs');
 const {connectBrowser,enableInstall} = await import('/web-client.mjs');
 const $ = (id) => document.getElementById(id);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -65,6 +66,8 @@ const studioView=createStudioView({root:$('studio-root'),api,storage:requestStor
 const researchView=createResearchView({root:$('research-root'),api,storage:requestStorage,notify,onJobCreated:()=>{void refresh(true);},onOpenJob:()=>{showTab('control');void refresh(true);},onOpenArtifact:id=>perform(()=>openArtifact(id)),onJobAction:(id,action)=>perform(()=>durableMutation(`/api/jobs/${id}/action`,{action}))});
 const requestId=()=>crypto.randomUUID();
 const autopilotView=createAutopilotView({root:$('autopilot-root'),notify,onNavigate:tab=>showTab(tab),onCapabilityAction:async(action,payload)=>{const result=await durableMutation(`/api/capabilities/${action}`,payload);await refresh(true);return result;},onControl:async enabled=>{await durableMutation('/api/autopilot',{enabled});await refresh(true);},onOpenJob:()=>{showTab('control');void refresh(true);},onOpenArtifact:id=>perform(()=>openArtifact(id))});
+const growthView=createGrowthView({root:$('growth-root'),onNavigate:tab=>showTab(tab),storage:requestStorage});
+function renderGrowth() {growthView.updateState(current,questData);}
 const codeView=createCodeView($('code-root'),{onAction:async(action,payload)=>{const result=await durableMutation(`/api/code/${action}`,payload);await refresh(true);return result;},onOpenArtifact:id=>perform(()=>openArtifact(id))});
 const voiceView=createVoiceView($('voice-root'),{onSend:async(text,{history}={})=>{if(otherRequests?.pending||otherStorageError){const e=new Error('상단의 같은 요청 확인으로 이전 접수를 먼저 확인하세요.');e.status=409;throw e;}const result=await durableMutation('/api/voice',{text,history:history??[]});await refresh(true);return result;},onReadResult:async job=>{const item=job.artifacts.find(a=>a.name.endsWith('.md'));if(!item)throw new Error('읽을 답변 파일이 아직 없습니다.');const r=await api(`/api/artifacts/${encodeURIComponent(item.id)}`,undefined,{raw:true});return (await r.text()).split('\n\n---\nBLACKHOLE AI 초안')[0];}});
 let otherRequests,otherStorageError;
@@ -160,7 +163,7 @@ function connection(ok) {
 async function refresh(force=false) {
   if(!token || loading)return;
   loading=true;
-  try {const s=await api('/api/state'); const wasOnline=online;current=s;connection(true);void worldView.update(s.world, !s.emergencyStop && s.modules.documents && !commandRequests?.pending && !commandRequests?.sending);$('pair-screen').hidden=true;if(force || !wasOnline || lastRevision!==s.revision){render(s);lastRevision=s.revision;if(activeTab==='studio')void studioView.refresh();if(activeTab==='research')void researchView.refresh();}if(!questData || activeTab==='quests')void refreshQuests(force);}
+  try {const s=await api('/api/state'); const wasOnline=online;current=s;connection(true);void worldView.update(s.world, !s.emergencyStop && s.modules.documents && !commandRequests?.pending && !commandRequests?.sending);$('pair-screen').hidden=true;if(force || !wasOnline || lastRevision!==s.revision){render(s);lastRevision=s.revision;if(activeTab==='studio')void studioView.refresh();if(activeTab==='research')void researchView.refresh();}if(!questData || activeTab==='quests' || activeTab==='growth')void refreshQuests(force);}
   catch(e){if(browserSession.active){connection(false);if(force)notify(e.message);}}
   finally{loading=false;}
 }
@@ -169,8 +172,8 @@ function showTab(tab) {
   $('voice-root').hidden=tab!=='voice';
   activeTab=tab;for(const el of document.querySelectorAll('.tab-panel'))el.hidden=el.id!==`tab-${tab}`;
   for(const el of document.querySelectorAll('.nav')){el.classList.toggle('active',el.dataset.tab===tab);el.setAttribute('aria-current',el.dataset.tab===tab?'page':'false');}
-  $('page-title').textContent={code:'코드 흡수·자동 개발',voice:'자비스 음성 대화',autopilot:'자동 운영',control:'조종석',quests:'목표 실행',studio:'운영실',research:'문제의 답 · EUREKA',world:'세계 현황',projects:'프로젝트',sources:'자료',memory:'기억',recovery:'복구',settings:'능력·설정'}[tab];
-  if(tab==='quests')void refreshQuests(true);
+  $('page-title').textContent={code:'코드 흡수·자동 개발',voice:'자비스 음성 대화',autopilot:'자동 운영',control:'조종석',quests:'목표 실행',growth:'성장',studio:'운영실',research:'문제의 답 · EUREKA',world:'세계 현황',projects:'프로젝트',sources:'자료',memory:'기억',recovery:'복구',settings:'능력·설정'}[tab];
+  if(tab==='quests' || tab==='growth')void refreshQuests(true);
   if(tab==='studio')void studioView.refresh();
   if(tab==='research')void researchView.refresh();
 }
@@ -187,7 +190,7 @@ function render(s) {
   $('jobs-list').innerHTML=jobs.length?jobs.map(jobHTML).join(''):'<div class="empty">첫 작업을 맡겨보세요.<br>본체 진단은 입력 없이 바로 실행할 수 있어요.</div>';
   $('events-list').innerHTML=(s.events||[]).slice(0,12).map(e=>`<li><time>${esc(date(e.at || e.createdAt))}</time>${esc(e.text || e.message)}</li>`).join('') || '<li class="muted">아직 실행 기록이 없습니다.</li>';
   $('memory-count').textContent=(s.memories||[]).length;renderMemories();
-  renderProjects();renderSources();renderQuests();
+  renderProjects();renderSources();renderQuests();renderGrowth();
   $('snapshots-list').innerHTML=(s.snapshots||[]).map(sn=>`<article class="snapshot-item"><div><strong>${esc(sn.label)}</strong><small>${esc(date(sn.createdAt))}</small></div><button class="button subtle" data-restore="${esc(sn.id)}">이 시점으로</button></article>`).join('') || '<div class="empty">기억과 설정을 저장해 두면 이곳에서 돌아갈 수 있어요.</div>';
   $('concurrency').value=s.concurrency;
   $('module-settings').innerHTML=Object.entries(moduleInfo).map(([key,[name,desc]])=>`<div class="setting-row"><div><h3>${name}</h3><p>${desc}</p></div><input class="switch" type="checkbox" role="switch" aria-label="${name}" data-module="${key}" ${s.modules?.[key]?'checked':''} ${key==='ai'&&!s.ai?.configured?'disabled':''}></div>`).join('');
@@ -304,7 +307,7 @@ function renderQuests() {
     for(const id of expanded){const details=document.getElementById(id)?.querySelector('details');if(details)details.open=true;}
     if(focusId)document.getElementById(focusId)?.focus({preventScroll:true});
   }
-  renderQuestRequest();
+  renderQuestRequest();renderGrowth();
 }
 async function submitQuest(path,body) {
   if(!online){notify('먼저 실행 본체와 연결해 주세요.');return;}
@@ -621,7 +624,7 @@ $('global-stop').addEventListener('click',e=>perform(async()=>{const action=curr
 $('concurrency').addEventListener('change',e=>perform(()=>durableMutation('/api/settings',{concurrency:Number(e.target.value)})));
 $('module-settings').addEventListener('change',e=>{if(e.target.dataset.module)perform(()=>durableMutation('/api/settings',{modules:{[e.target.dataset.module]:e.target.checked}}));});
 $('compact-toggle').addEventListener('click',()=>{const compact=document.body.classList.toggle('compact');$('compact-toggle').textContent=compact?'펼치기':'작게';$('compact-toggle').setAttribute('aria-pressed',String(compact));});
-function clearConnection(){authEpoch++;browserSession.invalidate();worldView.reset();studioView.reset();researchView.reset();autopilotView.reset();codeView.reset();voiceView.reset();resetQuests();token='';current=null;if(artifact?.url)URL.revokeObjectURL(artifact.url);artifact=null;$('artifact-video').pause();$('artifact-video').removeAttribute('src');$('artifact-content').textContent='';document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());document.querySelector('.shell').hidden=true;$('pair-screen').hidden=false;}
+function clearConnection(){authEpoch++;browserSession.invalidate();worldView.reset();studioView.reset();researchView.reset();autopilotView.reset();codeView.reset();voiceView.reset();growthView.reset();resetQuests();token='';current=null;if(artifact?.url)URL.revokeObjectURL(artifact.url);artifact=null;$('artifact-video').pause();$('artifact-video').removeAttribute('src');$('artifact-content').textContent='';document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());document.querySelector('.shell').hidden=true;$('pair-screen').hidden=false;}
 async function disconnect(){
   if(commandRequests?.sending||projectRequests?.sending||sourceRequests?.sending||questRequests?.sending||otherRequests?.sending||studioView.sending||researchView.sending){notify('접수 응답을 기다리고 있습니다. 잠시 후 연결을 해제하세요.');return;}
   try{await browserSession.logout();clearConnection();location.reload();}catch(error){notify(`연결 해제를 확인하지 못했습니다. ${error.message}`);}
