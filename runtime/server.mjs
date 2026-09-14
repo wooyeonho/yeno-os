@@ -36,6 +36,8 @@ import {getCodeStatus,getCodeVersion,createCodeRequest,importCode,activateCode,d
 import {validateCodeTask,codePrompt,runCodeJob} from './lib/code-jobs.mjs';
 import {CodeSandboxError} from './lib/code-sandbox.mjs';
 import {growthOverview} from './lib/growth.mjs';
+import {decideQuest,isDecideRequest} from './lib/decide.mjs';
+import {DRIVE_DEFINITIONS} from './lib/motivation.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const VERSION='0.2.2';
@@ -178,7 +180,22 @@ export function createYenoServer(options={}) {
    if(!manuscript)throw new HttpError(409,'가져올 원고 본문이 비어 있습니다.');
    return studioMutation({action:'chapter.create',requestId:body.requestId,seriesId:body.seriesId,number:body.number,title:body.title,content:manuscript,notes:`AI 원고 초안 · 작업 ${job.id} · 결과 SHA-256 ${item.sha256} · 출판 전 소유자 검토 필요`});
  }
- function questState(){return {...questsOverview(s),providers:providerStatus(),selectedProvider:agentSettings.provider,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs)};}
+ function questState(){return {...questsOverview(s),decision:decideQuest(s,now()),providers:providerStatus(),selectedProvider:agentSettings.provider,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs)};}
+ // "지금 가장 먼저 해야 할 일을 정해줘": Homunculus ranks real proposed quests
+ // (never invents one - see decide.mjs), then immediately runs the winner
+ // through the exact same runQuest() path the owner's own Run button uses.
+ // Returns null, not a fabricated decision, when nothing is proposed yet.
+ function decisionAnnouncement(decision){
+   const names=decision.top.motivation.dominantDrives.map(id=>DRIVE_DEFINITIONS.find(d=>d.id===id)?.name??id).join('·');
+   return `지금 가장 먼저 할 일로 "${decision.top.goal}"을(를) 골랐습니다. ${names}의 판단이 가장 크게 작용했습니다. 성공 기준: ${decision.top.successCriterion}`;
+ }
+ function decideAndRunQuest(){
+   const decision=decideQuest(s,now());
+   if(!decision)return null;
+   const result=runQuest(decision.top.questId);
+   event(`호문쿨루스 결정: ${decision.top.goal}`);
+   return {decision,...result.payload};
+ }
  function researchState(){return {tracks:RESEARCH_TRACKS.filter(track=>s.projects.some(p=>p.id===track.projectId&&p.status!=='archived')).map(track=>({...track,scope:track.scopeConstraints})),jobs:s.jobs.filter(job=>job.researchRequest).map(publicJob),providerReady:agentSettings.ready,usage:agentUsage(s.jobs),dailyCallLimit:agentSettings.dailyCallLimit,emergencyStop:s.emergencyStop};}
  function codeState(){return {entries:getCodeStatus(s.codeWorkshop),jobs:s.jobs.filter(j=>j.type==='code').map(publicJob),providerReady:agentSettings.ready,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs),limits:{modelCallsPerJob:2,concurrentWorkers:1,codeExecutionSeconds:2,externalNetwork:false}};}
  // E->D->C->B->A->S grades for every imported capability/code skill, derived only
@@ -850,6 +867,15 @@ export function createYenoServer(options={}) {
          if(!b.requestId||Object.keys(b).some(k=>!['requestId','text','history'].includes(k)))throw new HttpError(400,'Invalid voice request');
          requireModule('ai');const text=requiredText(b.text,6000),history=b.history??[];
          if(!Array.isArray(history)||history.length>6||history.some(m=>!m||Object.keys(m).sort().join()!=='content,role'||!['user','assistant'].includes(m.role)||typeof m.content!=='string')||JSON.stringify(history).length>10000)throw new HttpError(400,'음성 대화 기록이 너무 깁니다.');
+         // "지금 가장 먼저 할 일을 정해줘" routes to the real Homunculus ranking
+         // over already-proposed quests instead of becoming a generic free-text
+         // model call. If there is nothing proposed to decide among, this falls
+         // through to the normal conversational path below rather than failing
+         // silently - the agent can say honestly that no goal is on file yet.
+         if(isDecideRequest(text)){
+           const outcome=decideAndRunQuest();
+           if(outcome)return {status:201,payload:{jobId:outcome.job.id,job:outcome.job,decision:{goal:outcome.decision.top.goal,successCriterion:outcome.decision.top.successCriterion,dominantDrives:outcome.decision.top.motivation.dominantDrives,announcement:decisionAnnouncement(outcome.decision)}}};
+         }
          const context=`코어의 실제 요약: ${JSON.stringify({running:s.jobs.filter(j=>j.status==='running').map(j=>({title:j.title,type:j.type})),projects:s.projects.length,codeCapabilities:getCodeStatus(s.codeWorkshop).map(e=>({name:e.name,active:!!e.activeHash})),automatic:s.autopilot.enabled,aiCalls:agentUsage(s.jobs).attempts})}\n`;
          const prompt=context+(history.length?`이전 대화는 맥락 자료입니다. 현재 요청에 한국어로 답하세요.\n${JSON.stringify(history)}\n현재 요청: ${text}`:text);
          const job=newJob({type:'agent',text:prompt,title:'음성 대화 · '+text.slice(0,100)},{questExecution:true});job.voiceConversation=true;job.callLimit=1;return {status:201,payload:{jobId:job.id,job:publicJob(job)}};
@@ -863,6 +889,12 @@ export function createYenoServer(options={}) {
        if(url.pathname==='/api/studio/generate')return generateChapter(b);
        if(url.pathname==='/api/studio/import')return importChapter(b);
        if(url.pathname==='/api/quests'){if(!b.requestId)throw new HttpError(400,'Persistent requestId required');return {status:201,payload:{quest:publicQuest(addQuest(b),s)}};}
+       if(url.pathname==='/api/quests/decide'){
+         if(!b.requestId||Object.keys(b).some(k=>!['requestId'].includes(k)))throw new HttpError(400,'Persistent requestId required');
+         const outcome=decideAndRunQuest();
+         if(!outcome)throw new HttpError(409,'선택할 수 있는 저장된 목표가 없습니다. 먼저 목표를 만들어 주세요.');
+         return {status:201,payload:outcome};
+       }
        const questAction=url.pathname.match(/^\/api\/quests\/([a-f0-9-]+)\/(run|review)$/);
        if(questAction){if(!b.requestId)throw new HttpError(400,'Persistent requestId required');if(Object.keys(b).some(k=>!(questAction[2]==='run'?['requestId']:['requestId','provider','maxCalls']).includes(k)))throw new HttpError(400,'Unknown goal action field');return questAction[2]==='run'?runQuest(questAction[1]):reviewQuest(questAction[1],b);}
        if(url.pathname==='/api/outcomes'){if(!b.requestId)throw new HttpError(400,'Persistent requestId required');verifiedQuestArtifact(findQuest(b.questId),b.artifactId);const outcome=recordQuestOutcome(b,s);s.outcomes.unshift(outcome);event('Owner-reported outcome recorded with an actual output reference.');return {status:201,payload:{outcome}};}
