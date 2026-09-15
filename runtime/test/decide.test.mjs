@@ -48,3 +48,18 @@ test('isDecideRequest recognizes the literal acceptance phrase and stays narrow 
   assert.equal(isDecideRequest(''), false);
   assert.equal(isDecideRequest(undefined), false);
 });
+
+test('isDecideRequest also recognizes natural conversational phrasing, not just imperative commands', () => {
+  assert.equal(isDecideRequest('오늘 뭐부터 하면 돼?'), true, '"what should I start with" question form');
+  assert.equal(isDecideRequest('네가 봤을 때 지금 제일 중요한 게 뭐야?'), true, 'a judgment question, no 정해/골라 verb at all');
+  assert.equal(isDecideRequest('알아서 우선순위 잡아봐'), true, 'delegating the decision with 알아서');
+  assert.equal(isDecideRequest('가장 급한 일이 뭔지 알려줘'), true, 'most-urgent phrasing, not just 중요한');
+  assert.equal(isDecideRequest('우선순위 좀 정해줄래?'), true);
+});
+
+test('isDecideRequest stays narrow: ordinary conversation using similar words does not trigger it', () => {
+  assert.equal(isDecideRequest('저녁 뭐 먹을지 나중에 정해줄게'), false, 'no 부터/먼저 - not a "what first" question');
+  assert.equal(isDecideRequest('모델을 호출해'), false);
+  assert.equal(isDecideRequest('그 다음은?'), false);
+  assert.equal(isDecideRequest('알아서 잘 지내'), false, '알아서 without a decision verb');
+});
