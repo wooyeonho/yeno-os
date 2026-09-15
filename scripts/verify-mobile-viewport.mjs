@@ -31,16 +31,40 @@ const dataDir = mkdtempSync(join(tmpdir(), 'blackhole-mobile-viewport-'));
 const owner = 'synthetic-mobile-viewport-owner-key';
 const core = await start({host: '127.0.0.1', port: 0, dataDir, token: owner, env: {}});
 const origin = `http://127.0.0.1:${core.server.address().port}`;
-const executablePath = process.env.YENO_CHROMIUM_PATH || '/opt/pw-browsers/chromium';
+// No hardcoded fallback path: leave it undefined so Playwright resolves its
+// own installed browser the normal way unless an environment explicitly
+// points at a different one (e.g. a dev container with a pre-installed
+// Chromium outside Playwright's usual cache location).
+const executablePath = process.env.YENO_CHROMIUM_PATH || undefined;
 
-const VIEWPORTS = [{width: 360, height: 800, label: '360x800'}, {width: 412, height: 915, label: '412x915'}];
+// The two real phone sizes the owner actually asked to verify, plus one
+// wider viewport that independently reproduces the historical .cockpit-hero
+// bug through real Chromium layout rather than through the deterministic
+// class-name guard below. This was empirically re-verified in this session
+// by reconstructing the actual pre-fix markup (per commit 38bff70's diff)
+// against today's growth-view.mjs and re-running this script with the
+// class-name guard below temporarily disabled: the fixed 290px
+// .cockpit-hero-copy track measured 286/328px (87%) at 360px and
+// 338/380px (89%) at 412px - both above the 80% threshold the
+// section-width assertion below uses, confirming the width-ratio check
+// alone cannot reliably catch this bug at phone widths - but the same
+// markup measured only 220/779px (28%) at 1024px, which fails that
+// assertion outright. So this 1024px entry is a real, independently
+// re-confirmed second detector for this exact bug class, not just extra
+// coverage of already-correct code. It is not a phone and is not part of
+// the mobile-viewport claim.
+const VIEWPORTS = [
+  {width: 360, height: 800, label: '360x800', mobile: true},
+  {width: 412, height: 915, label: '412x915', mobile: true},
+  {width: 1024, height: 800, label: '1024x800 (historical-bug reproduction, not a phone size)', mobile: false},
+];
 const proof = {at: new Date().toISOString(), scope: 'real Chromium against the real running server; not a physical device', viewports: []};
 
 let browser;
 try {
   browser = await chromium.launch({headless: true, executablePath});
   for (const viewport of VIEWPORTS) {
-    const context = await browser.newContext({viewport: {width: viewport.width, height: viewport.height}, isMobile: true, hasTouch: true});
+    const context = await browser.newContext({viewport: {width: viewport.width, height: viewport.height}, isMobile: viewport.mobile, hasTouch: viewport.mobile});
     const page = await context.newPage();
     try {
       await page.goto(origin, {waitUntil: 'networkidle'});

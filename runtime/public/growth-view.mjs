@@ -28,6 +28,16 @@ export function createGrowthView({root, onNavigate = () => {}, storage = null}) 
   if (!root) throw new Error('성장 화면에는 표시할 위치가 필요합니다.');
   root.classList.add('cockpit', 'growth-view');
   let destroyed = false;
+  // latestSkills holds the grades from the most recent render that actually
+  // had real growth data (state?.growth present) - null until then. Only
+  // acknowledge() ever writes to storage, and only from this: updateState()
+  // must never write on its own, or a background poll (another tab open, a
+  // timer refresh) would silently consume a "새로 확인"/"승급" badge the
+  // owner never actually looked at, and an early render before /api/state
+  // has ever returned (state?.growth missing) could wipe real prior history
+  // with an empty {} the moment the owner happened to leave before the first
+  // real state arrived.
+  let latestSkills = null;
   const SEEN_KEY = 'blackhole-growth-seen-grades-v1';
   // A skill's "새로 확인"/"승급" badge is a real diff against the last grade
   // this exact browser saw for that exact skill id - never a fabricated
@@ -62,29 +72,38 @@ export function createGrowthView({root, onNavigate = () => {}, storage = null}) 
     const drives = questData?.drives || [];
     const decision = questData?.decision || null;
     const quests = questData?.quests || [];
-    const activeQuest = quests.find(q => ['queued', 'running'].includes(q.status))
-      || (decision ? quests.find(q => q.id === decision.top.questId) : null);
+    // A queued/running quest is really "지금 하는 일" - Jarvis is executing
+    // it. A decideQuest() winner with no job yet is only what Homunculus
+    // would pick right now if asked; it is not yet running, so it gets its
+    // own honest "다음 후보" label instead of being folded into "지금 하는 일".
+    const activeQuest = quests.find(q => ['queued', 'running'].includes(q.status));
+    const candidateQuest = !activeQuest && decision ? quests.find(q => q.id === decision.top.questId) : null;
     const pending = quests.filter(q => q.status === 'paused');
 
+    // Only ever compare against - never write - the seen-grades snapshot
+    // here. Writing belongs solely to acknowledge(), called when the owner
+    // actually leaves this screen (see createGrowthView's closure comment).
+    const hasGrowthData = !!state?.growth;
     const rawSkills = [
       ...namedSkills(state?.growth?.capabilities?.skills, state?.autopilot?.capabilities, 'capability'),
       ...namedSkills(state?.growth?.code?.skills, state?.codeWorkshop?.entries, 'code'),
     ];
-    const seen = readSeen(), nextSeen = {};
+    const seen = readSeen();
     const skills = rawSkills.map(skill => {
       const key = `${skill.kind}:${skill.id}`, prior = seen[key];
-      nextSeen[key] = skill.grade;
       return {...skill, change: prior === undefined ? 'new' : prior !== skill.grade ? prior : null};
     }).sort((a, b) => GRADE_ORDER.indexOf(b.grade) - GRADE_ORDER.indexOf(a.grade));
-    writeSeen(nextSeen);
+    if (hasGrowthData) latestSkills = rawSkills;
 
     const ledgers = questData?.ledgers || {};
 
     root.innerHTML = `
       <section class="cockpit-mind" aria-label="지금 상태">
-        <div class="cockpit-section-heading"><div><span class="eyebrow">지금 하는 일</span></div></div>
+        <div class="cockpit-section-heading"><div><span class="eyebrow">${activeQuest ? '지금 하는 일' : candidateQuest ? '다음 후보' : '지금 하는 일'}</span></div></div>
         ${activeQuest
           ? `<h3>${esc(activeQuest.goal)}</h3><p>${esc(activeQuest.successCriterion)}</p><span class="status ${activeQuest.status === 'completed' ? 'completed' : ''}">${esc(QUEST_STATUS_LABEL[activeQuest.status] || activeQuest.status)}</span>`
+          : candidateQuest
+          ? `<h3>${esc(candidateQuest.goal)}</h3><p>${esc(candidateQuest.successCriterion)}</p><p class="cockpit-fine">지금 결정하면 이 목표를 선택합니다. 아직 실행을 시작하지 않았습니다.</p>`
           : `<h3>${questData ? '지금 실행 중인 목표가 없습니다.' : '본체 상태를 불러오는 중입니다.'}</h3><p>새 목표를 저장하거나 “지금 가장 먼저 해야 할 일을 정해줘”라고 말해보세요.</p>`}
       </section>
 
@@ -131,7 +150,16 @@ export function createGrowthView({root, onNavigate = () => {}, storage = null}) 
 
   return {
     updateState(state, questData) { render(state, questData); },
-    reset() { if (destroyed) return; root.innerHTML = ''; },
-    destroy() { if (destroyed) return; destroyed = true; root.removeEventListener('click', handleClick); root.innerHTML = ''; },
+    // Call this when the owner actually leaves the growth screen (app.js
+    // does this from showTab() on tab change) - not on every render. This
+    // is the only place that commits to storage, and only when a real
+    // growth-bearing state has actually been rendered at least once.
+    acknowledge() {
+      if (destroyed || latestSkills === null) return;
+      const nextSeen = Object.fromEntries(latestSkills.map(skill => [`${skill.kind}:${skill.id}`, skill.grade]));
+      writeSeen(nextSeen);
+    },
+    reset() { if (destroyed) return; latestSkills = null; root.innerHTML = ''; },
+    destroy() { if (destroyed) return; destroyed = true; latestSkills = null; root.removeEventListener('click', handleClick); root.innerHTML = ''; },
   };
 }

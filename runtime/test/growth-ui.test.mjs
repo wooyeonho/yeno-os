@@ -93,6 +93,7 @@ test('a skill grade change is a real diff against what this device last saw, not
   const storage=memoryStorage(),h=setup({storage});
   h.view.updateState(fixtureState(),fixtureQuestData());
   assert.match(h.root.textContent,/새로 확인/, '첫 확인은 모두 새로 확인으로 표시됩니다');
+  h.view.acknowledge();
   h.view.updateState(fixtureState(),fixtureQuestData());
   assert.doesNotMatch(h.root.textContent,/새로 확인/, '같은 등급을 다시 보면 새로 확인 배지가 없어야 합니다');
   const upgraded=fixtureState();
@@ -100,6 +101,66 @@ test('a skill grade change is a real diff against what this device last saw, not
   h.view.updateState(upgraded,fixtureQuestData());
   assert.match(h.root.textContent,/승급 E→D/);
   h.close();
+});
+
+// The HIGH-severity bug this replaces: updateState() used to write the seen-
+// grades snapshot on every render, so a background poll (another tab open,
+// a timer refresh) could silently consume a "새로 확인"/"승급" badge the
+// owner never actually saw, or a render before real growth data ever
+// arrived could stamp {} over real prior history. Only acknowledge() - which
+// app.js calls from showTab() when the owner actually leaves the growth tab,
+// never on a background render - may write. This test drives the full
+// lifecycle the fix promises, not just a single updateState() call.
+test('badges only commit when the owner actually leaves the growth screen, never from a background render',()=>{
+  const storage=memoryStorage();
+  // 1) A prior visit already saw and acknowledged failure-triage at E.
+  const seenView=setup({storage});
+  seenView.view.updateState(fixtureState(),fixtureQuestData());
+  seenView.view.acknowledge();
+  seenView.close();
+
+  // 2) Loading state (no growth data yet, e.g. before the first /api/state
+  // reply) must never touch storage even if the owner leaves immediately.
+  const loadingView=setup({storage});
+  loadingView.view.updateState({},fixtureQuestData());
+  loadingView.view.acknowledge();
+  const afterLoadingAcknowledge=JSON.parse(storage.getItem('blackhole-growth-seen-grades-v1'));
+  assert.equal(afterLoadingAcknowledge['capability:failure-triage'],'E','비어 있는 로딩 상태에서 나간 것으로 실제 이력을 지우면 안 됩니다');
+  loadingView.close();
+
+  // 3) A real background poll (a different mounted view, standing in for
+  // another tab/timer) sees failure-triage upgrade to D - but never calls
+  // acknowledge(), so storage must stay at E.
+  const backgroundView=setup({storage});
+  const upgraded=fixtureState();
+  upgraded.growth.capabilities.skills[1]={...upgraded.growth.capabilities.skills[1],grade:'D',nextGrade:'C',blockedReason:'서로 다른 입력 2건 이상에서 실행된 기록이 없습니다.'};
+  backgroundView.view.updateState(upgraded,fixtureQuestData());
+  assert.equal(JSON.parse(storage.getItem('blackhole-growth-seen-grades-v1'))['capability:failure-triage'],'E','확인하지 않은 배경 렌더는 저장값을 바꾸면 안 됩니다');
+  backgroundView.close();
+
+  // 4-6) The owner actually opens the growth tab: sees the real E->D
+  // upgrade, and it survives several re-renders (e.g. repeated state polls
+  // while the tab stays open) without being consumed early.
+  const openView=setup({storage});
+  openView.view.updateState(upgraded,fixtureQuestData());
+  assert.match(openView.root.textContent,/승급 E→D/,'실제 승급이 화면에 보여야 합니다');
+  for(let i=0;i<3;i++){
+    openView.view.updateState(upgraded,fixtureQuestData());
+    assert.match(openView.root.textContent,/승급 E→D/,'같은 방문 안에서 여러 번 재렌더돼도 배지가 유지돼야 합니다');
+  }
+  assert.equal(JSON.parse(storage.getItem('blackhole-growth-seen-grades-v1'))['capability:failure-triage'],'E','아직 확인 처리 전이므로 저장값은 그대로 E여야 합니다');
+
+  // 7) The owner leaves the growth tab - only now does storage update to D.
+  openView.view.acknowledge();
+  assert.equal(JSON.parse(storage.getItem('blackhole-growth-seen-grades-v1'))['capability:failure-triage'],'D','성장 탭을 떠난 뒤에만 저장값이 갱신돼야 합니다');
+  openView.close();
+
+  // 8) A fresh view (standing in for a restarted app) reading the same
+  // storage no longer shows the badge - it was genuinely acknowledged.
+  const reopenedView=setup({storage});
+  reopenedView.view.updateState(upgraded,fixtureQuestData());
+  assert.doesNotMatch(reopenedView.root.textContent,/승급 E→D|새로 확인/,'이미 확인한 등급은 재시작 후 다시 배지로 나오면 안 됩니다');
+  reopenedView.close();
 });
 
 test('paused quests are the only "확인이 필요한 목표" and name the real pause reason; navigating goes to the quest tab',()=>{
