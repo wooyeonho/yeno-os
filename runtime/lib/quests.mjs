@@ -1,4 +1,5 @@
 import {randomUUID} from 'node:crypto';
+import {DRIVE_IDS} from './motivation.mjs';
 
 // Drives generate bounded goals, not fabricated performance scores or seven
 // continuously running model calls. Execution belongs to the durable job loop.
@@ -23,6 +24,30 @@ const uuid=value=>typeof value==='string'&&UUID.test(value);
 const hash=value=>typeof value==='string'&&HASH.test(value);
 const STATUS=['proposed','assigned','queued','running','paused','completed','failed','cancelled'];
 const MAX_QUESTS=1000,MAX_OUTCOMES=5000;
+// The autonomous-goal-synthesis vocabulary (runtime/lib/autonomous-goals.mjs)
+// is duplicated here, not imported from there, deliberately: that module
+// imports planQuest/publicQuest from this one to build and read quests, so
+// importing back from it would create a circular module dependency. Both
+// modules must be kept in agreement by hand if this list ever changes.
+const AUTONOMY_ARCHETYPES=['repair','verify','acquire-capability','measure-outcome','refresh-evidence','reduce-owner-intervention'];
+const AUTONOMY_RISK_CLASSES=['low','medium','high'];
+const AUTONOMY_FIELDS=['version','archetype','key','evidence','dominantDrives','sourceRevision','riskClass','approvalRequired','generatedAt'];
+function validAutonomyEvidence(value){
+  if(!object(value))return false;
+  const entries=Object.entries(value);
+  if(!entries.length||entries.length>12)return false;
+  return entries.every(([key,v])=>typeof key==='string'&&key.length<=60&&(v===null||typeof v==='string'||typeof v==='number'||typeof v==='boolean')&&(typeof v!=='string'||v.length<=400));
+}
+function validAutonomy(value){
+  if(!object(value)||Object.keys(value).sort().join()!==[...AUTONOMY_FIELDS].sort().join())return false;
+  if(value.version!==1||!AUTONOMY_ARCHETYPES.includes(value.archetype)||typeof value.key!=='string'||!value.key||value.key.length>200)return false;
+  if(!validAutonomyEvidence(value.evidence))return false;
+  if(!Array.isArray(value.dominantDrives)||value.dominantDrives.length<1||value.dominantDrives.length>2||new Set(value.dominantDrives).size!==value.dominantDrives.length||value.dominantDrives.some(id=>!DRIVE_IDS.includes(id)))return false;
+  if(!integer(value.sourceRevision,0,Number.MAX_SAFE_INTEGER))return false;
+  if(!AUTONOMY_RISK_CLASSES.includes(value.riskClass)||typeof value.approvalRequired!=='boolean')return false;
+  if(!iso(value.generatedAt))return false;
+  return true;
+}
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const iso=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString()===value;
 const validText=(value,max)=>typeof value==='string'&&value===value.trim()&&value.length>0&&value.length<=max&&!/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(value);
@@ -160,7 +185,8 @@ export function validateQuestState(state){
     }
     if(q.reviewOf!==undefined&&(!uuid(q.reviewOf)||q.reviewOf===q.id||!quests.some(item=>item.id===q.reviewOf)))throw new Error('Invalid quest review reference');
     if(q.sourceArtifactSha256!==undefined&&!hash(q.sourceArtifactSha256))throw new Error('Invalid quest review artifact');
-    if(Object.keys(q).some(key=>!['id','version','goal','driveId','drive','provider','projectId','successCriterion','baseline','maxCalls','durationMinutes','costUsd','status','jobId','createdAt','updatedAt','projectVersion','projectContext','reviewOf','sourceArtifactSha256','startedAt','deadlineAt','finishedAt'].includes(key)))throw new Error('Untrusted quest field');
+    if(q.autonomy!==undefined&&!validAutonomy(q.autonomy))throw new Error('Invalid quest autonomy metadata');
+    if(Object.keys(q).some(key=>!['id','version','goal','driveId','drive','provider','projectId','successCriterion','baseline','maxCalls','durationMinutes','costUsd','status','jobId','createdAt','updatedAt','projectVersion','projectContext','reviewOf','sourceArtifactSha256','startedAt','deadlineAt','finishedAt','autonomy'].includes(key)))throw new Error('Untrusted quest field');
   }
   const outcomeIds=new Set();
   for(const o of outcomes){

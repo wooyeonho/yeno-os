@@ -38,7 +38,8 @@ import {CodeSandboxError} from './lib/code-sandbox.mjs';
 import {growthOverview} from './lib/growth.mjs';
 import {decideQuest,isDecideRequest} from './lib/decide.mjs';
 import {DRIVE_DEFINITIONS} from './lib/motivation.mjs';
-import {tryAutoAcquireLedgerDigest} from './lib/kirby.mjs';
+import {tryAutoAcquireLedgerDigest,detectLedgerDigestGap} from './lib/kirby.mjs';
+import {synthesizeAutonomousGoal,planAutonomousQuest} from './lib/autonomous-goals.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 // Kirby's only auto-acquisition candidate: a manifest already reviewed and
@@ -193,9 +194,23 @@ export function createYenoServer(options={}) {
    const names=decision.top.motivation.dominantDrives.map(id=>DRIVE_DEFINITIONS.find(d=>d.id===id)?.name??id).join('·');
    return `지금 가장 먼저 할 일로 "${decision.top.goal}"을(를) 골랐습니다. ${names}의 판단이 가장 크게 작용했습니다. 성공 기준: ${decision.top.successCriterion}`;
  }
+ // A quest Homunculus synthesized itself (see autonomous-goals.mjs) can carry
+ // autonomy.approvalRequired - never auto-run through this ranked-decision
+ // path even if it wins the ranking. The owner can still run it explicitly
+ // through POST /api/quests/:id/run, which IS the approval: that endpoint
+ // names one specific quest by id, a decision only a person reading the
+ // proposal can make. This is the only gate this slice adds; it never
+ // authorizes a purchase, credential change, external publish, destructive
+ // action, or larger AI budget, because none of those actions exist on the
+ // quest execution path at all.
  function decideAndRunQuest(){
    const decision=decideQuest(s,now());
    if(!decision)return null;
+   const winner=findQuest(decision.top.questId);
+   if(winner.autonomy?.approvalRequired){
+     event(`자율 목표 승인 대기: ${decision.top.goal}`);
+     return {decision,approvalRequired:true,quest:publicQuest(winner,s)};
+   }
    const result=runQuest(decision.top.questId);
    event(`호문쿨루스 결정: ${decision.top.goal}`);
    return {decision,...result.payload};
@@ -359,6 +374,21 @@ export function createYenoServer(options={}) {
  }
  function addQuest(body){const quest=planQuest(body,s,agentSettings);s.quests.unshift(quest);event('Goal contract saved.');return quest;}
  function findQuest(id){const quest=s.quests.find(q=>q.id===id);if(!quest)throw new HttpError(404,'목표를 찾을 수 없습니다.');return quest;}
+ // Homunculus proposing its own goal (see autonomous-goals.mjs) instead of
+ // only ranking goals a person already wrote down. Pure observation and
+ // scoring happen in that module with no model call and no side effect;
+ // this is the one place that actually commits the result, through the
+ // exact same planQuest() every owner-created quest goes through - never a
+ // second, autonomous-only quest schema.
+ function synthesizeQuest(){
+   const gap=detectLedgerDigestGap(s,LEDGER_DIGEST_MANIFEST);
+   const candidate=synthesizeAutonomousGoal(s,now(),{capabilityGaps:[gap]});
+   if(!candidate)return null;
+   const quest=planAutonomousQuest(candidate,s,agentSettings);
+   s.quests.unshift(quest);
+   event(`자율 목표 생성 (${candidate.archetype}): ${quest.goal}`);
+   return quest;
+ }
  function runQuest(id){
    const quest=findQuest(id);
    if(quest.jobId){const job=s.jobs.find(j=>j.id===quest.jobId);if(!job)throw new HttpError(409,'목표의 실행 기록이 없습니다.');return {status:200,payload:{kind:'job',quest:publicQuest(quest,s),job:publicJob(job)}};}
@@ -895,7 +925,12 @@ export function createYenoServer(options={}) {
          // silently - the agent can say honestly that no goal is on file yet.
          if(isDecideRequest(text)){
            const outcome=decideAndRunQuest();
-           if(outcome)return {status:201,payload:{jobId:outcome.job.id,job:outcome.job,decision:{goal:outcome.decision.top.goal,successCriterion:outcome.decision.top.successCriterion,dominantDrives:outcome.decision.top.motivation.dominantDrives,announcement:decisionAnnouncement(outcome.decision)}}};
+           const decisionInfo=outcome&&{goal:outcome.decision.top.goal,successCriterion:outcome.decision.top.successCriterion,dominantDrives:outcome.decision.top.motivation.dominantDrives,announcement:decisionAnnouncement(outcome.decision)};
+           // A quest Homunculus proposed itself, not the owner, can require
+           // explicit approval before it ever runs (see decideAndRunQuest) -
+           // speak the real reason instead of silently starting a job.
+           if(outcome?.approvalRequired)return {status:201,payload:{decision:decisionInfo,approvalRequired:true,quest:outcome.quest}};
+           if(outcome)return {status:201,payload:{jobId:outcome.job.id,job:outcome.job,decision:decisionInfo}};
          }
          const context=`코어의 실제 요약: ${JSON.stringify({running:s.jobs.filter(j=>j.status==='running').map(j=>({title:j.title,type:j.type})),projects:s.projects.length,codeCapabilities:getCodeStatus(s.codeWorkshop).map(e=>({name:e.name,active:!!e.activeHash})),automatic:s.autopilot.enabled,aiCalls:agentUsage(s.jobs).attempts})}\n`;
          const prompt=context+(history.length?`이전 대화는 맥락 자료입니다. 현재 요청에 한국어로 답하세요.\n${JSON.stringify(history)}\n현재 요청: ${text}`:text);
@@ -915,6 +950,14 @@ export function createYenoServer(options={}) {
          const outcome=decideAndRunQuest();
          if(!outcome)throw new HttpError(409,'선택할 수 있는 저장된 목표가 없습니다. 먼저 목표를 만들어 주세요.');
          return {status:201,payload:outcome};
+       }
+       if(url.pathname==='/api/quests/synthesize'){
+         // Deliberately no requireModule('ai')/provider check anywhere on this
+         // path - deciding what real problem is worth a goal must work with
+         // zero AI credentials configured, since it never spends a model call.
+         if(!b.requestId||Object.keys(b).some(k=>!['requestId'].includes(k)))throw new HttpError(400,'Persistent requestId required');
+         const quest=synthesizeQuest();
+         return {status:quest?201:200,payload:{created:!!quest,...(quest?{quest:publicQuest(quest,s)}:{})}};
        }
        const questAction=url.pathname.match(/^\/api\/quests\/([a-f0-9-]+)\/(run|review)$/);
        if(questAction){if(!b.requestId)throw new HttpError(400,'Persistent requestId required');if(Object.keys(b).some(k=>!(questAction[2]==='run'?['requestId']:['requestId','provider','maxCalls']).includes(k)))throw new HttpError(400,'Unknown goal action field');return questAction[2]==='run'?runQuest(questAction[1]):reviewQuest(questAction[1],b);}
