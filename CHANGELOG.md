@@ -1,3 +1,25 @@
+# 2026-09-15 — 실제 브라우저 모바일 viewport 검증이 실제 버그 2건을 잡아냈다
+
+- **지적된 문제**: `growth-ui.test.mjs`의 "생성된 HTML에 고정 px 폭이 없다" 검사는 실제 viewport 시험이 아니었다 — jsdom에는 CSS 레이아웃 엔진이 없어, 실제 `cockpit.css`(고정 픽셀 그리드 트랙과 실제 `@media(max-width:650px)` 분기점을 쓴다)가 실제로 좁은 휴대폰 화면 안에 성장 화면을 담아내는지 확인할 수 없었다.
+- **신규**: `scripts/verify-mobile-viewport.mjs` — 실제 Chromium(Playwright), 실제 서버, 실제 `index.html`/`app.js`/`growth-view.mjs`/`cockpit.css`를 실제 **360×800**·**412×915** 뷰포트에서 확인한다. 실제 페어링 폼으로 로그인하고, 실제 목표를 저장하고, 실제 성장 탭을 열어 가로 스크롤 없음, 모든 필수 영역의 실제 렌더 영역 존재, 세로 스크롤로 도달 가능, 전체 멈춤 버튼의 실제 터치 영역 크기, 650px 분기점이 실제로 계산된 padding을 바꾸는지까지 확인한다.
+- 이 시험이 `growth-view.mjs` 자체의 레이아웃을 검사하기도 전에 실제 버그 2건을 찾아냈다:
+  1. **이 브랜치와 무관한 기존 버그**: `autopilot-view.mjs`가 `autopilot-view-engine.mjs`를 import하는데, 이 파일이 `server.mjs`의 기본 거부 정적 파일 허용 목록에 한 번도 등록된 적이 없었다 — 실제 브라우저는 이 파일에서 404를 받고 전체 동적 import 체인이 실패해, 앱 전체가 페어링 화면을 넘어서지 못했다. 기존 jsdom 기반 UI 시험(`scripts/verify-web-ui.mjs`)은 `app.js`를 esbuild로 먼저 번들링해 이 import를 인라인시키므로 실제 HTTP 요청이 전혀 발생하지 않아 지금까지 발견되지 못했다. **수정 완료.**
+  2. **이번 브랜치의 버그**: `growth-view.mjs`의 "지금 하는 일" 영역이 `.cockpit-hero`(자동 운영 탭의 core-orbit 시각 요소와 짝을 이루는, 고정 290px 트랙을 가진 2열 그리드)를 단일 콘텐츠에 재사용했다 — 그리드 항목이 하나뿐이면 그 항목이 첫 트랙 폭에 갇힌다. 같은 화면의 다른 영역이 이미 쓰던 단순 박스 클래스 `.cockpit-mind`로 바꿔 **수정 완료.**
+- 실제 red→green 사이클로 확인했다: `.cockpit-hero` 수정을 되돌리고 시험을 다시 실행하면 "`.cockpit-hero`를 재사용하면 안 된다"는 명시적 단언에서 실패하고, 수정을 복원하면 다시 통과한다.
+- 이 회귀 방지의 빠른 절반(`.cockpit-hero`가 이 화면 마크업에 다시는 나타나지 않는지 확인하는 결정적 검사)은 `runtime/test/growth-ui.test.mjs`에도 추가해 기존의 강화된 Docker CI 샌드박스 안에서도 항상 실행되도록 했다. 실제 브라우저 스크립트 자체는 그 샌드박스(`workers/developer/Verification.Dockerfile`, `--network none --cap-drop ALL --read-only`)에서 실행하지 않는다 — 그 샌드박스에는 브라우저 바이너리가 없고 시험 단계에는 그것을 내려받을 네트워크도 없다. 이 저장소의 다른 CI 샌드박스 UI 검사들이 이미 실제 브라우저 대신 jsdom을 쓰는 이유, 그리고 `apps/controller/verify-ui.mjs`가 마찬가지로 Docker 샌드박스 밖에서 실행되는 이유와 같다. 그 특정 강화 이미지에 실제 브라우저를 넣는 것은 별도의, 보안과 직결된 인프라 결정(이미지 크기 증가, `--cap-drop ALL`/`--read-only`와의 호환성 미검증 — 이 조합을 시험할 Docker 데몬이 이 세션에는 없었다 — 그리고 이 프로젝트 자신이 선언한 능력 목록이 이미 `browserAutomation:false`라고 명시하고 있다는 점)이므로 이번 커밋에서 임의로 내리지 않았다. `npm run verify:mobile`로 직접 실행한다.
+- `apps/controller`의 devDependency로 `playwright`를 추가했다(기존 `jsdom`과 같은 위치). `apps/controller/package-lock.json`은 `npm`으로 재생성했다(직접 편집하지 않음).
+- 전체 회귀: 로컬 521개 중 493 통과, 21 실패(이전과 동일한 QuickJS/WASM·`URLPattern` 환경 한계), 7 건너뜀 — 신규 회귀 없음. 기존 CI 샌드박스 UI 검사(`verify-web-ui.mjs`, `verify-research-ui.mjs`) 모두 정적 파일 허용 목록 수정 이후에도 그대로 통과.
+- 이 커밋에 대한 실제 GitHub Actions 검증: run `34911108907`, head `38bff700b8bab0a625dbf55cd723cbe91542465b`, conclusion success, artifact `10374632492` / SHA-256 `f103da99eeb44819526eaf8795e565b5f8cbc9053843d6006722c3092a215813`.
+
+# 2026-09-14 — 휴대폰 성장 화면: 현재 퀘스트·호문쿨루스 판단·커비 등급·장부를 한 화면에서
+
+- **신규**: `runtime/public/growth-view.mjs`를 추가하고 기존 폰/PWA 조종석(`app.js`/`index.html`)에 "성장" 탭으로 연결했다. 단일 인수 시나리오가 요구한 한 화면 구성 — 현재 퀘스트, 호문쿨루스가 그 퀘스트를 고른 이유(우세 동기 + 성공 기준), 커비의 기능·코드 스킬과 실제 E→D→C→B→A→S 등급, 소유자 확인이 필요한(멈춤 상태) 목표, 부·명예·인지도 장부, 전체 멈춤 상태 — 를 한 화면에서 확인한다.
+- 다른 `*-view.mjs`와 동일하게 순수 표시 모듈이다(`createGrowthView({root,onNavigate,storage})` → `{updateState(state,questData),reset(),destroy()}`) — 자체 fetch나 변경 요청이 없다. 표시하는 모든 값은 이미 존재하는 `/api/state`·`/api/quests` 응답에서만 가져오며, 지어낸 레벨·경험치·퍼센트는 없다. 유일한 클라이언트 계산인 "새로 확인"/"승급" 배지도 이 브라우저가 그 기능 id에 대해 마지막으로 본 등급과의 실제 비교일 뿐, 추정한 최근성 기준이 아니다(앱이 이미 쓰던 기기별 scoped storage에 저장).
+- `runtime/server.mjs`의 기본 거부 정적 파일 허용 목록에 `/growth-view.mjs`를 명시적으로 추가했다.
+- **자동시험**: `runtime/test/growth-ui.test.mjs` — 기존 `*-ui.test.mjs` 관례와 동일한 jsdom 단위 시험 8건(실제 퀘스트/결정 표시와 정직한 빈 상태, 동기별 사유, 스킬 이름 해석과 등급 배지, 새로 확인/승급 배지의 실제 diff 로직, 멈춤 퀘스트 처리, XSS 안전한 장부 표시, 전체 멈춤 표시, 고정 픽셀 폭을 쓰지 않는지 확인 — 이 컨테이너에서는 실제 물리 폰·브라우저 뷰포트 검증이 불가능하므로 좁은 화면을 실제로 깨뜨릴 수 있는 유일한 요소인 고정폭 하드코딩을 대신 검사했다) + 실제 HTTP API 왕복 시험 1건(퀘스트 실행 → 실제 성과 기록 → 커비의 `ledger-digest` 자동 흡수 → 실제 `/api/state`·`/api/quests` 응답으로 화면 렌더 → **실제 서버 재시작** 후에도 같은 성장 증거가 그대로 표시되는지 확인).
+- 전체 회귀: 로컬 520개 중 492 통과, 21 실패(기존과 동일한 QuickJS/WASM 샌드박스·`URLPattern` 환경 한계), 7 건너뜀 — 신규 회귀 없음. (`apps/controller`의 devDependency인 jsdom을 로컬에 설치해 보니 그동안 여기서 "환경 한계"로 실패해 온 다른 UI 시험 4개도 모두 통과했다 — 이 커밋의 신규 시험과 같은 결과다.)
+- 이 커밋에 대한 실제 GitHub Actions 검증: run `34908740990`, head `aa592fba3752ac19b000fddb66729904570a2107`, conclusion success, artifact `10373872176` / SHA-256 `23c3ef22307543967e08505ea60152b7d4a458234aaa2115a683efc7c4a3a2aa`. 네트워크 없는 읽기 전용 비루트 컨테이너에서 전체 회귀·개발 워커 시험이 통과했다.
+
 # 2026-09-14 — 커비 자동 흡수 첫 조각: 실제 갭 탐지 → 원본 가져오기 → 격리 시험 → 활성화
 
 - **신규**: `runtime/lib/kirby.mjs`. 지금까지 모든 기능은 소유자가 직접 `import`→`verify`→`activate`를 호출해야 등록됐다(부팅 시 기본 등록되는 `evidence-gap-brief`/`failure-triage` 2종 제외). 이번 조각은 커비가 **실제 근거**를 보고 스스로 새 기능을 흡수하게 한다 — 목표 문장이나 모델 호출로 후보를 지어내지 않는다: 갭은 오직 이미 저장된 부·명예·인지도 장부에 숫자 측정값을 가진 `outcome` 기록이 존재하고, 그것을 정리해 줄 저장소에 이미 검토된 원본(`runtime/capabilities/ledger-digest.json`, 필터·정렬·행 제한만 실행하는 선언형 기능)이 아직 활성화되지 않았을 때만 성립한다.
