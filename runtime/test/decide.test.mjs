@@ -57,6 +57,15 @@ test('isDecideRequest also recognizes natural conversational phrasing, not just 
   assert.equal(isDecideRequest('우선순위 좀 정해줄래?'), true);
 });
 
+test('isDecideRequest recognizes the 뭘 contraction ("무엇을"), not just 뭐/무엇', () => {
+  assert.equal(isDecideRequest('뭘 먼저 해야 돼?'), true);
+  assert.equal(isDecideRequest('뭘 먼저 하면 좋을까?'), true);
+  assert.equal(isDecideRequest('오늘 뭘 먼저 하지?'), true, 'a casual self-question form, intentionally supported');
+  assert.equal(isDecideRequest('뭘 좋아해?'), false, 'ordinary non-priority use of 뭘 - no 부터/먼저');
+  assert.equal(isDecideRequest('뭘 먼저 하지 마세요'), false, '하지 starting a negation ("don\'t"), not the question form - only 하지? counts');
+  assert.equal(isDecideRequest('뭘 먹었어?'), false);
+});
+
 test('isDecideRequest stays narrow: ordinary conversation using similar words does not trigger it', () => {
   assert.equal(isDecideRequest('저녁 뭐 먹을지 나중에 정해줄게'), false, 'no 부터/먼저 - not a "what first" question');
   assert.equal(isDecideRequest('모델을 호출해'), false);

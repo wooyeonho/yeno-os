@@ -49,7 +49,13 @@ export function decideQuest(state, at) {
 //   - asking what's most important/urgent right now ("네가 봤을 때 지금 제일
 //     중요한 게 뭐야?") - a judgment question, not an imperative
 //   - "뭐부터/뭘 먼저 ...하면/할까" - asking what to start with
-//     ("오늘 뭐부터 하면 돼?")
+//     ("오늘 뭐부터 하면 돼?", "뭘 먼저 해야 돼?") - "뭘" is the contracted
+//     "무엇을", a distinct Hangul syllable from "뭐", not a substring of it,
+//     so it needs its own place in the alternation, not just "뭐|무엇".
+//     "...하지?" (a casual self-question, "오늘 뭘 먼저 하지?") is included
+//     too, but only when immediately followed by "?" - bare "하지" alone
+//     also starts negation ("하지 마"/"하지 않다"), which is the opposite of
+//     asking what to do, so this only fires on the unambiguous question form.
 //   - "알아서" (use your own judgment) paired with a decision verb
 //     ("알아서 우선순위 잡아봐")
 const DECIDE_PHRASES = [
@@ -58,7 +64,7 @@ const DECIDE_PHRASES = [
   /다음\s*(?:할|해야\s*할)\s*일.*(?:정해|골라)/,
   /우선순위.*(?:정해|잡아|알려|골라|판단)/,
   /(?:제일|가장)\s*(?:중요한|급한|시급한)(?:\s*(?:게|것|일|목표))?.*(?:뭐|뭔|무엇)/,
-  /(?:뭐|무엇)(?:를)?\s*(?:부터|먼저).{0,10}(?:하면|할까|해야|좋을까)/,
+  /(?:뭐|뭘|무엇)(?:를)?\s*(?:부터|먼저).{0,10}(?:하면|할까|해야|좋을까|하지\s*\?)/,
   /알아서.*(?:정해|잡아|골라|판단)/,
 ];
 export function isDecideRequest(text) {
