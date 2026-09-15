@@ -1,5 +1,6 @@
 import {rankMotivatedCandidates} from './motivation.mjs';
-import {planQuest, publicQuest, validateQuestState, SYNTHESIS_VERSION, SYNTHESIS_ARCHETYPES, SYNTHESIS_RISK_CLASS, synthesisFingerprint, synthesisQuestId} from './quests.mjs';
+import {planQuest, publicQuest, validateQuestState, SYNTHESIS_VERSION, SYNTHESIS_ARCHETYPES, SYNTHESIS_ARCHETYPE_RISK, synthesisApprovalRequired, synthesisFingerprint, synthesisQuestId} from './quests.mjs';
+import {detectLedgerDigestGap} from './kirby.mjs';
 
 // Homunculus Autonomous Goal Synthesis - first production-safe slice.
 //
@@ -13,7 +14,14 @@ import {planQuest, publicQuest, validateQuestState, SYNTHESIS_VERSION, SYNTHESIS
 // goal grants no execution authority - the Quest sits in `proposed` exactly
 // like an owner-written one until the owner (or the existing decide/run path)
 // starts it. Emergency stop: observation is allowed, persistence is refused.
+// Owner priority: while any owner-written quest is still `proposed`, nothing
+// autonomous is persisted at all (outcome `owner_quest_pending`).
 export {SYNTHESIS_ARCHETYPES, SYNTHESIS_VERSION};
+// Archetypes whose observer is enabled in this slice. The other three stay in
+// the schema but produce nothing until a durable signal exists for them:
+//   reduce-owner-intervention - two unrelated owner pauses are not a pattern;
+//   refresh-evidence          - no stored staleness signal; no invented age threshold.
+export const ENABLED_ARCHETYPES = Object.freeze(['repair', 'verify', 'acquire-capability', 'measure-outcome']);
 export const MAX_AUTONOMOUS_PROPOSED = SYNTHESIS_ARCHETYPES.length;
 export const AUTONOMOUS_KIND = 'autonomous-goal';
 
@@ -68,18 +76,22 @@ const OBSERVERS = Object.freeze({
       reason: `산출물이 기록된 완료 목표 ${unmeasured.length}건에 성과 기록이 없습니다.`,
     };
   },
-  'acquire-capability'(state) {
-    const inactive = (state.capabilities?.entries ?? []).filter(entry => !entry.activeHash && entry.versions?.length);
-    if (!inactive.length) return null;
-    const list = ids(inactive.map(entry => entry.id));
+  // Demand-backed only: reuses Kirby's own gap detector, which requires real
+  // measured ledger outcomes AND the reviewed manifest not yet active. An
+  // inactive capability nobody has demonstrated a need for yields nothing.
+  'acquire-capability'(state, {manifests}) {
+    const gaps = manifests.map(manifest => ({manifest, gap: detectLedgerDigestGap(state, manifest)})).filter(item => item.gap);
+    if (!gaps.length) return null;
+    const measured = ids((state.outcomes ?? []).filter(o => typeof o.value === 'number' && o.value >= 0).map(o => o.id));
+    const list = ids(gaps.map(item => item.manifest.id));
     return {
-      kind: 'inactive_capability',
-      references: inactive.map(entry => ({type: 'capability', id: entry.id})).sort((a, b) => a.id.localeCompare(b.id)),
-      values: {inactiveCapabilities: inactive.length, versions: Object.fromEntries(inactive.map(entry => [entry.id, ids(entry.versions.map(v => v.hash))]))},
-      signals: {knowledgeGap: 1, assetGap: Math.min(inactive.length, 8), estimatedCalls: 0},
-      goal: `가져왔지만 활성화되지 않은 기능 ${inactive.length}종의 시험 결과와 활성화 조건을 정리한다 (기능 ID: ${listIds(list)})`,
-      successCriterion: '각 기능의 저장된 원본·시험 기록을 읽어 활성화를 막는 정확한 조건과 안전한 다음 단계를 산출물 1개로 기록한다. 자동 활성화는 하지 않는다.',
-      reason: `기능 레지스트리에 activeHash가 없는 기능 ${inactive.length}종이 있습니다.`,
+      kind: 'demanded_capability_inactive',
+      references: [...list.map(id => ({type: 'capability', id})), ...measured.map(id => ({type: 'outcome', id}))],
+      values: {capabilities: list, measuredOutcomes: measured.length},
+      signals: {knowledgeGap: 1, assetGap: Math.min(measured.length, 8), estimatedCalls: 0},
+      goal: `측정값이 있는 성과 기록 ${measured.length}건이 요구하는 미활성 기능 ${list.length}종의 흡수 조건을 정리한다 (기능 ID: ${listIds(list)})`,
+      successCriterion: '각 기능의 저장된 원본·시험 기록과 그 기능이 정리할 성과 기록을 대조해 활성화를 막는 조건과 안전한 다음 단계를 산출물 1개로 기록한다. 활성화는 소유자 승인 후에만 진행한다.',
+      reason: gaps.map(item => item.gap.reason).join(' '),
     };
   },
   'refresh-evidence'(state) {
@@ -121,12 +133,15 @@ export function evidenceFingerprint(archetype, evidence) {
   return synthesisFingerprint(archetype, evidence);
 }
 
+const ownerProposedQuests = state => (state.quests ?? []).filter(quest => quest.status === 'proposed' && !quest.synthesis);
+
 // Pure. Throws when the state itself is not a valid Quest state - unverifiable
-// evidence must fail closed instead of producing a goal.
-export function observeEvidenceGaps(state) {
+// evidence must fail closed instead of producing a goal. `manifests` are the
+// repository-reviewed Kirby manifests the runtime already loads.
+export function observeEvidenceGaps(state, {manifests = []} = {}) {
   validateQuestState(state);
-  return SYNTHESIS_ARCHETYPES.flatMap(archetype => {
-    const observed = OBSERVERS[archetype](state);
+  return ENABLED_ARCHETYPES.flatMap(archetype => {
+    const observed = OBSERVERS[archetype](state, {manifests});
     if (!observed) return [];
     const evidence = [{kind: observed.kind, references: observed.references, values: observed.values}];
     return [{archetype, evidence, sourceEvidenceFingerprint: synthesisFingerprint(archetype, evidence), ...observed}];
@@ -137,8 +152,8 @@ const autonomousQuests = state => (state.quests ?? []).filter(quest => quest.syn
 
 // Pure. Ranks every observed gap through the existing Seven Drives engine and
 // explains, per gap, whether a Quest already exists for exactly this evidence.
-export function previewAutonomousGoals(state, at) {
-  const gaps = observeEvidenceGaps(state);
+export function previewAutonomousGoals(state, at, options = {}) {
+  const gaps = observeEvidenceGaps(state, options);
   const ranked = rankMotivatedCandidates(state, gaps.map(gap => ({
     action: {kind: AUTONOMOUS_KIND, taskKey: `${AUTONOMOUS_KIND}:${gap.archetype}:${gap.sourceEvidenceFingerprint}`},
     goal: gap.goal, successCriterion: gap.successCriterion, signals: gap.signals, gap,
@@ -149,21 +164,25 @@ export function previewAutonomousGoals(state, at) {
     candidates: ranked.map(candidate => ({
       archetype: candidate.gap.archetype, evidence: candidate.gap.evidence, reason: candidate.gap.reason,
       sourceEvidenceFingerprint: candidate.gap.sourceEvidenceFingerprint, goal: candidate.goal, successCriterion: candidate.successCriterion,
-      riskClass: SYNTHESIS_RISK_CLASS, approvalRequired: false, motivation: candidate.motivation,
+      riskClass: SYNTHESIS_ARCHETYPE_RISK[candidate.gap.archetype], approvalRequired: synthesisApprovalRequired(SYNTHESIS_ARCHETYPE_RISK[candidate.gap.archetype]), motivation: candidate.motivation,
       existingQuestId: existing.find(q => q.synthesis.sourceEvidenceFingerprint === candidate.gap.sourceEvidenceFingerprint)?.id ?? null,
     })),
     autonomousQuests: existing.map(q => ({id: q.id, status: q.status, archetype: q.synthesis.archetype, sourceEvidenceFingerprint: q.synthesis.sourceEvidenceFingerprint})),
+    ownerProposedQuestIds: ownerProposedQuests(state).map(q => q.id),
   };
 }
 
 // Decides what ONE Quest (if any) this observation justifies. Returns a plan;
 // it never mutates `state`. `persist` is only true when the caller may append
 // `plan.quest` to state.quests through the normal Quest contract.
-export function synthesizeAutonomousGoal(state, at, {emergencyStop = false} = {}) {
-  const preview = previewAutonomousGoals(state, at);
+export function synthesizeAutonomousGoal(state, at, {emergencyStop = false, manifests = []} = {}) {
+  const preview = previewAutonomousGoals(state, at, {manifests});
   const existing = autonomousQuests(state);
   const base = {...preview, persist: false, quest: null};
   if (!preview.candidates.length) return {...base, outcome: 'no_actionable_evidence'};
+  // Owner priority is absolute, not a score: an owner-written proposed quest
+  // means the owner has already said what matters. Preview stays visible.
+  if (preview.ownerProposedQuestIds.length) return {...base, outcome: 'owner_quest_pending'};
   // Highest-ranked gap first. Evidence that already has its quest is answered
   // with that quest; an archetype whose earlier quest is still `proposed` is
   // not re-proposed on new evidence (bounded accumulation: at most one open
@@ -188,7 +207,7 @@ function buildQuest(state, candidate, at) {
     synthesis: {
       version: SYNTHESIS_VERSION, archetype: candidate.archetype, evidence: structuredClone(candidate.evidence),
       sourceState: {revision: Number.isSafeInteger(state.revision) ? state.revision : 0, quests: (state.quests ?? []).length, jobs: (state.jobs ?? []).length},
-      reason: candidate.reason, riskClass: SYNTHESIS_RISK_CLASS, approvalRequired: false,
+      reason: candidate.reason, riskClass: candidate.riskClass, approvalRequired: candidate.approvalRequired,
       autonomousGoalId: id, sourceEvidenceFingerprint: candidate.sourceEvidenceFingerprint,
       motivation: structuredClone(candidate.motivation), createdAt: at,
     },

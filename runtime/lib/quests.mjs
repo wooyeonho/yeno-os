@@ -31,8 +31,13 @@ const MAX_QUESTS=1000,MAX_OUTCOMES=5000;
 // is recomputed on every load so a tampered or stale provenance fails closed.
 export const SYNTHESIS_VERSION=1;
 export const SYNTHESIS_ARCHETYPES=Object.freeze(['repair','verify','acquire-capability','refresh-evidence','measure-outcome','reduce-owner-intervention']);
+export const SYNTHESIS_RISK_CLASSES=Object.freeze(['local-reversible','capability-change']);
 export const SYNTHESIS_RISK_CLASS='local-reversible';
-const SYNTHESIS_REFERENCE_TYPES=['job','quest','capability','project'];
+// Risk per archetype; approvalRequired follows the class. Observers disabled
+// for this slice keep their entry so stored quests from a later slice validate.
+export const SYNTHESIS_ARCHETYPE_RISK=Object.freeze({repair:'local-reversible',verify:'local-reversible','measure-outcome':'local-reversible','refresh-evidence':'local-reversible','acquire-capability':'capability-change','reduce-owner-intervention':'local-reversible'});
+export const synthesisApprovalRequired=riskClass=>riskClass!=='local-reversible';
+const SYNTHESIS_REFERENCE_TYPES=['job','quest','capability','project','outcome'];
 const SYNTHESIS_KEYS='approvalRequired,archetype,autonomousGoalId,createdAt,evidence,motivation,reason,riskClass,sourceEvidenceFingerprint,sourceState,version';
 function canonical(value){
   if(Array.isArray(value))return value.map(canonical);
@@ -48,7 +53,7 @@ export function synthesisQuestId(fingerprint){
 }
 function validateSynthesis(q){
   const p=q.synthesis;
-  if(!object(p)||Object.keys(p).sort().join()!==SYNTHESIS_KEYS||p.version!==SYNTHESIS_VERSION||!SYNTHESIS_ARCHETYPES.includes(p.archetype)||!validText(p.reason,2000)||p.riskClass!==SYNTHESIS_RISK_CLASS||p.approvalRequired!==false||!iso(p.createdAt)||p.createdAt!==q.createdAt)throw new Error('Invalid quest synthesis provenance');
+  if(!object(p)||Object.keys(p).sort().join()!==SYNTHESIS_KEYS||p.version!==SYNTHESIS_VERSION||!SYNTHESIS_ARCHETYPES.includes(p.archetype)||!validText(p.reason,2000)||p.riskClass!==SYNTHESIS_ARCHETYPE_RISK[p.archetype]||p.approvalRequired!==synthesisApprovalRequired(p.riskClass)||!iso(p.createdAt)||p.createdAt!==q.createdAt)throw new Error('Invalid quest synthesis provenance');
   if(!Array.isArray(p.evidence)||!p.evidence.length||p.evidence.length>16)throw new Error('Invalid quest synthesis evidence');
   for(const item of p.evidence){
     if(!object(item)||Object.keys(item).sort().join()!=='kind,references,values'||!validText(item.kind,80)||!/^[a-z_]+$/.test(item.kind)||!Array.isArray(item.references)||!item.references.length||item.references.length>1000||!object(item.values)||JSON.stringify(item.values).length>20000)throw new Error('Invalid quest synthesis evidence');
