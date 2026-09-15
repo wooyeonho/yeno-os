@@ -1,3 +1,16 @@
+# 2026-09-15 — 실제 브라우저 모바일 viewport 검증이 실제 버그 2건을 잡아냈다
+
+- **지적된 문제**: `growth-ui.test.mjs`의 "생성된 HTML에 고정 px 폭이 없다" 검사는 실제 viewport 시험이 아니었다 — jsdom에는 CSS 레이아웃 엔진이 없어, 실제 `cockpit.css`(고정 픽셀 그리드 트랙과 실제 `@media(max-width:650px)` 분기점을 쓴다)가 실제로 좁은 휴대폰 화면 안에 성장 화면을 담아내는지 확인할 수 없었다.
+- **신규**: `scripts/verify-mobile-viewport.mjs` — 실제 Chromium(Playwright), 실제 서버, 실제 `index.html`/`app.js`/`growth-view.mjs`/`cockpit.css`를 실제 **360×800**·**412×915** 뷰포트에서 확인한다. 실제 페어링 폼으로 로그인하고, 실제 목표를 저장하고, 실제 성장 탭을 열어 가로 스크롤 없음, 모든 필수 영역의 실제 렌더 영역 존재, 세로 스크롤로 도달 가능, 전체 멈춤 버튼의 실제 터치 영역 크기, 650px 분기점이 실제로 계산된 padding을 바꾸는지까지 확인한다.
+- 이 시험이 `growth-view.mjs` 자체의 레이아웃을 검사하기도 전에 실제 버그 2건을 찾아냈다:
+  1. **이 브랜치와 무관한 기존 버그**: `autopilot-view.mjs`가 `autopilot-view-engine.mjs`를 import하는데, 이 파일이 `server.mjs`의 기본 거부 정적 파일 허용 목록에 한 번도 등록된 적이 없었다 — 실제 브라우저는 이 파일에서 404를 받고 전체 동적 import 체인이 실패해, 앱 전체가 페어링 화면을 넘어서지 못했다. 기존 jsdom 기반 UI 시험(`scripts/verify-web-ui.mjs`)은 `app.js`를 esbuild로 먼저 번들링해 이 import를 인라인시키므로 실제 HTTP 요청이 전혀 발생하지 않아 지금까지 발견되지 못했다. **수정 완료.**
+  2. **이번 브랜치의 버그**: `growth-view.mjs`의 "지금 하는 일" 영역이 `.cockpit-hero`(자동 운영 탭의 core-orbit 시각 요소와 짝을 이루는, 고정 290px 트랙을 가진 2열 그리드)를 단일 콘텐츠에 재사용했다 — 그리드 항목이 하나뿐이면 그 항목이 첫 트랙 폭에 갇힌다. 같은 화면의 다른 영역이 이미 쓰던 단순 박스 클래스 `.cockpit-mind`로 바꿔 **수정 완료.**
+- 실제 red→green 사이클로 확인했다: `.cockpit-hero` 수정을 되돌리고 시험을 다시 실행하면 "`.cockpit-hero`를 재사용하면 안 된다"는 명시적 단언에서 실패하고, 수정을 복원하면 다시 통과한다.
+- 이 회귀 방지의 빠른 절반(`.cockpit-hero`가 이 화면 마크업에 다시는 나타나지 않는지 확인하는 결정적 검사)은 `runtime/test/growth-ui.test.mjs`에도 추가해 기존의 강화된 Docker CI 샌드박스 안에서도 항상 실행되도록 했다. 실제 브라우저 스크립트 자체는 그 샌드박스(`workers/developer/Verification.Dockerfile`, `--network none --cap-drop ALL --read-only`)에서 실행하지 않는다 — 그 샌드박스에는 브라우저 바이너리가 없고 시험 단계에는 그것을 내려받을 네트워크도 없다. 이 저장소의 다른 CI 샌드박스 UI 검사들이 이미 실제 브라우저 대신 jsdom을 쓰는 이유, 그리고 `apps/controller/verify-ui.mjs`가 마찬가지로 Docker 샌드박스 밖에서 실행되는 이유와 같다. 그 특정 강화 이미지에 실제 브라우저를 넣는 것은 별도의, 보안과 직결된 인프라 결정(이미지 크기 증가, `--cap-drop ALL`/`--read-only`와의 호환성 미검증 — 이 조합을 시험할 Docker 데몬이 이 세션에는 없었다 — 그리고 이 프로젝트 자신이 선언한 능력 목록이 이미 `browserAutomation:false`라고 명시하고 있다는 점)이므로 이번 커밋에서 임의로 내리지 않았다. `npm run verify:mobile`로 직접 실행한다.
+- `apps/controller`의 devDependency로 `playwright`를 추가했다(기존 `jsdom`과 같은 위치). `apps/controller/package-lock.json`은 `npm`으로 재생성했다(직접 편집하지 않음).
+- 전체 회귀: 로컬 521개 중 493 통과, 21 실패(이전과 동일한 QuickJS/WASM·`URLPattern` 환경 한계), 7 건너뜀 — 신규 회귀 없음. 기존 CI 샌드박스 UI 검사(`verify-web-ui.mjs`, `verify-research-ui.mjs`) 모두 정적 파일 허용 목록 수정 이후에도 그대로 통과.
+- 이 커밋에 대한 실제 GitHub Actions 검증: run `34911108907`, head `38bff700b8bab0a625dbf55cd723cbe91542465b`, conclusion success, artifact `10374632492` / SHA-256 `f103da99eeb44819526eaf8795e565b5f8cbc9053843d6006722c3092a215813`.
+
 # 2026-09-14 — 휴대폰 성장 화면: 현재 퀘스트·호문쿨루스 판단·커비 등급·장부를 한 화면에서
 
 - **신규**: `runtime/public/growth-view.mjs`를 추가하고 기존 폰/PWA 조종석(`app.js`/`index.html`)에 "성장" 탭으로 연결했다. 단일 인수 시나리오가 요구한 한 화면 구성 — 현재 퀘스트, 호문쿨루스가 그 퀘스트를 고른 이유(우세 동기 + 성공 기준), 커비의 기능·코드 스킬과 실제 E→D→C→B→A→S 등급, 소유자 확인이 필요한(멈춤 상태) 목표, 부·명예·인지도 장부, 전체 멈춤 상태 — 를 한 화면에서 확인한다.
