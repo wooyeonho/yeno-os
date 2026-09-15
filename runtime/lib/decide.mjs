@@ -41,7 +41,7 @@ export function decideQuest(state, at) {
 // normal voice path) is always safe.
 //
 // The first three patterns are explicit imperatives ("정해줘"/"골라줘"/"알려줘"
-// aimed at a named target like "가장 먼저 할 일" or "다음 할 일"). The next four
+// aimed at a named target like "가장 먼저 할 일" or "다음 할 일"). The rest
 // cover the same request phrased the way an owner actually talks to an
 // assistant rather than issuing a command - conversational forms that never
 // use "정해"/"골라" at all:
@@ -58,15 +58,38 @@ export function decideQuest(state, at) {
 //     asking what to do, so this only fires on the unambiguous question form.
 //   - "알아서" (use your own judgment) paired with a decision verb
 //     ("알아서 우선순위 잡아봐")
+//
+// An independent review (Devin) caught two real false-positive classes here:
+//   1. "알아서/우선순위 ... 판단" matched even when "판단" was actually negated
+//      ("알아서 판단하지 마" - "don't decide" - the opposite of delegating a
+//      decision), because "판단" is a bare stem also embedded inside its own
+//      negation "판단하지". "정해/잡아/골라" don't have this problem - they are
+//      already conjugated forms that don't appear inside their own "-지 않다/
+//      말다" negation stems - so only "판단"'s negated forms need excluding.
+//   2. The "제일/가장 중요한 게 뭐야?" form used "게"/"것" - generic pronouns
+//      that fit any topic at all ("요리에서 가장 중요한 게 뭐야?" is a cooking
+//      question, not a priority one). "일"/"목표"/"우선순위" are already
+//      task-specific nouns and need no further check; the generic "게"/"것"
+//      form is now only accepted when the sentence also names real work
+//      context (지금/오늘/우선순위/할 일/해야 할/목표) somewhere.
 const DECIDE_PHRASES = [
   /가장\s*먼저.*(?:정해|골라|알려)/,
   /지금\s*(?:뭐|무엇).*(?:할지|해야).*(?:정해|알려)/,
   /다음\s*(?:할|해야\s*할)\s*일.*(?:정해|골라)/,
-  /우선순위.*(?:정해|잡아|알려|골라|판단)/,
-  /(?:제일|가장)\s*(?:중요한|급한|시급한)(?:\s*(?:게|것|일|목표))?.*(?:뭐|뭔|무엇)/,
   /(?:뭐|뭘|무엇)(?:를)?\s*(?:부터|먼저).{0,10}(?:하면|할까|해야|좋을까|하지\s*\?)/,
-  /알아서.*(?:정해|잡아|골라|판단)/,
 ];
+const DECIDE_VERB_NEGATED = /판단(?:하지|치)\s*(?:마|말|않)/;
+const PRIORITY_NAMED = /우선순위.*(?:정해|잡아|알려|골라|판단)/;
+const IMPORTANCE_SPECIFIC = /(?:제일|가장)\s*(?:중요한|급한|시급한)\s*(?:일|목표|우선순위).*(?:뭐|뭔|무엇)/;
+const IMPORTANCE_GENERIC = /(?:제일|가장)\s*(?:중요한|급한|시급한)\s*(?:게|것).*(?:뭐|뭔|무엇)/;
+const WORK_CONTEXT = /지금|오늘|우선순위|할\s*일|해야\s*할|목표/;
+const DELEGATE = /알아서.*(?:정해|잡아|골라|판단)/;
 export function isDecideRequest(text) {
-  return typeof text === 'string' && DECIDE_PHRASES.some(pattern => pattern.test(text));
+  if (typeof text !== 'string') return false;
+  if (DECIDE_PHRASES.some(pattern => pattern.test(text))) return true;
+  if (PRIORITY_NAMED.test(text) && !DECIDE_VERB_NEGATED.test(text)) return true;
+  if (IMPORTANCE_SPECIFIC.test(text)) return true;
+  if (IMPORTANCE_GENERIC.test(text) && WORK_CONTEXT.test(text)) return true;
+  if (DELEGATE.test(text) && !DECIDE_VERB_NEGATED.test(text)) return true;
+  return false;
 }
