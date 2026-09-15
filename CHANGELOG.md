@@ -1,3 +1,13 @@
+# 2026-09-14 — 커비 자동 흡수 첫 조각: 실제 갭 탐지 → 원본 가져오기 → 격리 시험 → 활성화
+
+- **신규**: `runtime/lib/kirby.mjs`. 지금까지 모든 기능은 소유자가 직접 `import`→`verify`→`activate`를 호출해야 등록됐다(부팅 시 기본 등록되는 `evidence-gap-brief`/`failure-triage` 2종 제외). 이번 조각은 커비가 **실제 근거**를 보고 스스로 새 기능을 흡수하게 한다 — 목표 문장이나 모델 호출로 후보를 지어내지 않는다: 갭은 오직 이미 저장된 부·명예·인지도 장부에 숫자 측정값을 가진 `outcome` 기록이 존재하고, 그것을 정리해 줄 저장소에 이미 검토된 원본(`runtime/capabilities/ledger-digest.json`, 필터·정렬·행 제한만 실행하는 선언형 기능)이 아직 활성화되지 않았을 때만 성립한다.
+  - `detectLedgerDigestGap(state, manifest)`: 숫자·음수 아닌 측정값을 가진 실제 outcome 개수를 근거로 갭을 정직하게 보고한다(이미 활성화됐으면 `null`).
+  - `autoAcquireCapability(registry, manifest)`: 기존 `capabilities.mjs`의 `importCapability`→`verifyCapability`(모든 fixture를 실제로 재실행하는 결정적·네트워크 없는 격리 시험)→`activateCapability`를 그대로 재사용한다. fixture 시험에 불합격하면 그 버전은 가져온 채 비활성 상태로 정직하게 남고(시도했다는 기록은 지워지지 않는다) 활성화되지 않는다 — 이 비활성 상태 자체가 복구 경로이며, 별도의 롤백 처리가 필요 없다.
+- `runtime/server.mjs`: `POST /api/outcomes`(실제 장부 근거가 생기는 시점) 직후 `kirbyAutoAcquire()`를 호출한다. 흡수에 성공하거나 실패해도 `event()` 로그와 응답의 `kirbyAcquisition` 필드로 정직하게 보고한다. `capabilityCandidates()`에도 `ledger-digest` 후보를 추가해, 활성화된 뒤에는 `failure-triage`/`evidence-gap-brief`와 동일하게 자율 루프의 동기 채점 대상이 되도록 `runtime/lib/autopilot.mjs`의 허용 목록에도 추가했다.
+- **자동시험**: `runtime/test/kirby.test.mjs` — 순수 함수 단위 시험 6건(갭 없음/있음, 성공 흡수, fixture 불합격 시 비활성 유지, 흡수 후 멱등성) + 실제 HTTP API로 처음부터 끝까지 왕복하는 통합 시험 1건(퀘스트 실행 → 실제 outcome 기록 → 커비가 자동으로 `ledger-digest`를 가져오고 시험하고 활성화 → 그 기능을 실제로 실행 → 성장 등급 `D` 확인 → 두 번째 outcome은 이미 활성화돼 있어 흡수가 다시 일어나지 않음 확인 → **실제 서버 재시작** 후에도 활성 상태와 등급이 그대로 유지).
+- 전체 회귀: 로컬 498개(기존 491 + 신규 7) 중 466 통과, 25 실패(이전과 완전히 동일한 사전 환경 한계 — QuickJS/WASM 샌드박스, 실제 브라우저가 필요한 UI DOM 시험, `URLPattern` 전역 누락), 7 건너뜀 — 신규 회귀 없음.
+- 이 커밋에 대한 실제 GitHub Actions 검증: run `34881793245`, head `f0be513218ee4b02c81667f36cdacb4aff107802`, conclusion success, artifact `10362748462` / SHA-256 `095dcb02e9b0353e3d736517f0869474868d0e86707ca801fa17c9a39e73c54d`. 네트워크 없는 읽기 전용 비루트 컨테이너에서 전체 회귀·개발 워커 시험이 통과했다.
+
 # 2026-09-14 — 휴대폰 단일 인수 시나리오: "정해줘" 음성 명령이 실제 호문쿨루스 판단·자비스 실행·커비 재사용·성장 등급·재시작 보존까지 왕복하는 자동시험
 
 - **신규**: `runtime/lib/decide.mjs`의 `decideQuest(state, at)`가 "지금 가장 먼저 해야 할 일을 정해줘" 음성 명령을 실제 호문쿨루스 일곱 동기 채점(`motivation.mjs`의 `rankMotivatedCandidates`, 기존 자율 루프가 쓰던 바로 그 함수)에 연결한다. 후보는 오직 이미 `POST /api/quests`로 저장된 `status:'proposed'` 목표뿐이다 — 없는 목표를 지어내지 않는다. 신호는 목표 레코드 자신의 검증된 필드에서만 뽑는다: 결과물이 아직 없으면(`assetGap`), 저장된 기준값이 기본값(`기준값 미측정`)이면(`verificationGap`), 호출 상한 대비 예상 호출 비율(`estimatedCalls`).

@@ -1,3 +1,7 @@
+## 2026-09-14 커비 자동 흡수 — 첫 조각만 구현됨 (`ledger-digest` 기능 하나)
+
+`runtime/lib/kirby.mjs`가 소유자의 수동 `import`/`verify`/`activate` 없이도 커비가 스스로 새 기능을 흡수하게 한다. 실제로 저장된 부·명예·인지도 장부의 숫자 측정값 있는 `outcome`이 존재하고, 이미 저장소에 검토돼 있는 원본(`runtime/capabilities/ledger-digest.json`, 필터·정렬·행 제한만 하는 선언형 기능)이 아직 활성화되지 않았을 때만 흡수를 시도한다 — 목표 문장이나 모델 호출로 후보를 지어내지 않는다. 시도는 `capabilities.mjs`의 기존 `importCapability`→`verifyCapability`(fixture 재실행, 결정적·네트워크 없음)→`activateCapability`를 그대로 통과해야 하며, fixture 시험에 불합격하면 비활성 상태로 정직하게 남고(시도 기록은 지워지지 않는다) 절대 활성화되지 않는다 — 이 비활성 유지 자체가 복구 경로다. `POST /api/outcomes` 직후 자동 트리거되며, 활성화된 뒤에는 `capabilityCandidates()`/`autopilot.mjs`의 허용 목록에 들어가 `failure-triage`/`evidence-gap-brief`와 동일하게 동기 채점 대상이 된다. 아래 "휴대폰 단일 인수 시나리오" 항목의 "능력이 없을 때 커비가 자동으로 후보를 탐색·등록하는 것"은 이 커밋 이전 상태를 기록한 것이며, 지금은 `ledger-digest` 한 종류에 대해서만 그 자동 탐색·등록이 실제로 구현돼 있다.
+
 ## 2026-09-14 휴대폰 단일 인수 시나리오 — "정해줘" 왕복이 자동시험으로 통과함 (전체는 아님)
 
 `runtime/lib/decide.mjs`가 음성 "지금 가장 먼저 해야 할 일을 정해줘"를 실제 호문쿨루스 일곱 동기 채점에 연결한다 — 오직 이미 저장된 `status:'proposed'` 목표만 후보로 삼고, 없으면 지어내지 않는다(`decideQuest`가 `null` 반환, `/api/voice`는 일반 대화로 자연 대체). `POST /api/voice`가 이 문구를 감지하면 `decideAndRunQuest()`로 실제 `runQuest()`를 실행하고 선택 이유(`decision.announcement`)를 함께 돌려주며, `voice-view.mjs`가 결과 도착 전에 그 이유를 먼저 읽는다. `runtime/test/phone-acceptance.test.mjs`가 목표 저장 → 정해줘 음성 → 자비스 실행 → 커비 재사용(선언형 기능, 서로 다른 입력 2건) → 성장 등급 반영 → 장부 기록 → **실제 재시작 후 전부 보존**까지 실제 HTTP API로 자동 확인한다.

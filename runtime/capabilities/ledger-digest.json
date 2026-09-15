@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "source": {
+    "kind": "native",
+    "author": "BLACKHOLE",
+    "license": "Owner project use",
+    "url": ""
+  },
+  "id": "ledger-digest",
+  "name": "부·명예·인지도 원장 요약",
+  "description": "실제 기록된 성과 원장에서 숫자로 측정한 항목만 골라 크기순으로 정리합니다.",
+  "inputSchema": {
+    "fields": {
+      "ledger": "string",
+      "summary": "string",
+      "value": "number",
+      "unit": "string"
+    }
+  },
+  "steps": [
+    {
+      "op": "filter",
+      "field": "value",
+      "operator": "gte",
+      "value": 0
+    },
+    {
+      "op": "sort",
+      "field": "value",
+      "direction": "desc"
+    },
+    {
+      "op": "limit",
+      "count": 20
+    }
+  ],
+  "output": {
+    "title": "원장별 실측 성과 요약",
+    "description": "저장된 입력 기준으로 측정값이 있는 성과만 크기순으로 정리했습니다.",
+    "columns": [
+      {
+        "field": "ledger",
+        "label": "원장"
+      },
+      {
+        "field": "summary",
+        "label": "성과 설명"
+      },
+      {
+        "field": "value",
+        "label": "측정값"
+      },
+      {
+        "field": "unit",
+        "label": "단위"
+      }
+    ],
+    "footer": "사용자가 보고한 측정값입니다. 외부 검증 여부는 별도로 확인하세요."
+  },
+  "fixtures": [
+    {
+      "name": "음수·미측정 제외",
+      "input": {
+        "records": [
+          {
+            "ledger": "wealth",
+            "summary": "합성 시험 환불 반영",
+            "value": -5000,
+            "unit": "원"
+          },
+          {
+            "ledger": "honor",
+            "summary": "합성 시험 추천 확인",
+            "value": 3,
+            "unit": "건"
+          }
+        ]
+      },
+      "expectedRows": [
+        {
+          "ledger": "honor",
+          "summary": "합성 시험 추천 확인",
+          "value": 3,
+          "unit": "건"
+        }
+      ]
+    },
+    {
+      "name": "측정값 크기순 정렬",
+      "input": {
+        "records": [
+          {
+            "ledger": "fame",
+            "summary": "합성 시험 인지도 지표",
+            "value": 120,
+            "unit": "회"
+          },
+          {
+            "ledger": "wealth",
+            "summary": "합성 시험 재구매 수익",
+            "value": 450000,
+            "unit": "원"
+          }
+        ]
+      },
+      "expectedRows": [
+        {
+          "ledger": "wealth",
+          "summary": "합성 시험 재구매 수익",
+          "value": 450000,
+          "unit": "원"
+        },
+        {
+          "ledger": "fame",
+          "summary": "합성 시험 인지도 지표",
+          "value": 120,
+          "unit": "회"
+        }
+      ]
+    }
+  ]
+}
