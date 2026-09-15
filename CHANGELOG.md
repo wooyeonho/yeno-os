@@ -1,3 +1,12 @@
+# 2026-09-15 — 호문쿨루스 자율 목표 합성 첫 조각: 저장된 근거 → 결정적 후보 → 일곱 동기 → `proposed` 퀘스트 1개
+
+- **결함**: 호문쿨루스는 이미 있는 `proposed` 퀘스트의 순위만 매길 수 있었고, 소유자가 목표를 하나도 쓰지 않으면 어떤 일이 존재하는지 스스로 정하지 못했다.
+- **신규**: `runtime/lib/goal-synthesis.mjs` — `observeEvidenceGaps(state)`(검증된 상태만 읽어 정규화된 근거 갭 반환) → `previewAutonomousGoals(state, at)`(고정 6원형의 결정적 후보를 기존 `rankMotivatedCandidates`로 채점) → `synthesizeAutonomousGoal(state, at, {emergencyStop})`(순수 계획: 새 퀘스트 1개 / 기존 퀘스트 / 근거 없음 / 전체 멈춤 / 상한). 모델 호출·네트워크 없음.
+- `runtime/lib/quests.mjs`: 퀘스트 레코드에 선택적 `synthesis` 프로비넌스 블록(`version, archetype, evidence[{kind,references,values}], sourceState, reason, riskClass:'local-reversible', approvalRequired:false, autonomousGoalId, sourceEvidenceFingerprint, motivation, createdAt`)을 허용하고, 로드마다 지문·ID·동기 점수를 재계산해 불일치 시 실패 폐쇄. `planQuest`는 여전히 `synthesis`를 받지 않는다(호출자가 프로비넌스를 제출할 수 없음). 원형·리스크 등급·지문 함수를 여기서 export한다.
+- `runtime/server.mjs`: `POST /api/quests/synthesize`(requestId 필수, 생성 시 201/그 외 200, 응답에 관찰 결과와 결과 코드), `GET /api/quests`에 순수 미리보기 `autonomous`, 스케줄러 tick에서 `autopilot.enabled && !emergencyStop`일 때만 합성(저장만, 실행 없음).
+- **자동시험**: `runtime/test/goal-synthesis.test.mjs` 11건 — 실제 소유자 Run 경로에서 공급자가 실제로 실패해 생긴 `failed` 작업 2건 → 자율 `proposed` 퀘스트 정확히 1개(근거·지문·동기·실행 없음), 자격 증명 0으로 완전 동작, 25회 반복 폴링 무증가, 실제 재시작 3회 후 보존·무중복, 무관한 상태 변경·시계·revision 변경 무효 + 실제 근거 변화(산출물 있는 완료 퀘스트)로 다른 원형 퀘스트 1개, 소유자 퀘스트 바이트 단위 불변·프로비넌스 위조 400, 장부 금액·결제/배포 문구가 목표에 절대 들어가지 않음, 전체 멈춤 시 관찰만 허용, 프로비넌스 12종 변조 실패 폐쇄 + 변조된 저장소 로드 거부, 신규 시스템은 아무것도 만들지 않음, 원형 집합 고정·상한.
+- 이번 조각에 **없는 것**(다음 PR): 목표 → 능력 격차 → 커비 흡수 → 자비스 실행 → 성과 검증 → 솔로 레벨링 → 재계획. 자율 퀘스트의 자동 실행 경로는 의도적으로 없다.
+
 # 2026-09-15 — 실제 브라우저 모바일 viewport 검증이 실제 버그 2건을 잡아냈다
 
 - **지적된 문제**: `growth-ui.test.mjs`의 "생성된 HTML에 고정 px 폭이 없다" 검사는 실제 viewport 시험이 아니었다 — jsdom에는 CSS 레이아웃 엔진이 없어, 실제 `cockpit.css`(고정 픽셀 그리드 트랙과 실제 `@media(max-width:650px)` 분기점을 쓴다)가 실제로 좁은 휴대폰 화면 안에 성장 화면을 담아내는지 확인할 수 없었다.
