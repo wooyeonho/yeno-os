@@ -6,7 +6,8 @@ import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {start} from '../server.mjs';
 import {openStore} from '../lib/store.mjs';
-import {routeAgentJob,transportAuthority,settleRouting,validateRouting,RoutingError,ROUTING_KEYS} from '../lib/brain-routing.mjs';
+import {routeAgentJob,transportAuthority,settleRouting,validateRouting,RoutingError,ROUTING_KEYS,callTransportFor,liveEvidence} from '../lib/brain-routing.mjs';
+import {validateAgentJournal,callTransport} from '../lib/agent-engine.mjs';
 
 const VERIFIED='2026-09-14T00:00:00.000Z';
 const declare=(provider,model,overrides={})=>({provider,model,taskCapabilities:['text','tool-calling'],reasoningClass:'standard',codingClass:'none',realtime:false,vision:false,audioLive:false,toolCalling:true,contextLimit:128000,costTier:'medium',quotaClass:'metered',dailyBudget:{calls:20,used:0},availability:'available',lastVerifiedAt:VERIFIED,...overrides});
@@ -44,6 +45,51 @@ test('transportAuthority is independent of the router: emergency stop, budget, b
   const unknown=settleRouting(structuredClone(routing),{calls:[{status:'unknown'}]},VERIFIED);
   assert.equal(unknown.transportOutcome,'outcomeUnknown');assert.equal(unknown.ownerReviewRequired,true);
   assert.throws(()=>validateRouting({...routing,apiKey:'x'}));
+});
+
+test('per-call transport provenance: network vs injected is durable on the receipt, exact provider+model live evidence, background needs opt-in+autopilot+reversible risk',()=>{
+  const {routing,config}=routeAgentJob({env,taskClass:'tool-use',legacyConfig:null,at:VERIFIED});
+  const authority=transportAuthority({routing,config,job:{id:'j',agentJournal:{calls:[]}},state:{emergencyStop:false},usage:{attempts:0},at:VERIFIED});
+  const injected=callTransportFor({routing,config,fetchImpl:async()=>reply(),authority});
+  const network=callTransportFor({routing,config,fetchImpl:undefined,authority});
+  assert.equal(injected.kind,'injected');assert.equal(network.kind,'network');
+  assert.deepEqual({...network,kind:'injected'},injected);
+  assert.equal(network.provider,'openai');assert.equal(network.model,'gpt-declared');assert.equal(network.trigger,'owner');assert.equal(network.authorityCheckedAt,VERIFIED);
+  assert.throws(()=>callTransportFor({routing,config,fetchImpl:undefined,authority:{allowed:false,blockers:['emergency_stop'],checkedAt:VERIFIED}}),e=>e.code==='transport_without_authority');
+  // receipt validation: transport must name the journal's own provider/model
+  const receipt=(status,transport,at=VERIFIED)=>({id:randomUUID(),at,status,inputTokens:status==='settled'?1:null,outputTokens:status==='settled'?1:null,...(transport?{transport}:{})});
+  const journal={provider:'openai',model:'gpt-declared',calls:[receipt('settled',network)],history:[{role:'user',content:'x'}]};
+  validateAgentJournal(journal);
+  assert.throws(()=>validateAgentJournal({...journal,calls:[receipt('settled',{...network,model:'other'})]}),e=>e.code==='invalid_call_receipt');
+  assert.throws(()=>validateAgentJournal({...journal,calls:[receipt('settled',{...network,kind:'real'})]}),e=>e.code==='invalid_call_receipt');
+  assert.throws(()=>callTransport({...network,apiKey:'k'}),e=>e.code==='invalid_call_transport');
+  // routing transportKind: any injected receipt downgrades the whole job
+  assert.equal(settleRouting(structuredClone(routing),journal,VERIFIED).transportKind,'network');
+  assert.equal(settleRouting(structuredClone(routing),{calls:[receipt('settled',network),receipt('settled',injected)]},VERIFIED).transportKind,'injected');
+  assert.equal(settleRouting(structuredClone(routing),{calls:[receipt('settled',null)]},VERIFIED).transportKind,'injected','legacy receipt without transport block is not live evidence');
+  assert.equal(settleRouting(structuredClone(routing),{calls:[]},VERIFIED).transportKind,null);
+  assert.throws(()=>validateRouting({...routing,transportOutcome:'settled',transportKind:null}));
+  // exact-match live evidence
+  const jobs=[
+    {id:'a',agentJournal:{provider:'openai',model:'gpt-declared',calls:[receipt('settled',network,'2026-09-14T00:00:01.000Z')]}},
+    {id:'b',agentJournal:{provider:'openai',model:'gpt-declared',calls:[receipt('settled',injected)]}},
+    {id:'c',agentJournal:{provider:'openai',model:'gpt-other',calls:[receipt('settled',{...network,model:'gpt-other'})]}},
+    {id:'d',agentJournal:{provider:'openai',model:'gpt-declared',calls:[receipt('settled',null)]}}
+  ];
+  const live=liveEvidence(jobs,{provider:'openai',model:'gpt-declared'});
+  assert.equal(live.liveCalls,1);assert.equal(live.injectedCalls,1);assert.deepEqual(live.jobIds,['a']);assert.deepEqual(live.triggers,['owner']);assert.equal(live.degraded,false);
+  assert.equal(liveEvidence(jobs,{provider:'openai',model:'gpt-other'}).liveCalls,1);
+  assert.equal(liveEvidence(jobs,{provider:'xai',model:'gpt-declared'}).liveCalls,0);
+  const later=liveEvidence([...jobs,{id:'e',agentJournal:{provider:'openai',model:'gpt-declared',calls:[receipt('unknown',network,'2026-09-14T00:00:02.000Z')]}}],{provider:'openai',model:'gpt-declared'});
+  assert.equal(later.degraded,true);assert.equal(later.unknownCalls,1);
+  // background authority: config opt-in alone, or autopilot alone, is not enough
+  const bg={...routing,trigger:'background'};
+  const base={routing:bg,job:{id:'j',agentJournal:{calls:[]}},usage:{attempts:0},at:VERIFIED};
+  assert.deepEqual(transportAuthority({...base,config,state:{emergencyStop:false,autopilot:{enabled:true}}}).blockers,['background_model_calls_disabled']);
+  assert.deepEqual(transportAuthority({...base,config:{...config,backgroundModelCalls:true},state:{emergencyStop:false,autopilot:{enabled:false}}}).blockers,['background_model_calls_disabled']);
+  assert.deepEqual(transportAuthority({...base,config:{...config,backgroundModelCalls:true},state:{emergencyStop:false,autopilot:{enabled:true}}}).blockers,[]);
+  assert.deepEqual(transportAuthority({...base,routing:{...bg,risk:'capability-change'},config:{...config,backgroundModelCalls:true},state:{emergencyStop:false,autopilot:{enabled:true}}}).blockers,['background_model_calls_disabled','risk_requires_owner_quest']);
+  assert.deepEqual(transportAuthority({...base,config:{...config,backgroundModelCalls:true},state:{emergencyStop:true,autopilot:{enabled:true}}}).blockers,['emergency_stop']);
 });
 
 test('core API: routed job persists routing provenance without secrets, survives restart, and a crash mid-call becomes outcomeUnknown with no duplicate send',async t=>{

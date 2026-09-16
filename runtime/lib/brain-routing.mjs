@@ -9,9 +9,10 @@ import {
 } from './model-router.mjs';
 import {agentConfigForProvider} from './provider-config-engine.mjs';
 
-export const ROUTING_VERSION = 1;
-export const ROUTING_KEYS = Object.freeze(['version', 'routingFingerprint', 'taskClass', 'requiredCapabilities', 'selectedProvider', 'selectedModel', 'reason', 'costTier', 'quotaEvidence', 'ownerOverride', 'trigger', 'risk', 'poolDeclared', 'candidates', 'failover', 'requestedAt', 'transportStartedAt', 'transportOutcome', 'usage', 'ownerReviewRequired']);
+export const ROUTING_VERSION = 2;
+export const ROUTING_KEYS = Object.freeze(['version', 'routingFingerprint', 'taskClass', 'requiredCapabilities', 'selectedProvider', 'selectedModel', 'reason', 'costTier', 'quotaEvidence', 'ownerOverride', 'trigger', 'risk', 'poolDeclared', 'candidates', 'failover', 'requestedAt', 'transportStartedAt', 'transportOutcome', 'transportKind', 'usage', 'ownerReviewRequired']);
 export const TRANSPORT_OUTCOMES = Object.freeze(['notSent', 'settled', 'outcomeUnknown', 'blocked']);
+export const TRANSPORT_KINDS = Object.freeze(['network', 'injected']);
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 
 export class RoutingError extends Error {
@@ -78,7 +79,7 @@ function provenance(decision, {reason, requestedAt, poolDeclared, failover, sele
     trigger: decision.trigger, risk: decision.risk, poolDeclared,
     candidates: decision.consideredModels.map(c => ({provider: c.provider, model: c.model, eligible: c.eligible, reasons: [...c.reasons]})),
     failover: failover.map(f => ({...f})),
-    requestedAt, transportStartedAt: null, transportOutcome: 'notSent', usage: null, ownerReviewRequired: false
+    requestedAt, transportStartedAt: null, transportOutcome: 'notSent', transportKind: null, usage: null, ownerReviewRequired: false
   };
   validateRouting(routing);
   return routing;
@@ -90,6 +91,8 @@ export function validateRouting(routing) {
   if (typeof routing.selectedProvider !== 'string' || typeof routing.selectedModel !== 'string' || typeof routing.reason !== 'string') throw new RoutingError('invalid_routing_record');
   if (!ISO.test(routing.requestedAt) || (routing.transportStartedAt !== null && !ISO.test(routing.transportStartedAt))) throw new RoutingError('invalid_routing_record');
   if (!TRANSPORT_OUTCOMES.includes(routing.transportOutcome) || typeof routing.ownerReviewRequired !== 'boolean' || typeof routing.poolDeclared !== 'boolean') throw new RoutingError('invalid_routing_record');
+  if (routing.transportKind !== null && !TRANSPORT_KINDS.includes(routing.transportKind)) throw new RoutingError('invalid_routing_record');
+  if (routing.transportKind === null && routing.transportOutcome !== 'notSent' && routing.transportOutcome !== 'blocked') throw new RoutingError('invalid_routing_record');
   if (routing.usage !== null && (typeof routing.usage !== 'object' || !Number.isInteger(routing.usage.calls))) throw new RoutingError('invalid_routing_record');
   assertNoSecrets(routing, 'routing');
   return true;
@@ -103,12 +106,47 @@ export function transportAuthority({routing, job, config, state, usage, at, will
   if (!config || !config.ready) blockers.push('configuration_missing');
   else if (config.provider !== routing.selectedProvider || config.model !== routing.selectedModel) blockers.push('provider_changed_since_routing');
   if (!willSend) return {allowed: blockers.length === 0, blockers, checkedAt: at};
-  if (routing.trigger === 'background') blockers.push('background_model_calls_disabled');
+  // Background transport needs an explicit opt-in on the config (never a key),
+  // the owner's autopilot switch, and a reversible risk class - all three.
+  if (routing.trigger === 'background' && !(config.backgroundModelCalls === true && state.autopilot?.enabled === true && routing.risk === 'local-reversible')) blockers.push('background_model_calls_disabled');
   if (usage.attempts >= (config?.dailyCallLimit ?? 0)) blockers.push('global_daily_budget_exhausted');
   if (routing.quotaEvidence?.dailyBudget && routing.quotaEvidence.dailyBudget.used >= routing.quotaEvidence.dailyBudget.calls) blockers.push('provider_daily_budget_exhausted');
   if (routing.risk !== 'local-reversible' && !job.questId) blockers.push('risk_requires_owner_quest');
   if (job.agentJournal?.calls.some(call => call.status !== 'settled')) blockers.push('previous_call_outcome_unknown');
   return {allowed: blockers.length === 0, blockers, checkedAt: at};
+}
+
+// The per-call receipt block written before a request leaves. `kind` is the
+// caller's declaration of which fetch is in use: only the process default
+// global fetch may be declared 'network'; anything injected is 'injected'.
+export function callTransportFor({routing, config, fetchImpl, authority}) {
+  if (!authority || authority.allowed !== true) throw new RoutingError('transport_without_authority');
+  return {
+    kind: fetchImpl === undefined || fetchImpl === globalThis.fetch ? 'network' : 'injected',
+    trigger: routing.trigger, provider: config.provider, model: config.model,
+    authorityCheckedAt: authority.checkedAt
+  };
+}
+
+// Exact-match live evidence for one provider/model: settled receipts whose
+// own transport block names this provider AND model and was the real network.
+// A settled call on another model of the same provider is not evidence; a
+// receipt without a transport block is legacy and counts as injected.
+export function liveEvidence(jobs, {provider, model}) {
+  const calls = jobs.flatMap(job => (job.agentJournal?.calls ?? []).map(call => ({call, job})));
+  const exact = calls.filter(({call}) => call.transport && call.transport.provider === provider && call.transport.model === model);
+  const live = exact.filter(({call}) => call.status === 'settled' && call.transport.kind === 'network');
+  const unknown = exact.filter(({call}) => call.status === 'unknown');
+  const lastLiveAt = live.map(({call}) => call.at).sort().at(-1) ?? null;
+  const lastUnknownAt = unknown.map(({call}) => call.at).sort().at(-1) ?? null;
+  return {
+    provider, model, liveCalls: live.length, unknownCalls: unknown.length,
+    injectedCalls: exact.filter(({call}) => call.transport.kind === 'injected').length,
+    lastLiveAt, lastUnknownAt,
+    triggers: [...new Set(live.map(({call}) => call.transport.trigger))].sort(),
+    jobIds: [...new Set(live.map(({job}) => job.id))],
+    degraded: !!lastUnknownAt && (!lastLiveAt || lastUnknownAt > lastLiveAt)
+  };
 }
 
 // Transport outcome is read from the durable call receipts, never guessed:
@@ -120,6 +158,10 @@ export function settleRouting(routing, journal, at) {
   const settled = calls.filter(call => call.status === 'settled');
   routing.transportStartedAt ??= at;
   routing.transportOutcome = calls.length === 0 ? 'notSent' : unknown ? 'outcomeUnknown' : 'settled';
+  const kinds = new Set(calls.map(call => call.transport?.kind ?? 'injected'));
+  // A job whose receipts mix real and injected transport cannot be trusted as
+  // live evidence: the weaker kind wins.
+  routing.transportKind = calls.length === 0 ? null : kinds.has('injected') ? 'injected' : 'network';
   routing.ownerReviewRequired = unknown > 0;
   routing.usage = calls.length === 0 ? null : {
     calls: calls.length, settled: settled.length, unknown,

@@ -32,7 +32,7 @@ export function validateAgentJournal(journal) {
   if (journal.automaticKey !== undefined && !iso(journal.automaticKey)) throw new AgentError('invalid_automatic_key');
   if(journal.automaticScope!==undefined&&!['discovery','ecosystem'].includes(journal.automaticScope))throw new AgentError('invalid_automatic_scope');
   for (const call of journal.calls) {
-    if (!object(call) || Object.keys(call).sort().join() !== ['at','id','inputTokens','outputTokens','status'].sort().join() || typeof call.id !== 'string' || !/^[a-f0-9-]{36}$/.test(call.id) || !iso(call.at) || !['reserved','settled','unknown'].includes(call.status) || ![call.inputTokens,call.outputTokens].every(value => value === null || integer(value))) throw new AgentError('invalid_call_receipt');
+    if (!object(call) || Object.keys(call).sort().join() !== (call.transport===undefined?['at','id','inputTokens','outputTokens','status']:['at','id','inputTokens','outputTokens','status','transport']).sort().join() || (call.transport!==undefined&&!validCallTransport(call.transport,journal)) || typeof call.id !== 'string' || !/^[a-f0-9-]{36}$/.test(call.id) || !iso(call.at) || !['reserved','settled','unknown'].includes(call.status) || ![call.inputTokens,call.outputTokens].every(value => value === null || integer(value))) throw new AgentError('invalid_call_receipt');
   }
   if (new Set(journal.calls.map(call=>call.id)).size!==journal.calls.length) throw new AgentError('invalid_call_receipt');
   for (const message of journal.history) {
@@ -169,7 +169,25 @@ export async function agentTool(call, state, fetchImpl, signal, job) {
   return {sourceId:source.id,url:source.canonicalUrl,readAt:new Date().toISOString(),bodySha256:hash(data.body),truncated:data.body.length>12000,content:data.body.slice(0,12000),untrustedData:true,sourceRegistryUnchanged:true};
 }
 
-export async function runAgent({job,state,config,save,signal,fetchImpl=fetch,clock=()=>new Date().toISOString()}) {
+// Optional durable per-call transport provenance. Written before the request
+// leaves the process; exact provider/model at send time, whether the fetch was
+// the real network or an injected test transport, who triggered it, and when
+// the independent authority check passed. Never contains a key or endpoint
+// query string.
+export const CALL_TRANSPORTS=Object.freeze(['network','injected']);
+export const CALL_TRIGGERS=Object.freeze(['owner','background','self-test']);
+function validCallTransport(t,journal){
+  return object(t)&&Object.keys(t).sort().join()===['authorityCheckedAt','kind','model','provider','trigger'].join()&&CALL_TRANSPORTS.includes(t.kind)&&CALL_TRIGGERS.includes(t.trigger)
+    &&t.provider===journal.provider&&t.model===journal.model&&iso(t.authorityCheckedAt);
+}
+export function callTransport(input){
+  const {kind,trigger,provider,model,authorityCheckedAt}=input;
+  const t={kind,trigger,provider,model,authorityCheckedAt};
+  if(!object(input)||Object.keys(input).length!==5||!validCallTransport(t,{provider,model}))throw new AgentError('invalid_call_transport');
+  return t;
+}
+
+export async function runAgent({job,state,config,save,signal,fetchImpl=fetch,clock=()=>new Date().toISOString(),transport=null}) {
   const callLimit = job.callLimit === undefined ? MAX_CALLS : job.callLimit;
   if (!Number.isInteger(callLimit) || callLimit < 1 || callLimit > MAX_CALLS) throw new AgentError('invalid_job_call_limit');
   if (!config.ready) throw new AgentError('provider_and_call_limit_required');
@@ -204,7 +222,7 @@ export async function runAgent({job,state,config,save,signal,fetchImpl=fetch,clo
     if (journal.calls.length>=callLimit) throw new AgentError('mission_call_limit');
     const at=clock();
     if (agentUsage(state.jobs,at).attempts>=config.dailyCallLimit) throw new AgentError('daily_call_limit');
-    const receipt={id:randomUUID(),at,status:'reserved',inputTokens:null,outputTokens:null};
+    const receipt={id:randomUUID(),at,status:'reserved',inputTokens:null,outputTokens:null,...(transport?{transport:callTransport({...transport,provider:config.provider,model:config.model})}:{})};
     journal.calls.push(receipt);save(); // durable reservation before sending anything
     let response;
     try {response=await modelTurn(config,journal.history,fetchImpl,signal,Boolean(job.botAssignment),Boolean(job.researchRequest),Boolean(job.codeTask),Boolean(job.voiceConversation),Boolean(job.repositoryTask));}
