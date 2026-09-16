@@ -23,7 +23,7 @@ export const INPUT_AUDIO_MIME = 'audio/pcm;rate=16000';
 export const OUTPUT_AUDIO_MIME = 'audio/pcm;rate=24000';
 export const SESSION_STATES = Object.freeze(['idle', 'connecting', 'setup_sent', 'open', 'reconnecting', 'closed', 'blocked']);
 export const TOOL_CALL_STATES = Object.freeze(['pending_authority', 'authorized', 'denied', 'cancelled', 'responded']);
-export const SESSION_FIELDS = Object.freeze(['version', 'liveId', 'model', 'state', 'transportKind', 'resumeHandle', 'resumable', 'goAwayAt', 'turns', 'toolCalls', 'interruptions', 'reconnects', 'events', 'fingerprint']);
+export const SESSION_FIELDS = Object.freeze(['version', 'liveId', 'model', 'state', 'transportKind', 'resumeHandle', 'resumable', 'goAwayAt', 'turns', 'toolCalls', 'interruptions', 'reconnects', 'generation', 'events', 'fingerprint']);
 export const MAX_EVENTS = 200;
 export const MAX_AUDIO_CHUNK_BYTES = 64 * 1024;
 const MODEL_ID = /^gemini-[a-z0-9.-]{1,80}$/;
@@ -56,7 +56,7 @@ export function createLiveSession({liveId, model, transportKind, at}) {
   if (!ISO.test(at)) fail('at은 ISO 시각이어야 합니다.');
   const session = {
     version: GEMINI_LIVE_VERSION, liveId, model, state: 'idle', transportKind, resumeHandle: null, resumable: false, goAwayAt: null,
-    turns: 0, toolCalls: [], interruptions: 0, reconnects: 0, events: [{at, type: 'created'}], fingerprint: null
+    turns: 0, toolCalls: [], interruptions: 0, reconnects: 0, generation: 0, events: [{at, type: 'created'}], fingerprint: null
   };
   session.fingerprint = sessionFingerprint(session);
   return session;
@@ -67,7 +67,8 @@ export function validateLiveSession(session) {
   if (session.version !== GEMINI_LIVE_VERSION || !ID.test(session.liveId) || !MODEL_ID.test(session.model)) fail('Live session 값이 올바르지 않습니다.');
   if (!SESSION_STATES.includes(session.state) || !['network', 'injected'].includes(session.transportKind)) fail('Live session 상태가 올바르지 않습니다.');
   if (session.resumeHandle !== null && (typeof session.resumeHandle !== 'string' || !session.resumeHandle)) fail('resumeHandle이 올바르지 않습니다.');
-  if (!Array.isArray(session.toolCalls) || !session.toolCalls.every(t => exact(t, ['id', 'name', 'argsSha256', 'state', 'at']) && ID.test(t.id) && TOOL_CALL_STATES.includes(t.state))) fail('toolCalls가 올바르지 않습니다.');
+  if (!Number.isInteger(session.generation) || session.generation < 0) fail('generation이 올바르지 않습니다.');
+  if (!Array.isArray(session.toolCalls) || !session.toolCalls.every(t => exact(t, ['id', 'name', 'argsSha256', 'state', 'generation', 'at']) && ID.test(t.id) && Number.isInteger(t.generation) && t.generation >= 0 && t.generation <= session.generation && TOOL_CALL_STATES.includes(t.state))) fail('toolCalls가 올바르지 않습니다.');
   if (new Set(session.toolCalls.map(t => t.id)).size !== session.toolCalls.length) fail('toolCall id가 중복됩니다.', 'LIVE_DUPLICATE_TOOL_CALL');
   if (!Array.isArray(session.events) || session.events.length > MAX_EVENTS || !session.events.every(e => ISO.test(e.at) && typeof e.type === 'string')) fail('events가 올바르지 않습니다.');
   assertNoSecrets(session, 'liveSession');
@@ -177,7 +178,7 @@ export function applyServerMessage(session, message, {at}) {
         known.add(call.id);
         const args = call.args && typeof call.args === 'object' ? call.args : {};
         assertNoSecrets(args, `toolCall.${call.id}`);
-        toolCalls.push({id: call.id, name: call.name, argsSha256: sha256(args), state: 'pending_authority', at});
+        toolCalls.push({id: call.id, name: call.name, argsSha256: sha256(args), state: 'pending_authority', generation: session.generation, at});
         effects.push({kind: 'tool_ask', id: call.id, name: call.name, args});
       }
       return {session: withEvent(session, at, 'tool_call', {toolCalls}), effects};
@@ -187,7 +188,7 @@ export function applyServerMessage(session, message, {at}) {
       if (m.interrupted) {
         effects.push({kind: 'drop_playback'});
         const toolCalls = next.toolCalls.map(t => t.state === 'pending_authority' ? {...t, state: 'cancelled', at} : t);
-        next = withEvent(next, at, 'interrupted', {interruptions: next.interruptions + 1, toolCalls});
+        next = withEvent(next, at, 'interrupted', {interruptions: next.interruptions + 1, generation: next.generation + 1, toolCalls});
       }
       if (m.audio.length) effects.push({kind: 'play_audio', mimeType: OUTPUT_AUDIO_MIME, chunks: m.audio});
       if (m.inputTranscription) effects.push({kind: 'transcript', role: 'user', text: m.inputTranscription});
@@ -206,13 +207,21 @@ export function applyServerMessage(session, message, {at}) {
 // path owner commands take). Only `authorized` may be executed, exactly once;
 // a responded call cannot be re-authorized. `verdict.allowed` is the runtime's
 // word, never the model's.
+// A verdict must come from the runtime authority path (`checkedAt` is its
+// timestamp); emergency stop in the verdict always denies; a call from an
+// earlier generation (before an interruption/close/reconnect) is cancelled,
+// never authorized.
 export function settleToolCall(session, {id, verdict, at}) {
   validateLiveSession(session);
   const call = session.toolCalls.find(t => t.id === id);
   if (!call) fail('알 수 없는 toolCall id입니다.', 'LIVE_UNKNOWN_TOOL_CALL');
   if (call.state !== 'pending_authority') fail(`toolCall ${id}는 이미 ${call.state} 상태입니다.`, 'LIVE_DUPLICATE_TOOL_CALL');
-  if (!verdict || typeof verdict.allowed !== 'boolean') fail('authority verdict가 필요합니다.');
-  const state = verdict.allowed ? 'authorized' : 'denied';
+  if (!verdict || typeof verdict.allowed !== 'boolean' || !ISO.test(verdict.checkedAt ?? '')) fail('runtime authority verdict({allowed, checkedAt})가 필요합니다.');
+  if (call.generation !== session.generation) {
+    const toolCalls = session.toolCalls.map(t => t.id === id ? {...t, state: 'cancelled', at} : t);
+    return withEvent(session, at, 'tool_stale_cancelled', {toolCalls});
+  }
+  const state = verdict.allowed && verdict.emergencyStop !== true ? 'authorized' : 'denied';
   const toolCalls = session.toolCalls.map(t => t.id === id ? {...t, state, at} : t);
   return withEvent(session, at, `tool_${state}`, {toolCalls});
 }
@@ -220,15 +229,21 @@ export function settleToolCall(session, {id, verdict, at}) {
 // Build the toolResponse for a settled call and mark it responded. Denied and
 // cancelled calls answer with a structured refusal so the model is told the
 // truth instead of being left waiting; nothing executes for them.
-export function toolResponseMessage(session, {id, result = null, at}) {
+// `executed` is only possible for an authorized call of the *current*
+// generation while the session is open and no emergency stop is in force; a
+// result arriving late (after barge-in, close or reconnect) is reported as
+// cancelled and its `result` is dropped, so it can never act on a new turn.
+export function toolResponseMessage(session, {id, result = null, at, emergencyStop = false}) {
   validateLiveSession(session);
   const call = session.toolCalls.find(t => t.id === id);
   if (!call) fail('알 수 없는 toolCall id입니다.', 'LIVE_UNKNOWN_TOOL_CALL');
   if (call.state === 'responded') fail(`toolCall ${id}에 이미 응답했습니다.`, 'LIVE_DUPLICATE_TOOL_CALL');
   if (call.state === 'pending_authority') fail(`toolCall ${id}는 authority 판정 전입니다.`, 'LIVE_UNAUTHORIZED_TOOL');
-  const response = call.state === 'authorized'
-    ? {status: 'executed', result}
-    : {status: call.state, result: null, reason: call.state === 'denied' ? 'owner_approval_or_authority_required' : 'cancelled_by_interruption'};
+  let status = call.state;
+  let reason = call.state === 'denied' ? 'owner_approval_or_authority_required' : 'cancelled_by_interruption';
+  if (status === 'authorized' && (call.generation !== session.generation || session.state !== 'open')) {status = 'cancelled'; reason = 'stale_generation';}
+  if (status === 'authorized' && emergencyStop === true) {status = 'cancelled'; reason = 'emergency_stop';}
+  const response = status === 'authorized' ? {status: 'executed', result} : {status, result: null, reason};
   assertNoSecrets(response, `toolResponse.${id}`);
   const toolCalls = session.toolCalls.map(t => t.id === id ? {...t, state: 'responded', at} : t);
   return {
@@ -248,7 +263,7 @@ export function openTransition(session, {authority, at}) {
   if (!authority || authority.allowed !== true) return withEvent(session, at, 'blocked', {state: 'blocked'});
   if (!['idle', 'closed', 'blocked'].includes(session.state)) fail(`state ${session.state}에서는 열 수 없습니다.`, 'LIVE_PROTOCOL');
   const reconnect = session.state === 'closed' && session.resumable && session.resumeHandle;
-  return withEvent(session, at, reconnect ? 'reconnecting' : 'connecting', {state: reconnect ? 'reconnecting' : 'connecting', reconnects: session.reconnects + (reconnect ? 1 : 0)});
+  return withEvent(session, at, reconnect ? 'reconnecting' : 'connecting', {state: reconnect ? 'reconnecting' : 'connecting', reconnects: session.reconnects + (reconnect ? 1 : 0), generation: session.generation + 1});
 }
 export function setupSentTransition(session, {at}) {
   validateLiveSession(session);
@@ -258,7 +273,7 @@ export function setupSentTransition(session, {at}) {
 export function closeTransition(session, {at, reason = 'closed'}) {
   validateLiveSession(session);
   const toolCalls = session.toolCalls.map(t => t.state === 'pending_authority' ? {...t, state: 'cancelled', at} : t);
-  return withEvent(session, at, reason, {state: 'closed', toolCalls});
+  return withEvent(session, at, reason, {state: 'closed', toolCalls, generation: session.generation + 1});
 }
 
 // Readiness in the shared taxonomy. Only a session that actually reached

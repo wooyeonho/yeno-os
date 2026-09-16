@@ -16,6 +16,9 @@ export const CONNECTOR_FIELDS = Object.freeze(['version', 'id', 'sourceType', 's
 export const RECORD_FIELDS = Object.freeze(['metric', 'value', 'unit', 'timestamp']);
 export const READING_FIELDS = Object.freeze(['version', 'connectorId', 'sourceType', 'sourceId', 'transport', 'readAt', 'records', 'recordsSha256', 'fingerprint']);
 export const MAX_RECORDS = 500;
+export const MAX_RESPONSE_BYTES = 256 * 1024;
+export const READ_TIMEOUT_MS = 10_000;
+const BLOCKED_HOST = /^(?:localhost|.*\.localhost|.*\.local|.*\.internal|.*\.localdomain|metadata\.google\.internal|metadata|instance-data|.*\.arpa)$/i;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const SOURCE_ID = /^[A-Za-z0-9._:\/-]{1,200}$/;
@@ -28,6 +31,39 @@ const exact = (value, keys) => value && typeof value === 'object' && !Array.isAr
 const finite = v => typeof v === 'number' && Number.isFinite(v);
 const strip = (value, key) => Object.fromEntries(Object.entries(value).filter(([k]) => k !== key));
 
+// SSRF guard on the declared host and on any address it resolves to: only a
+// public DNS name on the default HTTPS port; IP literals, loopback, private,
+// link-local (cloud metadata), multicast, unspecified and CGNAT ranges fail.
+export function isPublicAddress(ip) {
+  if (typeof ip !== 'string') return false;
+  const v4 = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    if (v4.slice(1).some(o => Number(o) > 255)) return false;
+    if (a === 0 || a === 10 || a === 127 || a >= 224) return false;
+    if (a === 169 && b === 254) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+    if (a === 100 && b >= 64 && b <= 127) return false;
+    if (a === 198 && (b === 18 || b === 19)) return false;
+    return true;
+  }
+  const v6 = ip.toLowerCase();
+  if (!/^[0-9a-f:.]+$/.test(v6) || !v6.includes(':')) return false;
+  if (v6 === '::' || v6 === '::1') return false;
+  if (v6.startsWith('::ffff:')) return isPublicAddress(v6.slice(7));
+  if (/^(?:fc|fd|fe[89ab]|ff)/.test(v6)) return false;
+  return true;
+}
+
+export function hostAllowed(hostname) {
+  if (typeof hostname !== 'string' || !hostname) return false;
+  const h = hostname.replace(/^\[|\]$/g, '');
+  if (/^[\d.]+$/.test(h) || h.includes(':')) return false;
+  if (BLOCKED_HOST.test(h) || !h.includes('.')) return false;
+  return true;
+}
+
 export function connectorFingerprint(connector) {return sha256(strip(connector, 'fingerprint'));}
 export function readingFingerprint(reading) {return sha256(strip(reading, 'fingerprint'));}
 
@@ -37,6 +73,8 @@ function validateLocator(transport, locator) {
     let url;
     try {url = new URL(locator);} catch {fail('https_json locator는 URL이어야 합니다.');}
     if (url.protocol !== 'https:') fail('외부 source는 https로만 읽습니다.');
+    if (url.port && url.port !== '443') fail('외부 source는 기본 https 포트로만 읽습니다.');
+    if (!hostAllowed(url.hostname)) fail('외부 source host는 공개 DNS 이름이어야 합니다 (IP·loopback·사설망·metadata 금지).', 'CONNECTOR_HOST_BLOCKED');
     if (url.username || url.password) fail('locator에 자격증명을 넣을 수 없습니다.', 'CONNECTOR_SECRET');
     if (URL_QUERY_SECRET.test(url.search) || URL_QUERY_SECRET.test(url.hash)) fail('locator query에 비밀값을 넣을 수 없습니다.', 'CONNECTOR_SECRET');
   } else if (!EXPORT_PATH.test(locator) || locator.includes('..')) fail('owner_export_json locator는 저장소 상대 경로여야 합니다.');
@@ -111,17 +149,39 @@ function unwrap(payload, connector) {
   return {ok: false, reason: 'source_shape_invalid'};
 }
 
-async function transportRead(connector, {fetch, readFile, headers}) {
+const headerOf = (response, name) => typeof response.headers?.get === 'function' ? response.headers.get(name) : null;
+
+async function transportRead(connector, {fetch, readFile, headers, lookup, timeoutMs}) {
   if (connector.transport === 'https_json') {
     if (typeof fetch !== 'function') return {ok: false, reason: 'transport_unconfigured'};
+    const url = new URL(connector.locator);
+    if (!hostAllowed(url.hostname)) return {ok: false, reason: 'source_host_blocked'};
+    if (typeof lookup === 'function') {
+      let addresses;
+      try {addresses = await lookup(url.hostname);} catch {return {ok: false, reason: 'source_unresolvable'};}
+      const list = Array.isArray(addresses) ? addresses : [addresses];
+      if (list.length === 0 || !list.every(a => isPublicAddress(typeof a === 'string' ? a : a?.address))) return {ok: false, reason: 'source_host_blocked'};
+    }
     let response;
-    try {response = await fetch(connector.locator, {method: 'GET', headers: {accept: 'application/json', ...(headers ?? {})}, redirect: 'error'});}
-    catch {return {ok: false, reason: 'source_unreachable'};}
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    try {
+      response = await fetch(url.href, {method: 'GET', headers: {accept: 'application/json', ...(headers ?? {})}, redirect: 'error', ...(controller ? {signal: controller.signal} : {})});
+    } catch (error) {
+      return {ok: false, reason: error?.name === 'AbortError' || controller?.signal.aborted ? 'source_timeout' : 'source_unreachable'};
+    } finally {if (timer) clearTimeout(timer);}
     if (!response || typeof response.status !== 'number') return {ok: false, reason: 'source_unreachable'};
+    if (response.status >= 300 && response.status < 400) return {ok: false, reason: 'source_redirected'};
     if (response.status === 401 || response.status === 403) return {ok: false, reason: 'source_unauthorized'};
     if (response.status !== 200) return {ok: false, reason: `source_http_${response.status}`};
+    if (response.url && new URL(response.url).href !== url.href) return {ok: false, reason: 'source_redirected'};
+    const contentType = headerOf(response, 'content-type');
+    if (contentType && !/^application\/(?:[a-z0-9.+-]+\+)?json\b/i.test(contentType)) return {ok: false, reason: 'source_not_json'};
+    const declared = Number(headerOf(response, 'content-length'));
+    if (Number.isFinite(declared) && declared > MAX_RESPONSE_BYTES) return {ok: false, reason: 'source_too_large'};
     let text;
     try {text = await response.text();} catch {return {ok: false, reason: 'source_unreadable'};}
+    if (typeof text !== 'string' || Buffer.byteLength(text, 'utf8') > MAX_RESPONSE_BYTES) return {ok: false, reason: 'source_too_large'};
     return {ok: true, text};
   }
   if (typeof readFile !== 'function') return {ok: false, reason: 'transport_unconfigured'};
@@ -130,10 +190,11 @@ async function transportRead(connector, {fetch, readFile, headers}) {
 
 // Read the source now. `deps` carries the injected I/O; credentials live in the
 // caller's `headers` and are never echoed into the reading or the failure.
-export async function readConnector(connector, {readAt, fetch = null, readFile = null, headers = null} = {}) {
+export async function readConnector(connector, {readAt, fetch = null, readFile = null, headers = null, lookup = null, timeoutMs = READ_TIMEOUT_MS} = {}) {
   validateConnector(connector);
   if (!ISO.test(readAt)) fail('readAt은 ISO 시각이어야 합니다.');
-  const got = await transportRead(connector, {fetch, readFile, headers});
+  if (headers !== null && (typeof headers !== 'object' || Array.isArray(headers))) fail('headers는 객체여야 합니다.');
+  const got = await transportRead(connector, {fetch, readFile, headers, lookup, timeoutMs});
   if (!got.ok) return {ok: false, reason: got.reason, reading: null};
   const parsed = parseJson(got.text);
   if (!parsed.ok) return {ok: false, reason: parsed.reason, reading: null};

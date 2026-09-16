@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  createConnector, validateConnector, readConnector, validateReading, toVerificationSource, connectorReadiness, normalizeRecords
+  createConnector, validateConnector, readConnector, validateReading, toVerificationSource, connectorReadiness, normalizeRecords,
+  hostAllowed, isPublicAddress, MAX_RESPONSE_BYTES
 } from '../lib/outcome-connector.mjs';
 import {createOutcomeEvidence, verifyOutcome, OutcomeVerificationError} from '../lib/outcome-verification.mjs';
 
@@ -111,4 +112,40 @@ test('connector readiness taxonomy: NOT_WIRED → WIRED_UNVERIFIED → SYNTHETIC
   const live = (await readConnector(c, {readAt: AT, fetch: fetchWith(200, payload([REC]))})).reading;
   assert.equal(connectorReadiness([c, exp], [local, live]).status, 'LIVE_VERIFIED');
   assert.equal(connectorReadiness([c], [{...live, records: [{...REC, value: 1}]}]).status, 'WIRED_UNVERIFIED', 'tampered reading is not evidence');
+});
+
+test('SSRF/bounds: private/loopback/metadata/IP hosts and non-443 ports are refused at declaration and at resolve time; redirects, oversize, non-JSON content-type and timeouts fail closed', async () => {
+  for (const bad of ['https://localhost/x.json', 'https://127.0.0.1/x.json', 'https://[::1]/x.json', 'https://169.254.169.254/latest/meta-data', 'https://metadata.google.internal/computeMetadata/v1',
+    'https://10.0.0.5/x', 'https://192.168.1.1/x', 'https://172.16.0.1/x', 'https://ledger/x', 'https://svc.internal/x', 'https://a.local/x', 'https://ledger.example.test:8443/x']) {
+    assert.throws(() => declare({locator: bad}), OutcomeVerificationError, bad);
+  }
+  assert.equal(hostAllowed('ledger.example.test'), true);
+  assert.deepEqual(['8.8.8.8', '2606:4700::1111'].map(isPublicAddress), [true, true]);
+  assert.deepEqual(['127.0.0.1', '10.1.2.3', '172.31.0.1', '192.168.0.9', '169.254.169.254', '100.64.0.1', '0.0.0.0', '224.0.0.1', '::1', 'fd00::1', 'fe80::1', '::ffff:127.0.0.1', 'not-an-ip'].map(isPublicAddress), Array(13).fill(false));
+
+  const c = declare();
+  const okBody = payload([REC]);
+  const resp = (over = {}) => async () => ({status: 200, url: c.locator, headers: {get: n => ({'content-type': 'application/json'}[n] ?? null)}, text: async () => JSON.stringify(okBody), ...over});
+  // DNS rebinding: declared public name resolving to a private address is refused; resolver failure is refused.
+  assert.equal((await readConnector(c, {readAt: AT, fetch: resp(), lookup: async () => ['10.0.0.8']})).reason, 'source_host_blocked');
+  assert.equal((await readConnector(c, {readAt: AT, fetch: resp(), lookup: async () => [{address: '169.254.169.254'}, {address: '8.8.8.8'}]})).reason, 'source_host_blocked');
+  assert.equal((await readConnector(c, {readAt: AT, fetch: resp(), lookup: async () => {throw new Error('ENOTFOUND');}})).reason, 'source_unresolvable');
+  assert.equal((await readConnector(c, {readAt: AT, fetch: resp(), lookup: async () => ['93.184.216.34']})).ok, true);
+  // Redirects never followed: fetch is asked for redirect:'error'; 3xx or a changed final URL fails.
+  let seenInit;
+  await readConnector(c, {readAt: AT, fetch: async (u, init) => {seenInit = init; return resp()();}});
+  assert.equal(seenInit.redirect, 'error');
+  assert.ok(seenInit.signal, 'abort signal attached for timeout');
+  assert.equal((await readConnector(c, {readAt: AT, fetch: resp({status: 302})})).reason, 'source_redirected');
+  assert.equal((await readConnector(c, {readAt: AT, fetch: resp({url: 'https://evil.example.test/x.json'})})).reason, 'source_redirected');
+  // Size and content-type bounds.
+  assert.equal((await readConnector(c, {readAt: AT, fetch: resp({headers: {get: n => ({'content-type': 'application/json', 'content-length': String(MAX_RESPONSE_BYTES + 1)}[n] ?? null)}})})).reason, 'source_too_large');
+  assert.equal((await readConnector(c, {readAt: AT, fetch: resp({text: async () => 'x'.repeat(MAX_RESPONSE_BYTES + 1)})})).reason, 'source_too_large');
+  assert.equal((await readConnector(c, {readAt: AT, fetch: resp({headers: {get: n => ({'content-type': 'text/html'}[n] ?? null)}})})).reason, 'source_not_json');
+  // Timeout: a fetch that never settles is aborted.
+  const hanging = (u, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), {name: 'AbortError'}))));
+  assert.equal((await readConnector(c, {readAt: AT, fetch: hanging, timeoutMs: 20})).reason, 'source_timeout');
+  // Failure objects never echo headers/credentials.
+  const r = await readConnector(c, {readAt: AT, fetch: resp({status: 500}), headers: {authorization: 'Bearer sk_live_000'}});
+  assert.doesNotMatch(JSON.stringify(r), /sk_live|authorization/i);
 });
