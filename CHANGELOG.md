@@ -1,5 +1,11 @@
 # 2026-09-15 — 호문쿨루스 자율 목표 합성 첫 조각: 저장된 근거 → 결정적 후보 → 일곱 동기 → `proposed` 퀘스트 1개
 
+## 2026-09-15 Real Outcome Verification 순수 계층 (배선 없음)
+
+- **신규** `runtime/lib/outcome-verification.mjs`: `verifyExecution`(산출물 SHA == run outputSha256·runId·inputSha256·완료 → `executionVerified`), 성과 근거 스키마 15필드(`createOutcomeEvidence`/`validateOutcomeEvidence`/`parseOutcomeEvidence`, 정의된 metric·unit·source 종류만, 타입별 authority 고정, 모델 출력은 외부 근거 불가, collectedAt 제외 결정적 지문), `verifyOutcome`(외부 타입 + 링크 일치 + source 식별 일치 + 같은 metric/value/unit/timestamp 보유 + execution 검증일 때만 `outcomeVerified`; `external_verified`만 `highGradeCandidate`; `authorizesAction:false`), `validateOutcomeVerdict`, `assertNoSecrets`.
+- **자동시험** `runtime/test/outcome-verification.test.mjs` 12건: 지시된 12 시나리오(실행 검증≠성과 검증, self_reported false, 외부 검증 true, source ID/링크 불일치, 소실·변경, 모델 텍스트, 가짜 부·명예·인지도·adoption 주장, 결정적 지문, 변조 실패 폐쇄, 비밀 거부, 재시작 동일 verdict).
+
+
 - **결함**: 호문쿨루스는 이미 있는 `proposed` 퀘스트의 순위만 매길 수 있었고, 소유자가 목표를 하나도 쓰지 않으면 어떤 일이 존재하는지 스스로 정하지 못했다.
 - **신규**: `runtime/lib/goal-synthesis.mjs` — `observeEvidenceGaps(state, {manifests})`(검증된 상태만 읽어 정규화된 근거 갭 반환) → `previewAutonomousGoals(state, at, {manifests})`(활성 원형의 결정적 후보를 기존 `rankMotivatedCandidates`로 채점) → `synthesizeAutonomousGoal(state, at, {emergencyStop, manifests})`(순수 계획: 새 퀘스트 1개 / 기존 퀘스트 / 근거 없음 / 소유자 퀘스트 대기 / 전체 멈춤 / 상한). 모델 호출·네트워크 없음.
 - `runtime/lib/quests.mjs`: 퀘스트 레코드에 선택적 `synthesis` 프로비넌스 블록(`version, archetype, evidence[{kind,references,values}], sourceState, reason, riskClass, approvalRequired, autonomousGoalId, sourceEvidenceFingerprint, motivation, createdAt`)을 허용하고, 로드마다 지문·ID·동기 점수를 재계산해 불일치 시 실패 폐쇄. `planQuest`는 여전히 `synthesis`를 받지 않는다(호출자가 프로비넌스를 제출할 수 없음). 원형·리스크 등급·지문 함수를 여기서 export한다.
