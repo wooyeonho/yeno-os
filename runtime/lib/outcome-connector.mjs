@@ -172,9 +172,37 @@ async function defaultResolve(hostname) {
   return dns.promises.lookup(hostname, {all: true, verbatim: true});
 }
 
-export async function resolveVettedAddress(hostname, {resolve = defaultResolve} = {}) {
-  let answers;
-  try {answers = await resolve(hostname);} catch {return {ok: false, reason: 'source_unresolvable'};}
+// Races a promise against a hard wall-clock deadline. The loser's eventual
+// settlement (a slow DNS answer arriving after the deadline) is discarded -
+// it can still update internal resolver caches, but it can never reach the
+// caller and can never cause a socket to be opened after time is up.
+function raceDeadline(promise, deadlineAt) {
+  return new Promise(resolve => {
+    let settled = false;
+    // Infinity (no deadline given) means genuinely no timer, not a 1ms one:
+    // `setTimeout` cannot take an infinite duration.
+    const timer = Number.isFinite(deadlineAt) ? setTimeout(() => {if (!settled) {settled = true; resolve({timedOut: true});}}, Math.max(0, deadlineAt - Date.now())) : null;
+    promise.then(
+      value => {if (!settled) {settled = true; if (timer) clearTimeout(timer); resolve({timedOut: false, value});}},
+      error => {if (!settled) {settled = true; if (timer) clearTimeout(timer); resolve({timedOut: false, error});}}
+    );
+  });
+}
+
+// `deadlineAt` is the SAME wall-clock deadline the caller's whole read shares
+// (DNS + connect + TLS + headers + body) - not a fresh budget for DNS alone.
+// A resolver that is still running when the deadline passes is timed out
+// here, before any request is ever constructed.
+export async function resolveVettedAddress(hostname, {resolve = defaultResolve, deadlineAt = Infinity} = {}) {
+  if (Date.now() >= deadlineAt) return {ok: false, reason: 'source_timeout'};
+  const raced = await raceDeadline(Promise.resolve().then(() => resolve(hostname)), deadlineAt);
+  if (raced.timedOut) return {ok: false, reason: 'source_timeout'};
+  if (raced.error) return {ok: false, reason: 'source_unresolvable'};
+  // The deadline can pass in the gap between the resolver settling and this
+  // check running (e.g. it returned right at the wire) - still refuse to
+  // open a socket with no time left rather than borrow from nowhere.
+  if (Date.now() >= deadlineAt) return {ok: false, reason: 'source_timeout'};
+  const answers = raced.value;
   const list = (Array.isArray(answers) ? answers : [answers])
     .map(a => typeof a === 'string' ? {address: a, family: net.isIP(a) || 4} : a)
     .filter(a => a && typeof a.address === 'string');
@@ -222,8 +250,10 @@ export function fetchPinned(url, {address, family, headers = {}, timeoutMs = REA
         if (res.statusCode !== 200) {res.resume(); return finish({ok: false, reason: `source_http_${res.statusCode}`});}
         const encoding = String(res.headers['content-encoding'] ?? '').toLowerCase();
         if (encoding && encoding !== 'identity') {res.destroy(); return finish({ok: false, reason: 'source_compressed_response'});}
+        // Content-Type must be explicit: a missing header is not an implicit
+        // "trust me, it's JSON" - only application/json or application/*+json.
         const contentType = res.headers['content-type'];
-        if (contentType && !/^application\/(?:[a-z0-9.+-]+\+)?json\b/i.test(contentType)) {res.destroy(); return finish({ok: false, reason: 'source_not_json'});}
+        if (!contentType || !/^application\/(?:[a-z0-9.+-]+\+)?json\b/i.test(contentType)) {res.destroy(); return finish({ok: false, reason: 'source_not_json'});}
         const declared = Number(res.headers['content-length']);
         if (Number.isFinite(declared) && declared > maxBytes) {res.destroy(); return finish({ok: false, reason: 'source_too_large'});}
         const chunks = [];
@@ -251,11 +281,17 @@ async function transportRead(connector, {readFile, headers, resolve, request, ti
   if (connector.transport === 'https_json') {
     const url = new URL(connector.locator);
     if (!hostAllowed(url.hostname)) return {ok: false, reason: 'source_host_blocked'};
-    const vetted = await resolveVettedAddress(url.hostname, {resolve});
+    // One deadline for the whole read - DNS is not a separate budget. Whatever
+    // time DNS spends comes out of the same clock the body/timeout below uses.
+    const deadlineAt = Date.now() + timeoutMs;
+    const vetted = await resolveVettedAddress(url.hostname, {resolve, deadlineAt});
     // Fail closed before any request object is ever constructed: an
-    // unresolvable or non-public answer means no socket is opened at all.
+    // unresolvable, non-public, or already-out-of-time answer means no
+    // socket is opened at all.
     if (!vetted.ok) return vetted;
-    return await fetchPinned(url, {address: vetted.address, family: vetted.family, headers: headers ?? {}, timeoutMs, request});
+    const remainingMs = deadlineAt - Date.now();
+    if (remainingMs <= 0) return {ok: false, reason: 'source_timeout'};
+    return await fetchPinned(url, {address: vetted.address, family: vetted.family, headers: headers ?? {}, timeoutMs: remainingMs, request});
   }
   if (typeof readFile !== 'function') return {ok: false, reason: 'transport_unconfigured'};
   try {return {ok: true, text: await readFile(connector.locator)};} catch {return {ok: false, reason: 'source_unreachable'};}

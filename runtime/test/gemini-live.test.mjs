@@ -88,32 +88,67 @@ test('tool calls: pending until runtime authority; duplicates ignored; exactly o
   assert.throws(() => applyServerMessage(opened(), {toolCall: {functionCalls: [{id: 'c3', name: 'x', args: {apiKey: 'sk-abc'}}]}}, {at: T(4)}), /toolCall\.c3|자격|secret/i);
 });
 
-test('barge-in: interruption drops playback and cancels un-authorized asks; server cancellation likewise; authorized calls survive', () => {
+test('barge-in/close/server-cancellation: any call not yet responded (pending OR authorized) can be cancelled; authorizedOnce survives; a cancelled call is never executor-ready; replay stays deduplicated', () => {
+  // 1. pending → server cancellation → cancelled.
+  let pendingOnly = applyServerMessage(opened(), {toolCall: {functionCalls: [{id: 'p1', name: 'x', args: {}}]}}, {at: T(4)}).session;
+  let sc = applyServerMessage(pendingOnly, {toolCallCancellation: {ids: ['p1']}}, {at: T(5)}).session;
+  assert.equal(sc.toolCalls[0].state, 'cancelled');
+  assert.equal(sc.toolCalls[0].authorizedOnce, false);
+
+  // 2. authorized → server cancellation → cancelled, authorizedOnce true.
   let s = applyServerMessage(opened(), {toolCall: {functionCalls: [{id: 'a', name: 'x', args: {}}, {id: 'b', name: 'y', args: {}}]}}, {at: T(4)}).session;
   s = settleToolCall(s, {id: 'b', verdict: {allowed: true, checkedAt: T(5)}, at: T(5)});
+  const serverCancelled = applyServerMessage(s, {toolCallCancellation: {ids: ['b']}}, {at: T(6)}).session;
+  assert.equal(serverCancelled.toolCalls.find(t => t.id === 'b').state, 'cancelled');
+  assert.equal(serverCancelled.toolCalls.find(t => t.id === 'b').authorizedOnce, true);
+
+  // 3. authorized → interruption → cancelled, authorizedOnce true (pending 'a' is cancelled too).
   const bi = applyServerMessage(s, {serverContent: {interrupted: true}}, {at: T(6)});
   assert.deepEqual(bi.effects, [{kind: 'drop_playback'}]);
   assert.equal(bi.session.interruptions, 1);
   assert.equal(bi.session.toolCalls.find(t => t.id === 'a').state, 'cancelled');
-  assert.equal(bi.session.toolCalls.find(t => t.id === 'b').state, 'authorized');
-  const cancelled = toolResponseMessage(bi.session, {id: 'a', at: T(7)});
-  assert.equal(cancelled.message.toolResponse.functionResponses[0].response.status, 'cancelled');
-  const sc = applyServerMessage(applyServerMessage(opened(), {toolCall: {functionCalls: [{id: 'z', name: 'x', args: {}}]}}, {at: T(4)}).session,
-    {toolCallCancellation: {ids: ['z']}}, {at: T(5)});
-  assert.equal(sc.session.toolCalls[0].state, 'cancelled');
-  const closed = closeTransition(applyServerMessage(opened(), {toolCall: {functionCalls: [{id: 'q', name: 'x', args: {}}]}}, {at: T(4)}).session, {at: T(5)});
+  assert.equal(bi.session.toolCalls.find(t => t.id === 'a').authorizedOnce, false, 'a was never authorized');
+  assert.equal(bi.session.toolCalls.find(t => t.id === 'b').state, 'cancelled', 'interruption cancels an already-authorized call too');
+  assert.equal(bi.session.toolCalls.find(t => t.id === 'b').authorizedOnce, true);
+  const cancelledA = toolResponseMessage(bi.session, {id: 'a', at: T(7)});
+  assert.equal(cancelledA.message.toolResponse.functionResponses[0].response.status, 'cancelled');
+  assert.equal(cancelledA.sideEffectMayHaveOccurred, false, 'never authorized - nothing to reconcile');
+  const cancelledB = toolResponseMessage(bi.session, {id: 'b', at: T(7)});
+  assert.equal(cancelledB.message.toolResponse.functionResponses[0].response.status, 'cancelled');
+  assert.equal(cancelledB.sideEffectMayHaveOccurred, true, 'was authorized - a real side effect may already exist, reconcile from durable state');
+
+  // 4. authorized → close → cancelled, authorizedOnce true.
+  let s4 = applyServerMessage(opened(), {toolCall: {functionCalls: [{id: 'q', name: 'x', args: {}}]}}, {at: T(4)}).session;
+  s4 = settleToolCall(s4, {id: 'q', verdict: {allowed: true, checkedAt: T(4)}, at: T(4)});
+  const closed = closeTransition(s4, {at: T(5)});
   assert.equal(closed.toolCalls[0].state, 'cancelled');
+  assert.equal(closed.toolCalls[0].authorizedOnce, true);
+  const closedReport = toolResponseMessage(closed, {id: 'q', at: T(6)});
+  assert.equal(closedReport.sideEffectMayHaveOccurred, true);
+
+  // 5. A cancelled call is never executor-ready again: settleToolCall refuses
+  //    to (re-)authorize it, whether it came from pending or from authorized.
+  assert.throws(() => settleToolCall(sc, {id: 'p1', verdict: {allowed: true, checkedAt: T(5)}, at: T(5)}), e => e.code === 'LIVE_DUPLICATE_TOOL_CALL');
+  assert.throws(() => settleToolCall(serverCancelled, {id: 'b', verdict: {allowed: true, checkedAt: T(6)}, at: T(6)}), e => e.code === 'LIVE_DUPLICATE_TOOL_CALL');
+
+  // 6. Replaying the same tool id after cancellation is still deduplicated, not re-asked.
+  const replay = applyServerMessage(sc, {toolCall: {functionCalls: [{id: 'p1', name: 'x', args: {}}]}}, {at: T(6)});
+  assert.deepEqual(replay.effects, [{kind: 'tool_duplicate_ignored', id: 'p1'}]);
+  assert.equal(replay.session.toolCalls.length, 1);
+  assert.equal(replay.session.toolCalls[0].state, 'cancelled', 'the replay does not resurrect or re-ask the cancelled call');
 });
 
-test('generation binding: authorized result arriving after barge-in/close/reconnect is reported cancelled (stale_generation), result dropped; emergency stop verdict denies; emergency stop at response time cancels', () => {
+test('generation binding: an authorized call is itself cancelled by interruption (not left to go stale); a pending call surviving a bare generation bump is still caught as stale; emergency stop verdict denies; emergency stop at response time cancels', () => {
   let s = applyServerMessage(opened(), {toolCall: {functionCalls: [{id: 'b', name: 'y', args: {}}, {id: 'c', name: 'y', args: {}}]}}, {at: T(4)}).session;
   s = settleToolCall(s, {id: 'b', verdict: {allowed: true, checkedAt: T(5)}, at: T(5)});
   const g = s.generation;
   const bi = applyServerMessage(s, {serverContent: {interrupted: true}}, {at: T(6)}).session;
   assert.equal(bi.generation, g + 1);
+  assert.equal(bi.toolCalls.find(t => t.id === 'b').state, 'cancelled', 'interruption cancels the already-authorized call directly');
   const late = toolResponseMessage(bi, {id: 'b', result: {did: 'something'}, at: T(7)});
-  assert.deepEqual(late.message.toolResponse.functionResponses[0].response, {status: 'cancelled', result: null, reason: 'stale_generation'});
+  assert.deepEqual(late.message.toolResponse.functionResponses[0].response, {status: 'cancelled', result: null, reason: 'cancelled_by_interruption'});
   assert.equal(late.session.toolCalls.find(t => t.id === 'b').state, 'responded');
+  assert.equal(late.sideEffectMayHaveOccurred, true, 'b was authorized before the interruption cancelled it');
   // Settling a pre-interruption ask after the interruption never authorizes it.
   const s2 = applyServerMessage(opened(), {toolCall: {functionCalls: [{id: 'd', name: 'y', args: {}}]}}, {at: T(4)}).session;
   const bumped = {...s2, generation: s2.generation + 1, fingerprint: null};
@@ -166,14 +201,14 @@ test('side-effect tracking: a call that was ever authorized keeps that fact thro
   // A denial never reported as executed carries no ambiguity - nothing ran.
   const denied = toolResponseMessage(s, {id: 'never-authorized', at: T(5)});
   assert.equal(denied.sideEffectMayHaveOccurred, false);
-  // Barge-in survives an already-authorized call (it may already be running)
-  // but bumps the session generation, so its eventual report is stale; either
-  // way its report must flag that a real side effect may already have happened.
+  // Barge-in cancels an already-authorized call directly (it may already be
+  // running); either way its report must flag that a real side effect may
+  // already have happened.
   const bi = applyServerMessage(s, {serverContent: {interrupted: true}}, {at: T(6)}).session;
-  assert.equal(bi.toolCalls.find(t => t.id === 'was-authorized').state, 'authorized', 'interruption does not itself cancel an already-authorized call');
+  assert.equal(bi.toolCalls.find(t => t.id === 'was-authorized').state, 'cancelled', 'interruption cancels an already-authorized call directly');
   assert.equal(bi.toolCalls.find(t => t.id === 'was-authorized').authorizedOnce, true, 'authorizedOnce survives the interruption');
   const cancelledReport = toolResponseMessage(bi, {id: 'was-authorized', at: T(7)});
-  assert.equal(cancelledReport.message.toolResponse.functionResponses[0].response.reason, 'stale_generation', 'the interruption bumped generation, so the late report is stale');
+  assert.equal(cancelledReport.message.toolResponse.functionResponses[0].response.reason, 'cancelled_by_interruption');
   assert.equal(cancelledReport.message.toolResponse.functionResponses[0].response.status, 'cancelled');
   assert.equal(cancelledReport.sideEffectMayHaveOccurred, true, 'the wiring layer must reconcile durable state, not assume nothing happened');
   // An executed call never flags an ambiguous side effect - it was relayed for real.

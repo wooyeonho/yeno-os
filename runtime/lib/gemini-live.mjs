@@ -16,7 +16,12 @@ import {assertNoSecrets} from './outcome-verification.mjs';
 // injected one (`injected`). A tool call from the model is an *ask*, never an
 // action: it is queued as `pending_authority` and executed only after the
 // existing runtime authority path settles it; the same call id can never run
-// twice, and interruption cancels queued asks that were not yet authorized.
+// twice. Server cancellation, interruption and close all move any call that
+// is not yet `responded` (pending OR already authorized) to `cancelled` -
+// authorization is not immunity from cancellation, since barge-in/close can
+// land after the runtime already said yes. `authorizedOnce` is never cleared
+// by that transition, so a call that was authorized before being cancelled
+// still visibly differs from one that was never authorized at all.
 export const GEMINI_LIVE_VERSION = 1;
 export const LIVE_ENDPOINT = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
 export const INPUT_AUDIO_MIME = 'audio/pcm;rate=16000';
@@ -31,6 +36,11 @@ export const MAX_AUDIO_CHUNK_BYTES = 64 * 1024;
 // older than this (or dated after `at`, which is not a real clock reading)
 // is never authority for a new action.
 export const MAX_VERDICT_AGE_MS = 5_000;
+// Any call not yet `responded` can be cancelled by a server cancellation,
+// a barge-in interruption, or a socket close - an authorized call is not
+// exempt, since the authority verdict says nothing about whether the model
+// turn that asked for it is still the one in progress.
+const CANCELLABLE_STATES = Object.freeze(['pending_authority', 'authorized']);
 
 // --- future-wiring contract (enforced here, executed by the caller later) --
 //
@@ -198,7 +208,7 @@ export function applyServerMessage(session, message, {at}) {
       return {session: withEvent(session, at, 'resumption', {resumeHandle: m.handle ?? session.resumeHandle, resumable: m.resumable}), effects};
     case 'tool_cancel': {
       const ids = new Set(m.ids);
-      const toolCalls = session.toolCalls.map(t => ids.has(t.id) && t.state === 'pending_authority' ? {...t, state: 'cancelled', at} : t);
+      const toolCalls = session.toolCalls.map(t => ids.has(t.id) && CANCELLABLE_STATES.includes(t.state) ? {...t, state: 'cancelled', at} : t);
       effects.push({kind: 'tool_cancelled', ids: [...ids]});
       return {session: withEvent(session, at, 'tool_cancel', {toolCalls}), effects};
     }
@@ -220,7 +230,7 @@ export function applyServerMessage(session, message, {at}) {
       let next = session;
       if (m.interrupted) {
         effects.push({kind: 'drop_playback'});
-        const toolCalls = next.toolCalls.map(t => t.state === 'pending_authority' ? {...t, state: 'cancelled', at} : t);
+        const toolCalls = next.toolCalls.map(t => CANCELLABLE_STATES.includes(t.state) ? {...t, state: 'cancelled', at} : t);
         next = withEvent(next, at, 'interrupted', {interruptions: next.interruptions + 1, generation: next.generation + 1, toolCalls});
       }
       if (m.audio.length) effects.push({kind: 'play_audio', mimeType: OUTPUT_AUDIO_MIME, chunks: m.audio});
@@ -318,7 +328,7 @@ export function setupSentTransition(session, {at}) {
 }
 export function closeTransition(session, {at, reason = 'closed'}) {
   validateLiveSession(session);
-  const toolCalls = session.toolCalls.map(t => t.state === 'pending_authority' ? {...t, state: 'cancelled', at} : t);
+  const toolCalls = session.toolCalls.map(t => CANCELLABLE_STATES.includes(t.state) ? {...t, state: 'cancelled', at} : t);
   return withEvent(session, at, reason, {state: 'closed', toolCalls, generation: session.generation + 1});
 }
 

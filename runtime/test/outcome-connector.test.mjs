@@ -256,8 +256,56 @@ test('H2 body/timeout: one deadline covers the whole request; body is capped as 
   // Non-JSON content-type and oversized Content-Length via the full readConnector path.
   assert.equal((await readConnector(c, {readAt: AT, resolve, request: mockRequest({status: 200, headers: {'content-type': 'text/html'}, chunks: ['<html>']})})).reason, 'source_not_json');
   assert.equal((await readConnector(c, {readAt: AT, resolve, request: mockRequest({status: 200, headers: {'content-type': 'application/json', 'content-length': String(MAX_RESPONSE_BYTES + 1)}})})).reason, 'source_too_large');
+  // A MISSING Content-Type is refused too - it is never treated as implicit JSON.
+  assert.equal((await readConnector(c, {readAt: AT, resolve, request: mockRequest({status: 200, headers: {}, chunks: [JSON.stringify(payload([REC]))]})})).reason, 'source_not_json');
+  assert.equal((await readConnector(c, {readAt: AT, resolve, request: mockRequest({status: 200, headers: {'content-type': 'application/vnd.api+json'}, chunks: [JSON.stringify(payload([REC]))]})})).ok, true, 'application/*+json is still accepted');
 
   // Failure objects never echo headers/credentials.
   const r = await readConnector(c, {readAt: AT, resolve, request: mockRequest({status: 500}), headers: {authorization: 'Bearer sk_live_000'}});
   assert.doesNotMatch(JSON.stringify(r), /sk_live|authorization/i);
+});
+
+test('one shared deadline covers DNS resolution and the body: DNS cannot spend a separate budget, and time already spent on DNS comes out of the body timeout', async () => {
+  const c = declare();
+  const url = new URL(c.locator);
+
+  // A DNS resolver that hangs past the overall timeout → source_timeout, and
+  // the pinned transport (`request`) is never even constructed.
+  const spy = mockRequest({status: 200, chunks: [JSON.stringify(payload([REC]))]});
+  const hangingResolve = () => new Promise(() => {}); // never settles
+  const t0 = Date.now();
+  const hungResult = await readConnector(c, {readAt: AT, resolve: hangingResolve, request: spy, timeoutMs: 40});
+  assert.equal(hungResult.reason, 'source_timeout');
+  assert.ok(Date.now() - t0 < 1000, 'the shared deadline fired quickly, not some other fallback timeout');
+  assert.equal(spy.calls.length, 0, 'no socket is ever opened while DNS is still outstanding');
+
+  // DNS resolving right at (or after) the deadline must not open a socket either,
+  // even though the resolution itself "succeeded".
+  const spy2 = mockRequest({status: 200, chunks: [JSON.stringify(payload([REC]))]});
+  const slowResolve = () => new Promise(r => setTimeout(() => r([{address: '93.184.216.34', family: 4}]), 60));
+  const lateResult = await readConnector(c, {readAt: AT, resolve: slowResolve, request: spy2, timeoutMs: 20});
+  assert.equal(lateResult.reason, 'source_timeout');
+  assert.equal(spy2.calls.length, 0, 'a DNS answer that arrives after the deadline never reaches the socket layer');
+
+  // DNS spends most of the budget → only the remainder is left for the body,
+  // proven by measuring that a hanging body times out close to the ORIGINAL
+  // budget, not a fresh one (the old bug gave fetchPinned a brand-new
+  // READ_TIMEOUT_MS(=10s) regardless of how long DNS took).
+  const dnsDelayMs = 150, totalBudgetMs = 220;
+  const resolveAfterDelay = () => new Promise(r => setTimeout(() => r([{address: '93.184.216.34', family: 4}]), dnsDelayMs));
+  const t1 = Date.now();
+  const sharedResult = await readConnector(c, {readAt: AT, resolve: resolveAfterDelay, request: mockRequest({hang: true}), timeoutMs: totalBudgetMs});
+  const elapsed = Date.now() - t1;
+  assert.equal(sharedResult.reason, 'source_timeout');
+  assert.ok(elapsed < totalBudgetMs + 300, `expected the shared budget to be respected, took ${elapsed}ms for a ${totalBudgetMs}ms budget`);
+
+  // A fast DNS answer still leaves the full budget for a normal read.
+  const ok = await readConnector(c, {readAt: AT, resolve: resolveTo({address: '93.184.216.34', family: 4}), request: jsonRequest(payload([REC])), timeoutMs: 5000});
+  assert.equal(ok.ok, true);
+
+  // resolveVettedAddress itself: a deadline already in the past refuses before calling resolve at all.
+  let resolveCalls = 0;
+  const countingResolve = async () => {resolveCalls++; return [{address: '93.184.216.34', family: 4}];};
+  assert.equal((await resolveVettedAddress(url.hostname, {resolve: countingResolve, deadlineAt: Date.now() - 1})).reason, 'source_timeout');
+  assert.equal(resolveCalls, 0);
 });
