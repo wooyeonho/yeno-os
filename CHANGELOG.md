@@ -1,5 +1,12 @@
 # 2026-09-15 — 호문쿨루스 자율 목표 합성 첫 조각: 저장된 근거 → 결정적 후보 → 일곱 동기 → `proposed` 퀘스트 1개
 
+## 2026-09-15 Solo Leveling 증거 기반 기능 이력 순수 계층 (배선 없음)
+
+- `runtime/lib/solo-leveling.mjs` 추가: `buildSkillHistory`(레지스트리 run + 검증된 실행 기록 → 성공/실패, 입력 해시==다른 기능 출력 해시 → 조합, 개입 없는 autopilot 성공 3건 → 자율, PHASE 5 `external_verified` verdict → S; 승급/강등 궤적, 증거 시각 기반 결정적 지문), `validateSkillHistory`/`parseSkillHistory`(등급 재계산·지문·비밀 거부, 실패 폐쇄), `levelingOverview`.
+- `runtime/test/solo-leveling.test.mjs` 5건: E→D→C 판정, B/A/S 실제 증거 요건, 가짜 증거 승급 불가, 증거 소실 시 강등, 재시작/순서/재폴링 결정성·비밀 거부.
+- server/quests/closed-loop/growth/store 배선 변경 없음.
+
+
 ## 2026-09-15 Real Outcome Verification 순수 계층 (배선 없음)
 
 - **신규** `runtime/lib/outcome-verification.mjs`: `verifyExecution`(산출물 SHA == run outputSha256·runId·inputSha256·완료 → `executionVerified`), 성과 근거 스키마 15필드(`createOutcomeEvidence`/`validateOutcomeEvidence`/`parseOutcomeEvidence`, 정의된 metric·unit·source 종류만, 타입별 authority 고정, 모델 출력은 외부 근거 불가, collectedAt 제외 결정적 지문), `verifyOutcome`(외부 타입 + 링크 일치 + source 식별 일치 + 같은 metric/value/unit/timestamp 보유 + execution 검증일 때만 `outcomeVerified`; `external_verified`만 `highGradeCandidate`; `authorizesAction:false`), `validateOutcomeVerdict`, `assertNoSecrets`.
