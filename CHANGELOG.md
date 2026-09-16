@@ -1,3 +1,13 @@
+# 2026-09-15 — BLACKHOLE 닫힌 고리 첫 조각: 자율 목표 → 능력 격차 → 커비 → 자비스 실행 → 산출물 검증 → 성장 등급 → 재계획
+
+- **신규** `runtime/lib/closed-loop.mjs`(순수): `closedLoopStatus(state, at, {manifests})`(자율 퀘스트별 goal/capabilityGap/kirby/execution/verification/growth/replan 추적, `GET /api/quests`의 `loop`), `planClosedLoop(state, at, {emergencyStop, authorizedBy, manifests})`(호출당 `acquire`/`execute`/`none` 중 하나), `loopInput`(퀘스트 프로비넌스가 이름 붙인 기록만으로 기능 입력 구성), `bindLoopExecution`(퀘스트 `loop` 블록 + 저장 전 실패 폐쇄 검증).
+- `runtime/lib/quests.mjs`: 선택적 `loop` 블록 허용. `loop` 있는 퀘스트만 `type:'capability'` 작업 링크 가능, `loop`는 `synthesis` 있는 퀘스트에만, 작업 `capabilityRequest.id`·`questId`·등급·시각 일치 검증. 그 외 퀘스트 검증은 그대로.
+- `runtime/server.mjs`: `advanceClosedLoop(authorizedBy)` — `acquire`는 기존 `kirbyAutoAcquire()`, `execute`는 기존 `capabilityJob()`(모델 호출 0회) 후 퀘스트 바인딩(실패 시 jobs/quests/events 원복). `POST /api/quests/loop`(소유자, 변경 시 201/그 외 200, 전체 멈춤 409). 스케줄러 tick은 `autopilot.enabled && !emergencyStop`일 때 `'autopilot'` 권한으로 진행하며 `approvalRequired` 퀘스트는 `owner_approval_required`로 건너뛴다.
+- **약화하지 않은 것**: 합성 퀘스트의 `decideAndRunQuest()` 자동 실행 거부, 소유자 `proposed` 우선, `acquire-capability`의 소유자 승인, 전체 멈춤(관찰만), 커비 import→verify→activate·불합격 비활성 유지, 산출물 SHA-256·`self_reported` 성과 계약, 성장 등급의 이력 전용 계산, 지문·재시작·폴링 중복 방지.
+- **자동시험** `runtime/test/closed-loop.test.mjs` 5건: (1) 실제 실패 작업 2건 → `repair` 퀘스트 → `decide`는 여전히 보류 → 소유자 `loop` → `failure-triage` 기능 작업(입력 = 프로비넌스의 실패 작업 정확히) → 완료 → 산출물 해시 == 실행 기록 해시 → E→D → `/api/state` 성장 동일 → 재계획이 `measure-outcome` 1개 생성·`repair` 무중복 → 소유자 성과 기록 201 → 재시작 후 동일, 모델 호출 0회; (2) 자동 운영 opt-in만으로 스케줄러가 합성·실행(`authorizedBy:'autopilot'`), 순수 계획기는 `approvalRequired` 퀘스트를 `owner_approval_required`로 거절, 알 수 없는 권한은 예외; (3) 전체 멈춤 중 기록된 실제 성과로 남은 진짜 `ledger-digest` 격차 → `acquire-capability`(승인 필요) → 자동 운영은 흡수하지 않음 → 소유자 `loop` 1회로 커비 흡수(활성) → 재계획 `resolved` → 2회차 `loop`로 자비스 실행(입력 = 그 성과 정확히) → 검증·E→D → 재시작 보존; (4) 소유자가 끈 기능은 `capability_inactive_owner_review`로 재활성화 없음, 근거 소실은 `evidence_changed`, `loop` 위조(작업 없음 / agent 작업 / 지어낸 등급)는 저장소 검증 거부; (5) 대응 기능 없는 원형과 소유자 퀘스트는 고리가 절대 건드리지 않음.
+- **검증**: 전체 `npm test` 548건 541 pass·0 fail·7 skip(기존 Docker/환경 skip), `npm run test:developer` 78건 75 pass·0 fail·3 skip(Docker 필요).
+- **남은 것**: `verify`·`measure-outcome`에 대응하는 검토된 기능(현재 소유자 실행 전용), 성과의 외부 검증(S 등급), 기능 조합·개입 횟수 추적(B/A), 실패한 `loop` 실행의 재시도 정책(현재 재시도 없음 — 실패 작업은 그대로 남아 다음 `repair` 근거가 된다).
+
 # 2026-09-15 — 호문쿨루스 자율 목표 합성 첫 조각: 저장된 근거 → 결정적 후보 → 일곱 동기 → `proposed` 퀘스트 1개
 
 - **결함**: 호문쿨루스는 이미 있는 `proposed` 퀘스트의 순위만 매길 수 있었고, 소유자가 목표를 하나도 쓰지 않으면 어떤 일이 존재하는지 스스로 정하지 못했다.
