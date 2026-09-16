@@ -43,6 +43,28 @@ function bounded(value, limit = 65536) {
   return bytes;
 }
 export function codeHash(value) { return crypto.createHash('sha256').update(bounded(value)).digest('hex'); }
+// The exact bytes codeHash digests, so a stored artifact can carry the run
+// output with sha256(artifact) === run.outputSha256.
+export function canonicalCode(value) { return bounded(value); }
+
+// Explicit, fixture-verified input contract. A QuickJS capability that wants
+// to be discoverable by General Kirby declares the record fields it consumes;
+// every fixture input must then be `{records:[...]}` rows carrying exactly
+// those fields with those types, so the contract is proven by the same
+// fixtures the sandbox re-runs - never inferred from code or description.
+export const CONTRACT_TYPES = Object.freeze(['string', 'number', 'boolean']);
+export function validateInputContract(contract) {
+  if (!exact(contract, ['records']) || !exact(contract.records, ['fields']) || !isObject(contract.records.fields)) fail('입력 계약은 {records:{fields}} 형식이어야 합니다.');
+  const names = Object.keys(contract.records.fields);
+  if (names.length < 1 || names.length > 16 || names.some(name => !/^[a-z][A-Za-z0-9]{0,39}$/.test(name) || !CONTRACT_TYPES.includes(contract.records.fields[name]))) fail('입력 계약 필드 이름·타입을 확인하세요.');
+  return true;
+}
+export function inputMatchesContract(contract, input) {
+  if (!exact(input, ['records']) || !Array.isArray(input.records) || !input.records.length) return false;
+  const fields = contract.records.fields, names = Object.keys(fields).sort().join();
+  return input.records.every(row => isObject(row) && Object.keys(row).sort().join() === names && Object.keys(fields).every(name => typeof row[name] === fields[name]));
+}
+export function codeInputFields(manifest) { return manifest?.inputContract?.records?.fields ?? null; }
 
 function validPath(path, javascript = false) {
   return typeof path === 'string' && path.length <= 180 && /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(path)
@@ -64,7 +86,8 @@ function githubRepo(value) {
 
 export function validateCodeManifest(manifest) {
   bounded(manifest);
-  if (!exact(manifest, ['schemaVersion', 'id', 'version', 'name', 'description', 'source', 'files', 'entry', 'fixtures'])
+  const withContract = Object.hasOwn(manifest ?? {}, 'inputContract');
+  if (!exact(manifest, ['schemaVersion', 'id', 'version', 'name', 'description', 'source', 'files', 'entry', 'fixtures', ...(withContract ? ['inputContract'] : [])])
       || manifest.schemaVersion !== 1 || !ID.test(manifest.id) || !VERSION.test(manifest.version) || !text(manifest.name, 100) || !text(manifest.description, 600)) {
     fail('코드 기능의 이름·버전·형식을 확인하세요.');
   }
@@ -84,12 +107,14 @@ export function validateCodeManifest(manifest) {
   }
   if (!validPath(manifest.entry, true) || !paths.has(manifest.entry)) fail('실행할 entry 파일이 코드 묶음에 있어야 합니다.');
   if (!Array.isArray(manifest.fixtures) || manifest.fixtures.length < 2 || manifest.fixtures.length > 8) fail('서로 다른 시험 입력과 예상 결과를 2~8개 포함하세요.');
+  if (withContract) validateInputContract(manifest.inputContract);
   const names = new Set(), inputs = new Set();
   for (const fixture of manifest.fixtures) {
     if (!exact(fixture, ['name', 'input', 'expected']) || !text(fixture.name, 100) || names.has(fixture.name)) fail('시험 이름·입력·예상 결과를 확인하세요.');
     const digest = codeHash(fixture.input);
     if (inputs.has(digest)) fail('시험마다 서로 다른 입력이 필요합니다.');
     codeHash(fixture.expected); names.add(fixture.name); inputs.add(digest);
+    if (withContract && !inputMatchesContract(manifest.inputContract, fixture.input)) fail(`시험 ${fixture.name}의 입력이 선언한 입력 계약과 다릅니다.`);
   }
   return true;
 }

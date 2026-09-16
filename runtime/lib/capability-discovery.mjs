@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import {publicQuest} from './quests.mjs';
 import {validateCapabilities, initialCapabilities, importCapability} from './capabilities.mjs';
-import {validateCodeWorkshop, validateCodeManifest, codeHash} from './code-workshop.mjs';
+import {validateCodeWorkshop, validateCodeManifest, codeHash, codeInputFields} from './code-workshop.mjs';
 
 // General Kirby capability discovery (pure, no wiring yet).
 //
@@ -102,9 +102,15 @@ export function requiredCapability(state, quest) {
 // A manifest fits a requirement when every field it declares exists on the
 // projected records with the same type - the declarative engine validates rows
 // with an exact key set, so the caller must project down to exactly these fields.
+// Declarative manifests carry `inputSchema.fields`; QuickJS manifests carry an
+// explicit fixture-verified `inputContract.records.fields`. Nothing else counts.
+export function manifestInputFields(manifest) {
+  return manifest?.inputSchema?.fields ?? codeInputFields(manifest) ?? null;
+}
+
 export function manifestFits(manifest, requirement) {
-  const fields = manifest?.inputSchema?.fields;
-  if (!fields || typeof fields !== 'object') return {fits: false, coverage: 0, missing: [], mismatched: [], reason: 'no_declarative_schema'};
+  const fields = manifestInputFields(manifest);
+  if (!fields || typeof fields !== 'object') return {fits: false, coverage: 0, missing: [], mismatched: [], reason: manifest?.files ? 'no_input_contract' : 'no_declarative_schema'};
   const missing = [], mismatched = [];
   for (const [name, type] of Object.entries(fields)) {
     if (!(name in requirement.fields)) missing.push(name); else if (requirement.fields[name] !== type) mismatched.push(name);
@@ -153,7 +159,7 @@ export function searchCapabilities(state, requirement, {manifests = []} = {}) {
 // Project the requirement's records down to exactly the fields a matched
 // manifest declares. Pure; the caller still goes through createCapabilityRequest.
 export function projectInput(records, manifest) {
-  const fields = Object.keys(manifest.inputSchema.fields);
+  const fields = Object.keys(manifestInputFields(manifest));
   return {records: records.slice(0, MAX_RECORDS).map(record => Object.fromEntries(fields.map(name => [name, record[name]])))};
 }
 
@@ -169,7 +175,7 @@ export function discoverCapability(state, quest, {manifests = []} = {}) {
   const search = searchCapabilities(state, requirement, {manifests});
   const best = search.matches[0] ?? null;
   const gap = !best ? 'missing' : best.origin === 'active' ? 'none' : best.origin === 'inactive_owner_review' ? 'inactive_owner_review' : 'acquire_reviewed';
-  const candidate = best ? {...best, sandboxable: best.engine === 'declarative-v1' && best.fixtureCount >= 2, demand: {recordType: requirement.recordType, recordCount: records.length, recordIds: requirement.recordIds}} : null;
+  const candidate = best ? {...best, sandboxable: best.fixtureCount >= 2 && (best.engine === 'declarative-v1' || best.verified === true), demand: {recordType: requirement.recordType, recordCount: records.length, recordIds: requirement.recordIds}} : null;
   const reason = gap === 'none' ? `활성 기능 ${best.id}이(가) ${requirement.recordType} 기록 ${records.length}건을 바로 처리할 수 있습니다.`
     : gap === 'inactive_owner_review' ? `${best.id}은(는) 가져왔지만 비활성 상태입니다(소유자 비활성화 또는 시험 불합격). 커비는 스스로 재활성화하지 않습니다.`
     : gap === 'acquire_reviewed' ? `검토된 원본 ${best.id} ${best.version}이(가) 요구 스키마에 맞습니다. 시험 ${best.fixtureCount}건을 통과해야 활성화됩니다.`

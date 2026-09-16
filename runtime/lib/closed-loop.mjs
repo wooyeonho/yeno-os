@@ -1,5 +1,6 @@
 import {publicQuest, validateQuestState} from './quests.mjs';
 import {createCapabilityRequest} from './capabilities.mjs';
+import {createCodeRequest, codeInputFields} from './code-workshop.mjs';
 import {gradeSkill, GRADES} from './growth.mjs';
 import {requiredCapability, discoverCapability, qualifyCandidate, projectInput} from './capability-discovery.mjs';
 import {verifyExecution} from './outcome-verification.mjs';
@@ -25,19 +26,26 @@ import {observeEvidenceGaps, synthesizeAutonomousGoal} from './goal-synthesis.mj
 // capability change and needs the owner, the scheduler only advances
 // `local-reversible` reuse while the owner has autopilot enabled, and
 // emergency stop refuses every mutation (qualifyCandidate blocks reuse too).
-export const LOOP_VERSION = 2;
-export const LOOP_KEYS = 'authorizedBy,capabilityId,discoveryFingerprint,gradeBefore,jobId,kirbyAction,startedAt,version';
+export const LOOP_VERSION = 3;
+export const LOOP_KEYS = 'authorizedBy,capabilityId,discoveryFingerprint,engine,gradeBefore,jobId,kirbyAction,startedAt,version';
+export const LOOP_ENGINES = Object.freeze(['declarative-v1', 'quickjs-v1']);
 export const LOOP_AUTHORITIES = Object.freeze(['owner', 'autopilot']);
 // Migration record of the first slice's fixed mapping. Kept only so traces
 // can show whether general discovery agrees with it; it decides nothing.
 export const LEGACY_ARCHETYPE_CAPABILITY = Object.freeze({repair: 'failure-triage', 'acquire-capability': 'ledger-digest'});
 export const ARCHETYPE_CAPABILITY = LEGACY_ARCHETYPE_CAPABILITY;
 
-const entryOf = (state, id) => (state.capabilities?.entries ?? []).find(entry => entry.id === id) ?? null;
-const activeManifest = (state, id) => {
-  const entry = entryOf(state, id);
+// Registry a loop engine executes from: declarative capabilities live in
+// capabilities.mjs, QuickJS code in code-workshop.mjs. Both keep the same
+// `entries[].versions[]` + `history[]` (run/rollback) shape growth reads.
+export const loopRegistry = (state, engine) => engine === 'quickjs-v1' ? state.codeWorkshop : state.capabilities;
+const entryOf = (state, id, engine) => (loopRegistry(state, engine)?.entries ?? []).find(entry => entry.id === id) ?? null;
+const activeManifest = (state, id, engine) => {
+  const entry = entryOf(state, id, engine);
   return entry?.activeHash ? entry.versions.find(item => item.hash === entry.activeHash)?.manifest ?? null : null;
 };
+// The request a loop job carries; code jobs keep it under codeTask.request.
+export const loopRequest = job => job?.type === 'code' ? job.codeTask?.request ?? null : job?.capabilityRequest ?? null;
 
 // General Kirby stage for one goal. Returns what discovery found, what the
 // qualification verdict was, and the single action the loop may take.
@@ -54,13 +62,19 @@ export function kirbyStage(state, quest, {manifests = [], emergencyStop = false}
     return {...summary, stage: 'inactive_owner_review', capabilityId: discovery.candidate.id, active: false, qualification};
   }
   if (discovery.gap === 'none') {
-    // Jarvis' loop execution path is the declarative capability job; an active
-    // QuickJS match is reported but the loop prefers a declarative one.
+    // Jarvis executes either engine: a declarative capability job or a QuickJS
+    // code run. A declarative match is preferred; a QuickJS match executes only
+    // when its active version carries sandbox proof (`verified`) and an
+    // explicit input contract - both re-checked here, never assumed.
     const candidate = discovery.candidate.engine === 'declarative-v1' ? discovery.candidate
       : discovery.matches.find(item => item.origin === 'active' && item.engine === 'declarative-v1') ?? discovery.candidate;
     const qualification = qualifyCandidate(candidate, {emergencyStop});
-    if (candidate.engine !== 'declarative-v1') return {...summary, stage: 'engine_unsupported', capabilityId: candidate.id, active: true, qualification};
-    return {...summary, stage: qualification.action === 'reuse' ? 'active' : 'blocked', capabilityId: candidate.id, active: true, hash: candidate.hash, qualification};
+    if (!LOOP_ENGINES.includes(candidate.engine)) return {...summary, stage: 'engine_unsupported', capabilityId: candidate.id, active: true, qualification};
+    if (candidate.engine === 'quickjs-v1' && (candidate.verified !== true || !codeInputFields(activeManifest(state, candidate.id, 'quickjs-v1')))) {
+      return {...summary, stage: 'blocked', capabilityId: candidate.id, active: true, engine: candidate.engine, qualification: {...qualification, action: 'blocked', eligible: false,
+        blockers: [...(qualification.blockers ?? []), candidate.verified !== true ? 'sandbox_proof_missing' : 'input_contract_missing']}};
+    }
+    return {...summary, stage: qualification.action === 'reuse' ? 'active' : 'blocked', capabilityId: candidate.id, active: true, engine: candidate.engine, hash: candidate.hash, qualification};
   }
   // acquire_reviewed: a repository-reviewed manifest fits; Kirby may import ->
   // verify -> activate it, but only once qualification passes and the owner asks.
@@ -76,7 +90,7 @@ export function kirbyStage(state, quest, {manifests = [], emergencyStop = false}
 export function loopInput(state, quest, {manifests = []} = {}) {
   const kirby = kirbyStage(state, quest, {manifests});
   if (kirby.stage !== 'active') return null;
-  const manifest = activeManifest(state, kirby.capabilityId);
+  const manifest = activeManifest(state, kirby.capabilityId, kirby.engine);
   const required = requiredCapability(state, quest);
   if (!manifest || !required.ok || !required.records.length) return null;
   return projectInput(required.records, manifest);
@@ -84,11 +98,14 @@ export function loopInput(state, quest, {manifests = []} = {}) {
 
 function verificationStage(state, quest, job) {
   if (!job || job.status !== 'completed') return {verified: false, executionVerified: false, outcomeVerified: false, reason: job ? `작업 상태 ${job.status}` : '실행 없음', artifact: null, run: null};
-  const [artifact] = publicQuest(quest, state).artifacts;
-  const run = (state.capabilities?.history ?? []).find(item => item.action === 'run' && item.runId === job.id) ?? null;
+  const artifacts = publicQuest(quest, state).artifacts;
+  const run = (loopRegistry(state, quest.loop.engine)?.history ?? []).find(item => item.action === 'run' && item.runId === job.id) ?? null;
+  // A code run stores its report and its canonical JSON output; the output
+  // artifact is the one whose bytes the run record digested.
+  const artifact = (run && artifacts.find(item => item.sha256 === run.outputSha256)) ?? artifacts[0] ?? null;
   if (!artifact) return {verified: false, executionVerified: false, outcomeVerified: false, reason: '산출물 없음', artifact: null, run};
   if (!run) return {verified: false, executionVerified: false, outcomeVerified: false, reason: '기능 실행 기록 없음', artifact, run: null};
-  const verdict = verifyExecution({artifactSha256: artifact.sha256, run, job});
+  const verdict = verifyExecution({artifactSha256: artifact.sha256, run, job: {...job, capabilityRequest: loopRequest(job)}});
   const sameCapability = run.id === quest.loop.capabilityId;
   const verified = verdict.executionVerified && sameCapability;
   return {verified, executionVerified: verified, outcomeVerified: false, reason: verified ? null : !sameCapability ? '실행 기록의 기능이 고리 기록과 다름' : verdict.reasons.join('; '), artifact, run, reasons: verdict.reasons};
@@ -96,7 +113,7 @@ function verificationStage(state, quest, job) {
 
 function growthStage(state, quest) {
   try {
-    const now = gradeSkill(state.capabilities, quest.loop.capabilityId);
+    const now = gradeSkill(loopRegistry(state, quest.loop.engine), quest.loop.capabilityId);
     return {gradeBefore: quest.loop.gradeBefore, grade: now.grade, promoted: GRADES.indexOf(now.grade) > GRADES.indexOf(quest.loop.gradeBefore), nextGrade: now.nextGrade, blockedReason: now.blockedReason, evidence: now.evidence};
   } catch (error) {
     return {gradeBefore: quest.loop.gradeBefore, grade: null, promoted: false, error: error.message};
@@ -130,7 +147,7 @@ export function closedLoopStatus(state, at, {manifests = []} = {}) {
         capabilityGap: {capabilityId: quest.loop?.capabilityId ?? kirby.capabilityId, evidenceIntact: !['evidence_changed', 'no_records'].includes(kirby.stage), gap: kirby.gap,
           requirementFingerprint: kirby.requirementFingerprint, recordType: kirby.recordType, recordCount: kirby.recordCount, legacyCapabilityId: kirby.legacyCapabilityId, agreesWithLegacy: kirby.capabilityId ? kirby.capabilityId === kirby.legacyCapabilityId : null},
         kirby,
-        execution: quest.loop ? {kind: 'capability', jobId: quest.loop.jobId, status: job?.status ?? 'missing_job', authorizedBy: quest.loop.authorizedBy, startedAt: quest.loop.startedAt, kirbyAction: quest.loop.kirbyAction} : quest.jobId ? {kind: 'agent', jobId: quest.jobId, status: shown.status, authorizedBy: 'owner'} : null,
+        execution: quest.loop ? {kind: 'capability', engine: quest.loop.engine, jobId: quest.loop.jobId, status: job?.status ?? 'missing_job', authorizedBy: quest.loop.authorizedBy, startedAt: quest.loop.startedAt, kirbyAction: quest.loop.kirbyAction} : quest.jobId ? {kind: 'agent', jobId: quest.jobId, status: shown.status, authorizedBy: 'owner'} : null,
         verification: quest.loop ? verificationStage(state, quest, job) : {verified: false, executionVerified: false, outcomeVerified: false, reason: quest.jobId ? '소유자 실행(모델 작업)은 기존 성과 기록 경로로 검증' : '실행 없음', artifact: null, run: null},
         growth: quest.loop ? growthStage(state, quest) : null,
         replan: replanStage(state, at, quest, manifests),
@@ -161,7 +178,7 @@ export function planClosedLoop(state, at, {emergencyStop = false, authorizedBy =
     if (kirby.stage !== 'active') {blocked ??= {reason: ['evidence_changed', 'no_records'].includes(kirby.stage) ? kirby.stage : `capability_${kirby.stage}`, questId: quest.id, capabilityId, blockers: kirby.qualification?.blockers ?? []}; continue;}
     const input = loopInput(state, quest, {manifests});
     if (!input) {blocked ??= {reason: 'evidence_changed', questId: quest.id}; continue;}
-    return {kind: 'execute', questId: quest.id, capabilityId, manifestHash: kirby.hash, input, authorizedBy, kirbyAction: kirby.qualification.action, discoveryFingerprint: kirby.requirementFingerprint};
+    return {kind: 'execute', questId: quest.id, capabilityId, engine: kirby.engine, manifestHash: kirby.hash, input, authorizedBy, kirbyAction: kirby.qualification.action, discoveryFingerprint: kirby.requirementFingerprint};
   }
   return none(blocked.reason, blocked);
 }
@@ -169,10 +186,13 @@ export function planClosedLoop(state, at, {emergencyStop = false, authorizedBy =
 // The durable link written when Jarvis accepts a loop execution. Same
 // fail-closed check the store applies on load, before anything is saved.
 export function bindLoopExecution(state, quest, job, {authorizedBy, at, kirbyAction = 'reuse', discoveryFingerprint}) {
-  const request = createCapabilityRequest(state.capabilities, job.capabilityRequest.id, job.capabilityRequest.input);
-  if (request.hash !== job.capabilityRequest.hash) throw new Error('Capability version changed');
+  const engine = job.type === 'code' ? 'quickjs-v1' : 'declarative-v1';
+  const held = loopRequest(job);
+  if (!held || (engine === 'quickjs-v1' && job.codeTask?.mode !== 'run')) throw new Error('Loop job must carry an execution request');
+  const request = engine === 'quickjs-v1' ? createCodeRequest(state.codeWorkshop, held.id, held.input) : createCapabilityRequest(state.capabilities, held.id, held.input);
+  if (request.hash !== held.hash) throw new Error('Capability version changed');
   if (typeof discoveryFingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(discoveryFingerprint)) throw new Error('Discovery fingerprint required');
-  const loop = {version: LOOP_VERSION, capabilityId: job.capabilityRequest.id, jobId: job.id, gradeBefore: gradeSkill(state.capabilities, job.capabilityRequest.id).grade, startedAt: at, authorizedBy, kirbyAction, discoveryFingerprint};
+  const loop = {version: LOOP_VERSION, engine, capabilityId: held.id, jobId: job.id, gradeBefore: gradeSkill(loopRegistry(state, engine), held.id).grade, startedAt: at, authorizedBy, kirbyAction, discoveryFingerprint};
   const bound = {...quest, jobId: job.id, status: 'assigned', startedAt: at, updatedAt: at, version: quest.version + 1, loop};
   validateQuestState({...state, quests: (state.quests ?? []).map(item => item.id === quest.id ? bound : item), jobs: (state.jobs ?? []).map(item => item.id === job.id ? {...job, questId: quest.id} : item)});
   return bound;

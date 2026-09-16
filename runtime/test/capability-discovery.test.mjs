@@ -173,7 +173,7 @@ test('fails closed: owner quests, vanished or re-statused records, unknown evide
     files:[{path:'index.mjs',content:'export default input=>input;'}],entry:'index.mjs',fixtures:[{name:'a',input:{records:[]},expected:{records:[]}},{name:'b',input:{records:[1]},expected:{records:[1]}}]},{at:NOW});
   const withCode=discoverCapability({...state,codeWorkshop:code.registry},quest,{manifests:REVIEWED});
   assert.equal(withCode.gap,'none');
-  assert.deepEqual(withCode.rejected.find(r=>r.id==='code-bundle'),{id:'code-bundle',origin:'inactive_owner_review',engine:'quickjs-v1',reason:'no_declarative_schema',missing:[],mismatched:[]});
+  assert.deepEqual(withCode.rejected.find(r=>r.id==='code-bundle'),{id:'code-bundle',origin:'inactive_owner_review',engine:'quickjs-v1',reason:'no_input_contract',missing:[],mismatched:[]});
 
   assert.throws(()=>searchCapabilities({...state,capabilities:{...state.capabilities,version:2}},requiredCapability(state,quest).requirement),/검증/,'a corrupt registry is not searched');
   for(const [kind,rule] of Object.entries(EVIDENCE_RECORDS))assert.ok(RECORD_PROJECTIONS[rule.type],`${kind} projects a known record type`);

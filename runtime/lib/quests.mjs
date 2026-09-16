@@ -54,13 +54,16 @@ export function synthesisQuestId(fingerprint){
 // Closed-loop execution link: the quest's `jobId` is a capability job whose
 // request names the same reviewed capability, the grade snapshot is a real
 // grade, and the authority that started it is one of two known values.
-const LOOP_KEYS='authorizedBy,capabilityId,discoveryFingerprint,gradeBefore,jobId,kirbyAction,startedAt,version';
+const LOOP_KEYS='authorizedBy,capabilityId,discoveryFingerprint,engine,gradeBefore,jobId,kirbyAction,startedAt,version';
 const LOOP_KIRBY_ACTIONS=['reuse'];
+const LOOP_ENGINES=['declarative-v1','quickjs-v1'];
+const loopJobRequest=(job,engine)=>engine==='quickjs-v1'?(job?.type==='code'&&job.codeTask?.mode==='run'?job.codeTask.request:null):(job?.type==='capability'?job.capabilityRequest:null);
 function validateLoop(q,job){
   const l=q.loop;
   if(!q.synthesis)throw new Error('Loop execution requires an autonomous quest');
-  if(!object(l)||Object.keys(l).sort().join()!==LOOP_KEYS||l.version!==2||!['owner','autopilot'].includes(l.authorizedBy)||!LOOP_KIRBY_ACTIONS.includes(l.kirbyAction)||!/^[a-f0-9]{64}$/.test(l.discoveryFingerprint??'')||!['E','D','C','B','A','S'].includes(l.gradeBefore)||!iso(l.startedAt))throw new Error('Invalid quest loop record');
-  if(l.jobId!==q.jobId||!job||job.type!=='capability'||job.capabilityRequest?.id!==l.capabilityId||job.questId!==q.id)throw new Error('Invalid quest loop execution');
+  if(!object(l)||Object.keys(l).sort().join()!==LOOP_KEYS||l.version!==3||!LOOP_ENGINES.includes(l.engine)||!['owner','autopilot'].includes(l.authorizedBy)||!LOOP_KIRBY_ACTIONS.includes(l.kirbyAction)||!/^[a-f0-9]{64}$/.test(l.discoveryFingerprint??'')||!['E','D','C','B','A','S'].includes(l.gradeBefore)||!iso(l.startedAt))throw new Error('Invalid quest loop record');
+  const request=loopJobRequest(job,l.engine);
+  if(l.jobId!==q.jobId||!job||!request||request.id!==l.capabilityId||job.questId!==q.id)throw new Error('Invalid quest loop execution');
 }
 function validateSynthesis(q){
   const p=q.synthesis;
@@ -201,7 +204,7 @@ export function validateQuestState(state){
     if(q.projectId!==null&&(!uuid(q.projectId)||!projects.some(p=>p.id===q.projectId)))throw new Error('Invalid quest project reference');
     if(q.jobId!==null){
       const job=jobs.find(j=>j.id===q.jobId);
-      if(!uuid(q.jobId)||linkedJobs.has(q.jobId)||!job||!(job.type==='agent'||(job.type==='capability'&&q.loop!==undefined))||(job.questId!==undefined&&job.questId!==q.id))throw new Error('Invalid quest job reference');
+      if(!uuid(q.jobId)||linkedJobs.has(q.jobId)||!job||!(job.type==='agent'||(['capability','code'].includes(job.type)&&q.loop!==undefined))||(job.questId!==undefined&&job.questId!==q.id))throw new Error('Invalid quest job reference');
       linkedJobs.add(q.jobId);
       if(q.loop!==undefined)validateLoop(q,job);
     }else if(q.status!=='proposed'||q.loop!==undefined)throw new Error('Unassigned quest cannot claim execution');
