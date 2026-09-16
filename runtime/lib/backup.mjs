@@ -29,7 +29,7 @@ const MAGIC = Buffer.from('YENOBK1\n');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const HASH = /^[a-f0-9]{64}$/;
 const STATE_KEYS = ['revision', 'emergencyStop', 'concurrency', 'modules', 'jobs', 'memories', 'snapshots', 'events', 'requests', 'artifacts', 'devices', 'projects', 'sources'];
-const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt', 'productionEvidence', 'studioSeriesId', 'studioChapterId', 'researchRequest', 'researchEvidenceId', 'autopilot', 'capabilityRequest', 'codeTask', 'codeCheckpoint', 'codeOutput', 'voiceConversation', 'repositoryTask', 'developerEvidence', 'routing'];
+const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt', 'productionEvidence', 'studioSeriesId', 'studioChapterId', 'researchRequest', 'researchEvidenceId', 'autopilot', 'capabilityRequest', 'codeTask', 'codeCheckpoint', 'codeOutput', 'voiceConversation', 'repositoryTask', 'developerEvidence', 'routing', 'selfTestId'];
 const fail = message => { throw new Error(`Backup: ${message}`); };
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = (value, min, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value) && value >= min && value <= max;
@@ -54,7 +54,7 @@ function memories(value) {
   }
 }
 function validateState(state) {
-  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop'], STATE_KEYS);
+  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop', 'selfTests'], STATE_KEYS);
   if(!Object.hasOwn(state,'autopilot'))state.autopilot=initialAutopilot();
   if(!Object.hasOwn(state,'capabilities'))state.capabilities=initialCapabilities();
   validateCapabilities(state.capabilities);

@@ -37,6 +37,7 @@ import {validateCodeTask,codePrompt,runCodeJob} from './lib/code-jobs.mjs';
 import {CodeSandboxError} from './lib/code-sandbox.mjs';
 import {growthOverview} from './lib/growth.mjs';
 import {outcomeRealities,verifiedOutcomesByCapability} from './lib/outcome-reality.mjs';
+import {buildReadiness,detectSourceCommit,selfTestDiscovery,selfTestInput,selfTestProgress,PROVIDER_BLOCKER,MAX_SELF_TESTS,READINESS_VERSION} from './lib/readiness.mjs';
 import {decideQuest,isDecideRequest} from './lib/decide.mjs';
 import {synthesizeAutonomousGoal,previewAutonomousGoals} from './lib/goal-synthesis.mjs';
 import {DRIVE_DEFINITIONS} from './lib/motivation.mjs';
@@ -328,6 +329,56 @@ export function createYenoServer(options={}) {
    return {status:201,payload:{jobId:job.id,job:publicJob(job)}};
  }
 
+ const SOURCE_COMMIT=detectSourceCommit(env,path.resolve(ROOT,'..'));
+ const LIVE_TRANSPORT=!options.agentFetch;
+ function requestFacts(req,principal,versioned){
+   const host=String(req.headers.host??'').toLowerCase();
+   const publicHosts=(env.YENO_ALLOWED_HOSTS??'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
+   return {request:{encrypted:!!req.socket.encrypted,publicHost:publicHosts.includes(host)?host:null,allowedPublicHosts:publicHosts.length},principal:{kind:principal.kind,versioned}};
+ }
+ function readinessState(req,principal,versioned){
+   return buildReadiness({state:s,sourceCommit:SOURCE_COMMIT,runtimeVersion:VERSION,apiVersion:API_VERSION,store:{directory:path.basename(dataDir),durable:!persistencePending&&fs.existsSync(path.join(dataDir,'state.json')),recovered:store.recovered},
+     ...requestFacts(req,principal,versioned),providers:agentSettings.providers,brainPool:{declared:DECLARED_BRAIN_POOL.length,configured:currentBrainPool(env,DECLARED_BRAIN_POOL).models.filter(m=>m.configured).length},liveTransport:LIVE_TRANSPORT,manifests:SYNTHESIS_MANIFESTS,at:now()});
+ }
+ // Safe self-test: one real capability job from fixed synthetic records through
+ // the same Kirby search / Jarvis execution / artifact / verification path real
+ // goals use. Never imports, activates, pays, posts or touches credentials. A
+ // live provider smoke call happens only on explicit owner request and only
+ // when a real (network) transport and configured provider exist.
+ function startSelfTest(b){
+   if(!b.requestId||Object.keys(b).some(k=>!['requestId','liveProvider'].includes(k)))throw new HttpError(400,'Persistent requestId required');
+   if(b.liveProvider!==undefined&&typeof b.liveProvider!=='boolean')throw new HttpError(400,'liveProvider must be boolean');
+   if(s.emergencyStop)throw new HttpError(409,'전체 멈춤 상태입니다.');
+   if(s.jobs.some(job=>job.selfTestId&&['queued','running'].includes(job.status)))throw new HttpError(409,'이전 자가 점검이 아직 실행 중입니다.');
+   s.selfTests??=[];
+   const id=uid(),startedAt=now();
+   const homunculusPreview=previewAutonomousGoals(s,startedAt,{manifests:SYNTHESIS_MANIFESTS});
+   const homunculus={observed:true,candidates:Array.isArray(homunculusPreview?.candidates)?homunculusPreview.candidates.length:0,ownerQuestPending:!!homunculusPreview?.ownerProposedQuestIds?.length,persisted:false};
+   const kirby=selfTestDiscovery(s,{manifests:SYNTHESIS_MANIFESTS});
+   let job=null;
+   if(kirby.action==='reuse'){
+     const entry=s.capabilities.entries.find(item=>item.id===kirby.capabilityId);
+     const manifest=entry.versions.find(v=>v.hash===entry.activeHash).manifest;
+     job=capabilityJob(kirby.capabilityId,selfTestInput(manifest),kirby.hash);job.title=`자가 점검 · ${kirby.capabilityId}`;job.selfTestId=id;
+   }
+   let providerLive;
+   if(b.liveProvider!==true)providerLive={status:'BLOCKED',reason:PROVIDER_BLOCKER,detail:'owner_did_not_request_live_call',jobId:null};
+   else if(!LIVE_TRANSPORT)providerLive={status:'BLOCKED',reason:'synthetic_transport_injected',jobId:null};
+   else if(!agentSettings.providers.some(p=>p.configured))providerLive={status:'BLOCKED',reason:PROVIDER_BLOCKER,detail:'no_configured_provider',jobId:null};
+   else{
+     try{const smoke=newJob({type:'agent',title:'자가 점검 · 실제 모델 연결 확인',text:'BLACKHOLE self-test. Reply with exactly: OK'});smoke.selfTestId=id;smoke.callLimit=1;providerLive={status:'REQUESTED',reason:null,jobId:smoke.id};}
+     catch(error){if(!(error instanceof HttpError))throw error;providerLive={status:'BLOCKED',reason:'routing_or_budget',detail:error.message,jobId:null};}
+   }
+   const record={version:READINESS_VERSION,id,startedAt,homunculus,kirby,jobId:job?.id??null,capabilityId:kirby.capabilityId,providerLive,durableReload:null};
+   s.selfTests=[record,...s.selfTests].slice(0,MAX_SELF_TESTS);
+   event(`자가 점검 시작: 커비 ${kirby.action}${kirby.capabilityId?` · ${kirby.capabilityId}`:''} · 모델 연결 ${providerLive.status}`);
+   return {status:201,payload:{selfTest:selfTestProgress(record,{state:s,directory:dataDir,liveTransport:LIVE_TRANSPORT})}};
+ }
+ function selfTestState(){
+   const list=(s.selfTests??[]).map(record=>selfTestProgress(record,{state:s,directory:dataDir,liveTransport:LIVE_TRANSPORT}));
+   for(const item of list){const record=s.selfTests.find(r=>r.id===item.id);if(item.durableReload?.matched&&!record.durableReload?.matched){record.durableReload={matched:true,at:now()};}}
+   return {latest:list[0]??null,history:list,liveTransport:LIVE_TRANSPORT};
+ }
  function capabilityJob(id,input,expectedHash){
    const request=createCapabilityRequest(s.capabilities,id,input);
    if(expectedHash&&request.hash!==expectedHash)throw new HttpError(409,'기능 버전이 바뀌었습니다. 현재 버전으로 새 작업을 확인하세요.');
@@ -931,6 +982,8 @@ export function createYenoServer(options={}) {
        res.writeHead(200,{'Content-Type':file.mimeType,'Content-Disposition':`attachment; filename="${file.name}"`,'Content-Length':Buffer.byteLength(file.content),'X-Content-SHA256':digest(file.content)});return res.end(file.content);
      }
      if(req.method==='GET'&&url.pathname==='/api/quests')return respond(res,200,questState());
+     if(req.method==='GET'&&url.pathname==='/api/readiness')return respond(res,200,readinessState(req,principal,versioned));
+     if(req.method==='GET'&&url.pathname==='/api/self-test'){const payload=selfTestState();if(payload.history.some((item,i)=>item.durableReload?.matched&&!s.selfTests[i].durableReload))save();return respond(res,200,payload);}
      if(req.method==='GET'&&url.pathname==='/api/autopilot')return respond(res,200,autopilotState());
      if(req.method==='GET'&&url.pathname==='/api/research')return respond(res,200,researchState());
      if(req.method==='GET'&&url.pathname==='/api/bots')return respond(res,200,botStatus(s,profiles));
@@ -1005,6 +1058,7 @@ export function createYenoServer(options={}) {
          const outcome=synthesizeGoal();
          return {status:outcome.persisted?201:200,payload:outcome};
        }
+       if(url.pathname==='/api/self-test')return startSelfTest(b);
        if(url.pathname==='/api/quests/loop'){
         if(!b.requestId||Object.keys(b).some(k=>!['requestId'].includes(k)))throw new HttpError(400,'Persistent requestId required');
         if(s.emergencyStop)throw new HttpError(409,'전체 멈춤을 먼저 해제하세요.');
@@ -1114,7 +1168,7 @@ export function createYenoServer(options={}) {
        throw new HttpError(404,'Not found');
      },{required:versioned||!!principal.web,safetyAction:url.pathname==='/api/code/disable'||url.pathname==='/api/capabilities/disable'||(url.pathname==='/api/studio'&&isStudioSafetyAction(s.studio,b))||(url.pathname==='/api/bots'&&b.action==='stop')||(url.pathname==='/api/commands'&&/^(?:봇|자동)\s*운영\s*중지$/.test(b.text??''))||(url.pathname==='/api/control'&&b.action==='stop')||(['/api/discovery','/api/ecosystem','/api/autopilot'].includes(url.pathname)&&b.enabled===false)});
      respond(res,result.status,result.payload);
-   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof RepositoryPatchError||error instanceof CodeWorkshopError||error instanceof CodeSandboxError||error instanceof CapabilityError||error instanceof ResearchError||error instanceof WebSessionError||error instanceof ProductionCapacityError||error instanceof StudioError||error instanceof VideoError||error instanceof ForAiError||error instanceof QuestError||error instanceof BotError||error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError||error instanceof RequestLedgerError;respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
+   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof RepositoryPatchError||error instanceof CodeWorkshopError||error instanceof CodeSandboxError||error instanceof CapabilityError||error instanceof ResearchError||error instanceof WebSessionError||error instanceof ProductionCapacityError||error instanceof StudioError||error instanceof VideoError||error instanceof ForAiError||error instanceof QuestError||error instanceof BotError||error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError||error instanceof RequestLedgerError;if(!known&&process.env.YENO_DEBUG_ERRORS)console.error(error);respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
  });
  server.requestTimeout=15000;server.headersTimeout=10000;
  function shutdown(){if(closed)return;closed=true;discovery.close();ecosystem.close();clearTimeout(schedulerTimer);for(const job of s.jobs)if(['running','queued'].includes(job.status)){job.status='paused';job.pauseReason='shutdown';touch(job);}for(const controller of controllers.values())controller.abort();event('Runtime stopped; unfinished jobs paused.');try{save();}finally{releaseLock();server.close();}}

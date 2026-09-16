@@ -2,6 +2,7 @@ import {validateRepositoryJob,validateJobEvidence} from './repository-patch.mjs'
 import {initialCodeWorkshop,validateCodeWorkshop,disableCodeForRestore} from './code-workshop.mjs';
 import {validateCodeJob} from './code-jobs.mjs';
 import {validateRouting} from './brain-routing.mjs';
+import {validateSelfTests} from './readiness.mjs';
 import {initialCapabilities,validateCapabilities,validateCapabilityRequest,capabilityInputSha256,disableAllCapabilitiesForRestore} from './capabilities.mjs';
 import {validateWorldSnapshot} from './world.mjs';
 import fs from 'node:fs';
@@ -52,6 +53,8 @@ function initializeQuestCollections(state) {
  for(const job of state.jobs)validateAutopilotJob(job,state);
  validateStudio(state.studio);
  validateQuestState(state);
+ validateSelfTests(state.selfTests);
+ for(const job of state.jobs)if(job.selfTestId!==undefined&&!(state.selfTests??[]).some(item=>item.id===job.selfTestId))throw new Error('Invalid self-test job link');
  return state;
 }
 function sanitizeEnrollmentReceipts(state) {
