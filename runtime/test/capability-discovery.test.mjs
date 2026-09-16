@@ -9,7 +9,8 @@ import {openStore} from '../lib/store.mjs';
 import {synthesizeAutonomousGoal} from '../lib/goal-synthesis.mjs';
 import {createCapabilityRequest,disableCapability,importCapability,verifyCapability,activateCapability} from '../lib/capabilities.mjs';
 import {importCode} from '../lib/code-workshop.mjs';
-import {requiredCapability,searchCapabilities,discoverCapability,discoverCapabilities,manifestFits,projectInput,RECORD_PROJECTIONS,EVIDENCE_RECORDS,DISCOVERY_VERSION} from '../lib/capability-discovery.mjs';
+import {requiredCapability,searchCapabilities,discoverCapability,discoverCapabilities,manifestFits,projectInput,qualifyCandidate,RECORD_PROJECTIONS,EVIDENCE_RECORDS,DISCOVERY_VERSION,QUALIFY_CHECKS} from '../lib/capability-discovery.mjs';
+import {codeHash,recordCodeVerification} from '../lib/code-workshop.mjs';
 
 const manifest=name=>JSON.parse(fs.readFileSync(new URL(`../capabilities/${name}.json`,import.meta.url),'utf8'));
 const LEDGER_DIGEST=manifest('ledger-digest'),FAILURE_TRIAGE=manifest('failure-triage'),EVIDENCE_GAP_BRIEF=manifest('evidence-gap-brief');
@@ -177,4 +178,65 @@ test('fails closed: owner quests, vanished or re-statused records, unknown evide
   assert.throws(()=>searchCapabilities({...state,capabilities:{...state.capabilities,version:2}},requiredCapability(state,quest).requirement),/검증/,'a corrupt registry is not searched');
   for(const [kind,rule] of Object.entries(EVIDENCE_RECORDS))assert.ok(RECORD_PROJECTIONS[rule.type],`${kind} projects a known record type`);
   assert.equal(DISCOVERY_VERSION,1);
+});
+
+const CODE=(source,fixtures=2)=>({schemaVersion:1,id:'ext-code',version:'1.0.0',name:'외부 코드',description:'외부에서 온 코드',source,
+  files:[{path:'index.mjs',content:'export default input=>input;'}],entry:'index.mjs',fixtures:[{name:'a',input:{records:[]},expected:{records:[]}},{name:'b',input:{records:[1]},expected:{records:[1]}}].slice(0,fixtures)});
+const COMMIT='a'.repeat(40);
+const GITHUB={kind:'github',url:'https://github.com/example/tool',commit:COMMIT,license:'MIT',licenseText:'Permission is hereby granted, free of charge ... THE SOFTWARE IS PROVIDED "AS IS"'};
+const proofFor=manifest=>({engine:'quickjs-v1',hash:codeHash(manifest),passed:manifest.fixtures.length,deterministic:true,fixtures:manifest.fixtures.map(f=>({name:f.name,inputSha256:codeHash(f.input),outputSha256:codeHash(f.expected)}))});
+const codeCandidate=(manifest,verified)=>({origin:'reviewed_manifest',engine:'quickjs-v1',id:manifest.id,hash:null,version:manifest.version,verified,fixtureCount:manifest.fixtures.length});
+
+test('qualifyCandidate: active -> reuse without acquisition; reviewed native manifest -> owner-approved capability change; external code needs license + pinned commit + sandbox proof + fixtures; owner-disabled never re-activates; emergency stop blocks everything',()=>{
+  const active=qualifyCandidate({origin:'active',engine:'declarative-v1',id:'failure-triage',hash:'f'.repeat(64),verified:true,fixtureCount:2});
+  assert.deepEqual([active.action,active.risk,active.approvalRequired,active.eligible,active.blockers],['reuse','local-reversible',false,true,[]]);
+  assert.ok(QUALIFY_CHECKS.every(name=>active.checks[name]===true));
+
+  const reviewed=qualifyCandidate({origin:'reviewed_manifest',engine:'declarative-v1',id:'ledger-digest',hash:null,verified:false,fixtureCount:LEDGER_DIGEST.fixtures.length},{manifest:LEDGER_DIGEST});
+  assert.deepEqual([reviewed.action,reviewed.risk,reviewed.approvalRequired,reviewed.eligible],['acquire_with_owner_approval','capability-change',true,true]);
+  assert.match(reviewed.hash,/^[a-f0-9]{64}$/,'hash comes from the manifest itself, not from the caller');
+  assert.equal(qualifyCandidate({origin:'reviewed_manifest',engine:'declarative-v1',id:'ledger-digest',hash:'0'.repeat(64),verified:false,fixtureCount:2},{manifest:LEDGER_DIGEST}).blockers[0],'hash_mismatch');
+  const tampered=qualifyCandidate({origin:'reviewed_manifest',engine:'declarative-v1',id:'ledger-digest',hash:null,verified:false,fixtureCount:2},{manifest:{...LEDGER_DIGEST,steps:[{op:'shell'}]}});
+  assert.equal(tampered.eligible,false);assert.deepEqual(tampered.blockers,['manifest_invalid']);
+
+  // Acceptance 3: external code candidate.
+  const full=CODE(GITHUB);
+  const good=qualifyCandidate(codeCandidate(full,true),{manifest:full});
+  assert.deepEqual([good.action,good.risk,good.approvalRequired,good.eligible],['acquire_with_owner_approval','external-code',true,true],'even a fully verified external bundle still needs the owner');
+  const noSandbox=qualifyCandidate(codeCandidate(full,false),{manifest:full});
+  assert.deepEqual([noSandbox.eligible,noSandbox.blockers],[false,['sandbox_proof_missing']]);
+  const pendingLicense=CODE({...GITHUB,license:'pending',licenseText:'pending'});
+  assert.deepEqual(qualifyCandidate(codeCandidate(pendingLicense,true),{manifest:pendingLicense}).blockers,['license_unreviewed']);
+  const unpinned=CODE({...GITHUB,commit:'0'.repeat(40)});
+  assert.deepEqual(qualifyCandidate(codeCandidate(unpinned,true),{manifest:unpinned}).blockers,['commit_not_pinned']);
+  const branchRef=CODE({...GITHUB,commit:'main'});
+  assert.deepEqual(qualifyCandidate(codeCandidate(branchRef,true),{manifest:branchRef}).blockers,['manifest_invalid'],'code-workshop already refuses a non-commit ref');
+  const oneFixture=CODE(GITHUB,1);
+  assert.ok(qualifyCandidate(codeCandidate(oneFixture,true),{manifest:oneFixture}).blockers.includes('manifest_invalid'));
+  assert.equal(qualifyCandidate({...codeCandidate(full,true),hash:'0'.repeat(64)},{manifest:full}).blockers[0],'hash_mismatch');
+  const ownerCode=CODE({kind:'owner',url:'',commit:'',license:'Owner','licenseText':'Owner use'});
+  assert.equal(qualifyCandidate(codeCandidate(ownerCode,true),{manifest:ownerCode}).risk,'capability-change');
+
+  // Acceptance 4: owner-disabled -> no automatic re-activation, whatever else is true.
+  const disabled=qualifyCandidate({origin:'inactive_owner_review',engine:'declarative-v1',id:'ledger-digest',hash:null,verified:true,fixtureCount:2},{manifest:LEDGER_DIGEST});
+  assert.deepEqual([disabled.action,disabled.blockers],['blocked',['owner_disabled_or_fixture_failed']]);
+  // Acceptance 16: emergency stop outranks even reuse.
+  const stopped=qualifyCandidate({origin:'active',engine:'declarative-v1',id:'failure-triage',hash:'f'.repeat(64),verified:true,fixtureCount:2},{emergencyStop:true});
+  assert.deepEqual([stopped.action,stopped.blockers,stopped.checks.emergencyStop],['blocked',['emergency_stop'],false]);
+  assert.equal(qualifyCandidate(null).eligible,false);
+  assert.equal(qualifyCandidate({origin:'reviewed_manifest',engine:'wasm',id:'x',hash:null}).blockers[0],'unknown_engine');
+});
+
+test('qualifyCandidate on real registry facts: imported GitHub code is blocked until its sandbox proof is recorded, then owner-gated; discovery still never matches it without a declarative schema',()=>{
+  const full=CODE(GITHUB);
+  let registry=importCode({version:1,entries:[],history:[]},full,{at:NOW}).registry;
+  const held=()=>{const entry=registry.entries[0],version=entry.versions[0];return {origin:entry.activeHash?'active':'inactive_owner_review',engine:'quickjs-v1',id:entry.id,hash:version.hash,version:version.manifest.version,verified:!!version.verification,fixtureCount:version.manifest.fixtures.length,manifest:version.manifest};};
+  let c=held();
+  const before=qualifyCandidate({...c,origin:'reviewed_manifest'},{manifest:c.manifest});
+  assert.deepEqual(before.blockers,['sandbox_proof_missing']);assert.equal(before.hash,c.hash,'hash agrees with the registry');
+  registry=recordCodeVerification(registry,'ext-code',c.hash,proofFor(full),{at:NOW}).registry;
+  c=held();
+  const after=qualifyCandidate({...c,origin:'reviewed_manifest'},{manifest:c.manifest});
+  assert.deepEqual([after.eligible,after.action,after.approvalRequired],[true,'acquire_with_owner_approval',true]);
+  assert.equal(qualifyCandidate(c,{manifest:c.manifest}).blockers[0],'owner_disabled_or_fixture_failed','held but not active is never auto-activated');
 });

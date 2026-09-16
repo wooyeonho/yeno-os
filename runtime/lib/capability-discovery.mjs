@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import {publicQuest} from './quests.mjs';
-import {validateCapabilities} from './capabilities.mjs';
-import {validateCodeWorkshop} from './code-workshop.mjs';
+import {validateCapabilities, initialCapabilities, importCapability} from './capabilities.mjs';
+import {validateCodeWorkshop, validateCodeManifest, codeHash} from './code-workshop.mjs';
 
 // General Kirby capability discovery (pure, no wiring yet).
 //
@@ -21,6 +21,10 @@ import {validateCodeWorkshop} from './code-workshop.mjs';
 export const DISCOVERY_VERSION = 1;
 export const CANDIDATE_ORIGINS = Object.freeze(['active', 'inactive_owner_review', 'reviewed_manifest']);
 export const GAP_KINDS = Object.freeze(['none', 'inactive_owner_review', 'acquire_reviewed', 'missing', 'evidence_changed', 'no_records']);
+export const RISK_CLASSES = Object.freeze(['local-reversible', 'capability-change', 'external-code']);
+export const QUALIFY_CHECKS = Object.freeze(['manifest', 'source', 'license', 'pinnedCommit', 'hash', 'fixtures', 'sandbox', 'ownerState', 'emergencyStop']);
+const GITHUB_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const COMMIT = /^[a-f0-9]{40}$/;
 
 const MAX_RECORDS = 30;
 const clip = (value, max) => String(value ?? '').slice(0, max);
@@ -175,4 +179,63 @@ export function discoverCapability(state, quest, {manifests = []} = {}) {
 
 export function discoverCapabilities(state, {manifests = []} = {}) {
   return (state.quests ?? []).filter(quest => quest.synthesis).map(quest => discoverCapability(state, quest, {manifests}));
+}
+
+// Candidate -> may Kirby acquire it, and under which gate? Pure verdict over
+// the manifest and the registry facts the candidate already carries; nothing
+// is fetched, imported, tested or activated here. Every check is recorded so
+// an owner (or closed-loop wiring later) sees exactly why activation is
+// refused. Risk: reusing an active capability is local-reversible; importing
+// a native reviewed manifest or owner/generated code is a capability change
+// (owner approval, as in goal-synthesis); GitHub code is external code
+// (owner approval, plus license + pinned commit + sandbox proof, no exceptions).
+export function qualifyCandidate(candidate, {manifest = null, emergencyStop = false} = {}) {
+  const checks = Object.fromEntries(QUALIFY_CHECKS.map(name => [name, null])), blockers = [];
+  const block = (name, reason) => {checks[name] = false; blockers.push(reason);};
+  const pass = name => {checks[name] = true;};
+  if (emergencyStop) block('emergencyStop', 'emergency_stop'); else pass('emergencyStop');
+  if (!candidate || !CANDIDATE_ORIGINS.includes(candidate.origin)) block('ownerState', 'unknown_candidate');
+  else if (candidate.origin === 'inactive_owner_review') block('ownerState', 'owner_disabled_or_fixture_failed');
+  else pass('ownerState');
+
+  let risk = 'local-reversible', hash = candidate?.hash ?? null;
+  if (candidate?.origin === 'active') {
+    for (const name of ['manifest', 'source', 'license', 'pinnedCommit', 'hash', 'fixtures', 'sandbox']) pass(name);
+  } else if (candidate?.engine === 'declarative-v1') {
+    risk = 'capability-change';
+    try {
+      hash = importCapability(initialCapabilities(), manifest).result.hash; pass('manifest');
+      if (candidate.hash && candidate.hash !== hash) block('hash', 'hash_mismatch'); else pass('hash');
+      if (manifest.source.kind === 'native' && manifest.source.url === '') pass('source'); else block('source', 'declarative_source_not_native');
+      if (manifest.source.license) pass('license'); else block('license', 'license_missing');
+      pass('pinnedCommit');
+      if (manifest.fixtures.length >= 2) pass('fixtures'); else block('fixtures', 'fixtures_insufficient');
+      pass('sandbox');
+    } catch (error) {
+      block('manifest', 'manifest_invalid'); for (const name of ['source', 'license', 'pinnedCommit', 'hash', 'fixtures', 'sandbox']) if (checks[name] === null) checks[name] = false;
+    }
+  } else if (candidate?.engine === 'quickjs-v1') {
+    try {
+      validateCodeManifest(manifest); pass('manifest');
+      const source = manifest.source;
+      risk = source.kind === 'github' ? 'external-code' : 'capability-change';
+      hash = codeHash(manifest);
+      if (candidate.hash && candidate.hash !== hash) block('hash', 'hash_mismatch'); else pass('hash');
+      pass('source');
+      const licensePending = !source.license || source.license === 'pending' || !source.licenseText || source.licenseText === 'pending';
+      if (licensePending) block('license', 'license_unreviewed'); else pass('license');
+      if (source.kind === 'github') {
+        if (GITHUB_URL.test(source.url) && COMMIT.test(source.commit) && source.commit !== '0'.repeat(40)) pass('pinnedCommit'); else block('pinnedCommit', 'commit_not_pinned');
+      } else pass('pinnedCommit');
+      if (manifest.fixtures.length >= 2) pass('fixtures'); else block('fixtures', 'fixtures_insufficient');
+      if (candidate.verified === true) pass('sandbox'); else block('sandbox', 'sandbox_proof_missing');
+    } catch (error) {
+      block('manifest', 'manifest_invalid'); risk = 'external-code'; for (const name of ['source', 'license', 'pinnedCommit', 'hash', 'fixtures', 'sandbox']) if (checks[name] === null) checks[name] = false;
+    }
+  } else block('manifest', 'unknown_engine');
+
+  const approvalRequired = risk !== 'local-reversible';
+  const eligible = blockers.length === 0;
+  const action = !eligible ? 'blocked' : candidate.origin === 'active' ? 'reuse' : 'acquire_with_owner_approval';
+  return {version: DISCOVERY_VERSION, id: candidate?.id ?? null, engine: candidate?.engine ?? null, origin: candidate?.origin ?? null, hash, risk, approvalRequired, eligible, action, checks, blockers};
 }
