@@ -26,6 +26,35 @@ export const TOOL_CALL_STATES = Object.freeze(['pending_authority', 'authorized'
 export const SESSION_FIELDS = Object.freeze(['version', 'liveId', 'model', 'state', 'transportKind', 'resumeHandle', 'resumable', 'goAwayAt', 'turns', 'toolCalls', 'interruptions', 'reconnects', 'generation', 'events', 'fingerprint']);
 export const MAX_EVENTS = 200;
 export const MAX_AUDIO_CHUNK_BYTES = 64 * 1024;
+// A runtime authority verdict is only good for an action taken right after it
+// was computed - not a cached decision from earlier in the turn. `checkedAt`
+// older than this (or dated after `at`, which is not a real clock reading)
+// is never authority for a new action.
+export const MAX_VERDICT_AGE_MS = 5_000;
+
+// --- future-wiring contract (enforced here, executed by the caller later) --
+//
+// When a real executor (server.mjs) is wired to `tool_ask`/authorized calls,
+// it MUST:
+//   - carry a durable requestId through to whatever mutating action the tool
+//     performs, so the SAME action is never applied twice (replay, reconnect,
+//     retry all land on the same durable record);
+//   - re-check runtime authority (emergency stop, owner approval, quota)
+//     immediately before the mutating step, not once at `settleToolCall` time
+//     - `settleToolCall` itself enforces this is fresh (MAX_VERDICT_AGE_MS)
+//     but a slow executor must re-derive its own verdict just before acting;
+//   - pass any cancellable local work (a spawned job, a sandboxed run) an
+//     AbortSignal tied to this session's generation, so a barge-in/close can
+//     stop CPU/IO work that has not left the process yet;
+//   - NEVER read a `cancelled` toolCall state as "nothing happened": a call
+//     whose `authorizedOnce` is true was greenlit to run for real before the
+//     cancellation landed, so its durable side effect (job/quest/artifact) -
+//     if any - stands and must be reconciled from actual state, never
+//     assumed away. `toolResponseMessage`'s `sideEffectMayHaveOccurred` flag
+//     makes this explicit instead of leaving it to convention.
+// This module cannot enforce the executor's own conduct - it can only refuse
+// to hand out a stale or ambiguous authorization and refuse to let a caller
+// forget which calls were ever authorized.
 const MODEL_ID = /^gemini-[a-z0-9.-]{1,80}$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 const ID = /^[A-Za-z0-9._:-]{1,128}$/;
@@ -68,7 +97,11 @@ export function validateLiveSession(session) {
   if (!SESSION_STATES.includes(session.state) || !['network', 'injected'].includes(session.transportKind)) fail('Live session 상태가 올바르지 않습니다.');
   if (session.resumeHandle !== null && (typeof session.resumeHandle !== 'string' || !session.resumeHandle)) fail('resumeHandle이 올바르지 않습니다.');
   if (!Number.isInteger(session.generation) || session.generation < 0) fail('generation이 올바르지 않습니다.');
-  if (!Array.isArray(session.toolCalls) || !session.toolCalls.every(t => exact(t, ['id', 'name', 'argsSha256', 'state', 'generation', 'at']) && ID.test(t.id) && Number.isInteger(t.generation) && t.generation >= 0 && t.generation <= session.generation && TOOL_CALL_STATES.includes(t.state))) fail('toolCalls가 올바르지 않습니다.');
+  if (!Array.isArray(session.toolCalls) || !session.toolCalls.every(t => exact(t, ['id', 'name', 'argsSha256', 'state', 'generation', 'authorizedOnce', 'at']) && ID.test(t.id) && Number.isInteger(t.generation) && t.generation >= 0 && t.generation <= session.generation && TOOL_CALL_STATES.includes(t.state) && typeof t.authorizedOnce === 'boolean')) fail('toolCalls가 올바르지 않습니다.');
+  // Once a call is (or ever was) authorized, that fact can never be erased by
+  // a later transition (cancellation, response) - a downstream reader must
+  // always be able to tell "may have run for real" from "never authorized".
+  if (session.toolCalls.some(t => t.state === 'authorized' && !t.authorizedOnce)) fail('authorized toolCall은 authorizedOnce여야 합니다.', 'LIVE_TAMPERED');
   if (new Set(session.toolCalls.map(t => t.id)).size !== session.toolCalls.length) fail('toolCall id가 중복됩니다.', 'LIVE_DUPLICATE_TOOL_CALL');
   if (!Array.isArray(session.events) || session.events.length > MAX_EVENTS || !session.events.every(e => ISO.test(e.at) && typeof e.type === 'string')) fail('events가 올바르지 않습니다.');
   assertNoSecrets(session, 'liveSession');
@@ -178,7 +211,7 @@ export function applyServerMessage(session, message, {at}) {
         known.add(call.id);
         const args = call.args && typeof call.args === 'object' ? call.args : {};
         assertNoSecrets(args, `toolCall.${call.id}`);
-        toolCalls.push({id: call.id, name: call.name, argsSha256: sha256(args), state: 'pending_authority', generation: session.generation, at});
+        toolCalls.push({id: call.id, name: call.name, argsSha256: sha256(args), state: 'pending_authority', generation: session.generation, authorizedOnce: false, at});
         effects.push({kind: 'tool_ask', id: call.id, name: call.name, args});
       }
       return {session: withEvent(session, at, 'tool_call', {toolCalls}), effects};
@@ -211,18 +244,25 @@ export function applyServerMessage(session, message, {at}) {
 // timestamp); emergency stop in the verdict always denies; a call from an
 // earlier generation (before an interruption/close/reconnect) is cancelled,
 // never authorized.
-export function settleToolCall(session, {id, verdict, at}) {
+export function settleToolCall(session, {id, verdict, at, maxVerdictAgeMs = MAX_VERDICT_AGE_MS}) {
   validateLiveSession(session);
   const call = session.toolCalls.find(t => t.id === id);
   if (!call) fail('알 수 없는 toolCall id입니다.', 'LIVE_UNKNOWN_TOOL_CALL');
   if (call.state !== 'pending_authority') fail(`toolCall ${id}는 이미 ${call.state} 상태입니다.`, 'LIVE_DUPLICATE_TOOL_CALL');
   if (!verdict || typeof verdict.allowed !== 'boolean' || !ISO.test(verdict.checkedAt ?? '')) fail('runtime authority verdict({allowed, checkedAt})가 필요합니다.');
+  if (!ISO.test(at)) fail('at은 ISO 시각이어야 합니다.');
   if (call.generation !== session.generation) {
     const toolCalls = session.toolCalls.map(t => t.id === id ? {...t, state: 'cancelled', at} : t);
     return withEvent(session, at, 'tool_stale_cancelled', {toolCalls});
   }
-  const state = verdict.allowed && verdict.emergencyStop !== true ? 'authorized' : 'denied';
-  const toolCalls = session.toolCalls.map(t => t.id === id ? {...t, state, at} : t);
+  // A verdict computed too long ago (or timestamped after `at`, which is not
+  // a real clock reading) is not "checked immediately before execution" -
+  // treat it exactly like a denial rather than trust a cached decision.
+  const verdictAgeMs = Date.parse(at) - Date.parse(verdict.checkedAt);
+  const fresh = Number.isFinite(verdictAgeMs) && verdictAgeMs >= 0 && verdictAgeMs <= maxVerdictAgeMs;
+  const allowed = fresh && verdict.allowed && verdict.emergencyStop !== true;
+  const state = allowed ? 'authorized' : 'denied';
+  const toolCalls = session.toolCalls.map(t => t.id === id ? {...t, state, authorizedOnce: t.authorizedOnce || allowed, at} : t);
   return withEvent(session, at, `tool_${state}`, {toolCalls});
 }
 
@@ -248,7 +288,13 @@ export function toolResponseMessage(session, {id, result = null, at, emergencySt
   const toolCalls = session.toolCalls.map(t => t.id === id ? {...t, state: 'responded', at} : t);
   return {
     session: withEvent(session, at, 'tool_responded', {toolCalls}),
-    message: {toolResponse: {functionResponses: [{id, name: call.name, response}]}}
+    message: {toolResponse: {functionResponses: [{id, name: call.name, response}]}},
+    // true exactly when this call was ever authorized (`authorizedOnce`) but
+    // we are reporting something other than "executed" to Gemini - i.e. a
+    // real durable side effect may exist even though this turn does not
+    // relay it. The wiring layer must reconcile via the actual job/quest
+    // record, never assume "cancelled" means "nothing happened".
+    sideEffectMayHaveOccurred: call.authorizedOnce === true && status !== 'authorized'
   };
 }
 

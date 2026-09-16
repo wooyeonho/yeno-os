@@ -1,3 +1,6 @@
+import dns from 'node:dns';
+import https from 'node:https';
+import net from 'node:net';
 import {METRICS, SOURCE_TYPES, assertNoSecrets, sha256, OutcomeVerificationError} from './outcome-verification.mjs';
 
 // BLACKHOLE external structured outcome connector (pure, no wiring).
@@ -6,10 +9,16 @@ import {METRICS, SOURCE_TYPES, assertNoSecrets, sha256, OutcomeVerificationError
 // read; a reading is the structured record set `verifyOutcome()` consumes as
 // `source`. The connector never trusts a value it did not read itself from the
 // declared source, never reads model output, and never carries credentials —
-// the caller injects an authenticated `fetch`/`readFile` at read time and the
+// the caller injects authenticated `headers`/`readFile` at read time and the
 // connector only persists the source identity, the parsed records and a
-// fingerprint of them. Any malformed, unreachable, mismatched or secret-bearing
-// source fails closed as `{ok:false, reason}` and yields `source: null`.
+// fingerprint of them. The `https_json` transport is a pinned `node:https`
+// path with no generic-`fetch` fallback: see `resolveVettedAddress` (DNS
+// resolved once, every address vetted, mixed public/private fails closed) and
+// `fetchPinned` (the actual socket is forced onto the vetted address; one
+// deadline covers connect/TLS/headers/body; the response body is capped as it
+// streams in, never after a buffered read). Any malformed, unreachable,
+// mismatched or secret-bearing source fails closed as `{ok:false, reason}`
+// and yields `source: null`.
 export const OUTCOME_CONNECTOR_VERSION = 1;
 export const CONNECTOR_TRANSPORTS = Object.freeze(['https_json', 'owner_export_json']);
 export const CONNECTOR_FIELDS = Object.freeze(['version', 'id', 'sourceType', 'sourceId', 'transport', 'locator', 'metrics', 'declaredBy', 'declaredAt', 'fingerprint']);
@@ -149,40 +158,104 @@ function unwrap(payload, connector) {
   return {ok: false, reason: 'source_shape_invalid'};
 }
 
-const headerOf = (response, name) => typeof response.headers?.get === 'function' ? response.headers.get(name) : null;
+// --- DNS pinning (H1: no uncontrolled second resolution) -------------------
+//
+// The declared host is resolved exactly ONCE, through `resolve` (real DNS by
+// default). Every address the name currently has must be public - a single
+// accepted private answer is enough for a rebinding attacker, so a mixed
+// public/private answer set fails closed exactly like an all-private one.
+// The chosen address is then forced onto the actual socket via Node's own
+// `lookup` hook (below), so nothing re-resolves the hostname independently
+// between this check and the real connection - there is no window for a
+// second DNS answer to differ from the one we vetted.
+async function defaultResolve(hostname) {
+  return dns.promises.lookup(hostname, {all: true, verbatim: true});
+}
 
-async function transportRead(connector, {fetch, readFile, headers, lookup, timeoutMs}) {
+export async function resolveVettedAddress(hostname, {resolve = defaultResolve} = {}) {
+  let answers;
+  try {answers = await resolve(hostname);} catch {return {ok: false, reason: 'source_unresolvable'};}
+  const list = (Array.isArray(answers) ? answers : [answers])
+    .map(a => typeof a === 'string' ? {address: a, family: net.isIP(a) || 4} : a)
+    .filter(a => a && typeof a.address === 'string');
+  if (list.length === 0) return {ok: false, reason: 'source_unresolvable'};
+  if (!list.every(a => isPublicAddress(a.address))) return {ok: false, reason: 'source_host_blocked'};
+  const chosen = list[0];
+  return {ok: true, address: chosen.address, family: chosen.family === 6 ? 6 : 4};
+}
+
+// --- pinned transport (H2: one deadline, bounded body, no fallback) --------
+//
+// A real `node:https` request whose `lookup` hook always answers with the
+// address `resolveVettedAddress` already vetted - the hostname is preserved
+// for TLS SNI/certificate validation and for the Host header, but the actual
+// TCP connection can never land anywhere else. Redirects are never followed
+// (the core `https` module does not auto-follow; a 3xx is treated as a
+// failure). The response is read as a stream so the byte cap is enforced on
+// real bytes received, never on a Content-Length claim or a buffered
+// `.text()`. One timer, started before the request, covers connect + TLS +
+// headers + body; the socket is destroyed the instant the cap or the
+// deadline is hit.
+export function fetchPinned(url, {address, family, headers = {}, timeoutMs = READ_TIMEOUT_MS, maxBytes = MAX_RESPONSE_BYTES, request = https.request} = {}) {
+  return new Promise(settle => {
+    let done = false, req = null;
+    const finish = result => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      if (req) req.destroy();
+      settle(result);
+    };
+    const timer = setTimeout(() => finish({ok: false, reason: 'source_timeout'}), Math.max(0, timeoutMs));
+    try {
+      req = request({
+        protocol: 'https:', hostname: url.hostname, host: url.hostname, port: 443,
+        path: `${url.pathname}${url.search}`, method: 'GET', servername: url.hostname,
+        headers: {accept: 'application/json', 'accept-encoding': 'identity', host: url.hostname, ...headers},
+        // Only this address is ever dialed - Node calls this once per connect
+        // and never falls back to its own resolver for this request.
+        lookup: (_hostname, _options, callback) => callback(null, address, family)
+      }, res => {
+        if (done) {res.destroy(); return;}
+        if (res.statusCode >= 300 && res.statusCode < 400) {res.resume(); return finish({ok: false, reason: 'source_redirected'});}
+        if (res.statusCode === 401 || res.statusCode === 403) {res.resume(); return finish({ok: false, reason: 'source_unauthorized'});}
+        if (res.statusCode !== 200) {res.resume(); return finish({ok: false, reason: `source_http_${res.statusCode}`});}
+        const encoding = String(res.headers['content-encoding'] ?? '').toLowerCase();
+        if (encoding && encoding !== 'identity') {res.destroy(); return finish({ok: false, reason: 'source_compressed_response'});}
+        const contentType = res.headers['content-type'];
+        if (contentType && !/^application\/(?:[a-z0-9.+-]+\+)?json\b/i.test(contentType)) {res.destroy(); return finish({ok: false, reason: 'source_not_json'});}
+        const declared = Number(res.headers['content-length']);
+        if (Number.isFinite(declared) && declared > maxBytes) {res.destroy(); return finish({ok: false, reason: 'source_too_large'});}
+        const chunks = [];
+        let total = 0;
+        res.on('data', chunk => {
+          if (done) return;
+          total += chunk.length;
+          // Real bytes received, never the header's claim: a short declared
+          // Content-Length followed by a longer body is caught here too.
+          if (total > maxBytes) return finish({ok: false, reason: 'source_too_large'});
+          chunks.push(chunk);
+        });
+        res.on('end', () => finish({ok: true, text: Buffer.concat(chunks).toString('utf8')}));
+        res.on('error', () => finish({ok: false, reason: 'source_unreadable'}));
+      });
+    } catch {
+      return finish({ok: false, reason: 'source_unreachable'});
+    }
+    req.on('error', () => finish({ok: false, reason: 'source_unreachable'}));
+    req.end();
+  });
+}
+
+async function transportRead(connector, {readFile, headers, resolve, request, timeoutMs}) {
   if (connector.transport === 'https_json') {
-    if (typeof fetch !== 'function') return {ok: false, reason: 'transport_unconfigured'};
     const url = new URL(connector.locator);
     if (!hostAllowed(url.hostname)) return {ok: false, reason: 'source_host_blocked'};
-    if (typeof lookup === 'function') {
-      let addresses;
-      try {addresses = await lookup(url.hostname);} catch {return {ok: false, reason: 'source_unresolvable'};}
-      const list = Array.isArray(addresses) ? addresses : [addresses];
-      if (list.length === 0 || !list.every(a => isPublicAddress(typeof a === 'string' ? a : a?.address))) return {ok: false, reason: 'source_host_blocked'};
-    }
-    let response;
-    const controller = typeof AbortController === 'function' ? new AbortController() : null;
-    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
-    try {
-      response = await fetch(url.href, {method: 'GET', headers: {accept: 'application/json', ...(headers ?? {})}, redirect: 'error', ...(controller ? {signal: controller.signal} : {})});
-    } catch (error) {
-      return {ok: false, reason: error?.name === 'AbortError' || controller?.signal.aborted ? 'source_timeout' : 'source_unreachable'};
-    } finally {if (timer) clearTimeout(timer);}
-    if (!response || typeof response.status !== 'number') return {ok: false, reason: 'source_unreachable'};
-    if (response.status >= 300 && response.status < 400) return {ok: false, reason: 'source_redirected'};
-    if (response.status === 401 || response.status === 403) return {ok: false, reason: 'source_unauthorized'};
-    if (response.status !== 200) return {ok: false, reason: `source_http_${response.status}`};
-    if (response.url && new URL(response.url).href !== url.href) return {ok: false, reason: 'source_redirected'};
-    const contentType = headerOf(response, 'content-type');
-    if (contentType && !/^application\/(?:[a-z0-9.+-]+\+)?json\b/i.test(contentType)) return {ok: false, reason: 'source_not_json'};
-    const declared = Number(headerOf(response, 'content-length'));
-    if (Number.isFinite(declared) && declared > MAX_RESPONSE_BYTES) return {ok: false, reason: 'source_too_large'};
-    let text;
-    try {text = await response.text();} catch {return {ok: false, reason: 'source_unreadable'};}
-    if (typeof text !== 'string' || Buffer.byteLength(text, 'utf8') > MAX_RESPONSE_BYTES) return {ok: false, reason: 'source_too_large'};
-    return {ok: true, text};
+    const vetted = await resolveVettedAddress(url.hostname, {resolve});
+    // Fail closed before any request object is ever constructed: an
+    // unresolvable or non-public answer means no socket is opened at all.
+    if (!vetted.ok) return vetted;
+    return await fetchPinned(url, {address: vetted.address, family: vetted.family, headers: headers ?? {}, timeoutMs, request});
   }
   if (typeof readFile !== 'function') return {ok: false, reason: 'transport_unconfigured'};
   try {return {ok: true, text: await readFile(connector.locator)};} catch {return {ok: false, reason: 'source_unreachable'};}
@@ -190,11 +263,13 @@ async function transportRead(connector, {fetch, readFile, headers, lookup, timeo
 
 // Read the source now. `deps` carries the injected I/O; credentials live in the
 // caller's `headers` and are never echoed into the reading or the failure.
-export async function readConnector(connector, {readAt, fetch = null, readFile = null, headers = null, lookup = null, timeoutMs = READ_TIMEOUT_MS} = {}) {
+// There is no generic-`fetch` escape hatch: the https_json transport always
+// goes through the pinned path above, real DNS and real sockets by default.
+export async function readConnector(connector, {readAt, readFile = null, headers = null, resolve = null, request = null, timeoutMs = READ_TIMEOUT_MS} = {}) {
   validateConnector(connector);
   if (!ISO.test(readAt)) fail('readAt은 ISO 시각이어야 합니다.');
   if (headers !== null && (typeof headers !== 'object' || Array.isArray(headers))) fail('headers는 객체여야 합니다.');
-  const got = await transportRead(connector, {fetch, readFile, headers, lookup, timeoutMs});
+  const got = await transportRead(connector, {readFile, headers, resolve: resolve ?? undefined, request: request ?? undefined, timeoutMs});
   if (!got.ok) return {ok: false, reason: got.reason, reading: null};
   const parsed = parseJson(got.text);
   if (!parsed.ok) return {ok: false, reason: parsed.reason, reading: null};

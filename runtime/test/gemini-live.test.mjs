@@ -138,6 +138,57 @@ test('generation binding: authorized result arriving after barge-in/close/reconn
   assert.throws(() => toolResponseMessage(ok.session, {id: 'b', result: {x: 1}, at: T(7)}), e => e.code === 'LIVE_DUPLICATE_TOOL_CALL');
 });
 
+test('runtime authority must be fresh: a stale cached verdict denies exactly like a real denial, never authorizes', () => {
+  let s = applyServerMessage(opened(), {toolCall: {functionCalls: [{id: 'stale-verdict', name: 'run_quest', args: {}}]}}, {at: T(4)}).session;
+  // checkedAt is 10s before `at`, past MAX_VERDICT_AGE_MS(5s) - not "immediately before".
+  const staleAt = new Date(Date.parse(T(4)) + 10_000).toISOString();
+  s = settleToolCall(s, {id: 'stale-verdict', verdict: {allowed: true, checkedAt: T(4)}, at: staleAt});
+  assert.equal(s.toolCalls[0].state, 'denied');
+  assert.equal(s.toolCalls[0].authorizedOnce, false, 'a stale verdict never marks the call as ever-authorized');
+  // A verdict dated in the future relative to `at` is not a real check either.
+  let s2 = applyServerMessage(opened(), {toolCall: {functionCalls: [{id: 'future-verdict', name: 'run_quest', args: {}}]}}, {at: T(4)}).session;
+  s2 = settleToolCall(s2, {id: 'future-verdict', verdict: {allowed: true, checkedAt: T(9)}, at: T(4)});
+  assert.equal(s2.toolCalls[0].state, 'denied');
+  // A fresh verdict just inside the window still authorizes normally.
+  let s3 = applyServerMessage(opened(), {toolCall: {functionCalls: [{id: 'fresh', name: 'run_quest', args: {}}]}}, {at: T(4)}).session;
+  const withinWindow = new Date(Date.parse(T(4)) + 2000).toISOString();
+  s3 = settleToolCall(s3, {id: 'fresh', verdict: {allowed: true, checkedAt: T(4)}, at: withinWindow});
+  assert.equal(s3.toolCalls[0].state, 'authorized');
+  assert.equal(s3.toolCalls[0].authorizedOnce, true);
+});
+
+test('side-effect tracking: a call that was ever authorized keeps that fact through cancellation, so the wiring layer never mistakes "not relayed" for "never ran"', () => {
+  let s = applyServerMessage(opened(), {toolCall: {functionCalls: [{id: 'never-authorized', name: 'x', args: {}}, {id: 'was-authorized', name: 'y', args: {}}]}}, {at: T(4)}).session;
+  s = settleToolCall(s, {id: 'never-authorized', verdict: {allowed: false, checkedAt: T(4)}, at: T(4)});
+  s = settleToolCall(s, {id: 'was-authorized', verdict: {allowed: true, checkedAt: T(4)}, at: T(4)});
+  assert.equal(s.toolCalls.find(t => t.id === 'was-authorized').authorizedOnce, true);
+  assert.equal(s.toolCalls.find(t => t.id === 'never-authorized').authorizedOnce, false);
+  // A denial never reported as executed carries no ambiguity - nothing ran.
+  const denied = toolResponseMessage(s, {id: 'never-authorized', at: T(5)});
+  assert.equal(denied.sideEffectMayHaveOccurred, false);
+  // Barge-in survives an already-authorized call (it may already be running)
+  // but bumps the session generation, so its eventual report is stale; either
+  // way its report must flag that a real side effect may already have happened.
+  const bi = applyServerMessage(s, {serverContent: {interrupted: true}}, {at: T(6)}).session;
+  assert.equal(bi.toolCalls.find(t => t.id === 'was-authorized').state, 'authorized', 'interruption does not itself cancel an already-authorized call');
+  assert.equal(bi.toolCalls.find(t => t.id === 'was-authorized').authorizedOnce, true, 'authorizedOnce survives the interruption');
+  const cancelledReport = toolResponseMessage(bi, {id: 'was-authorized', at: T(7)});
+  assert.equal(cancelledReport.message.toolResponse.functionResponses[0].response.reason, 'stale_generation', 'the interruption bumped generation, so the late report is stale');
+  assert.equal(cancelledReport.message.toolResponse.functionResponses[0].response.status, 'cancelled');
+  assert.equal(cancelledReport.sideEffectMayHaveOccurred, true, 'the wiring layer must reconcile durable state, not assume nothing happened');
+  // An executed call never flags an ambiguous side effect - it was relayed for real.
+  let s2 = applyServerMessage(opened(), {toolCall: {functionCalls: [{id: 'executed', name: 'y', args: {}}]}}, {at: T(4)}).session;
+  s2 = settleToolCall(s2, {id: 'executed', verdict: {allowed: true, checkedAt: T(4)}, at: T(4)});
+  const executed = toolResponseMessage(s2, {id: 'executed', result: {ok: true}, at: T(5)});
+  assert.equal(executed.message.toolResponse.functionResponses[0].response.status, 'executed');
+  assert.equal(executed.sideEffectMayHaveOccurred, false);
+  // Emergency stop at response time on a call that WAS authorized must also flag it.
+  let s3 = applyServerMessage(opened(), {toolCall: {functionCalls: [{id: 'stopped', name: 'y', args: {}}]}}, {at: T(4)}).session;
+  s3 = settleToolCall(s3, {id: 'stopped', verdict: {allowed: true, checkedAt: T(4)}, at: T(4)});
+  const stoppedReport = toolResponseMessage(s3, {id: 'stopped', result: {}, at: T(5), emergencyStop: true});
+  assert.equal(stoppedReport.sideEffectMayHaveOccurred, true);
+});
+
 test('readiness taxonomy: injected open session is SYNTHETIC only; network open session is LIVE; blocked stays BLOCKED', () => {
   assert.equal(liveVoiceReadiness([]).status, 'NOT_WIRED');
   assert.equal(liveVoiceReadiness([fresh()]).status, 'WIRED_UNVERIFIED');
