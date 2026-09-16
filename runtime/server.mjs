@@ -41,6 +41,7 @@ import {synthesizeAutonomousGoal,previewAutonomousGoals} from './lib/goal-synthe
 import {DRIVE_DEFINITIONS} from './lib/motivation.mjs';
 import {tryAutoAcquireLedgerDigest,autoAcquireCapability} from './lib/kirby.mjs';
 import {planClosedLoop,closedLoopStatus,bindLoopExecution} from './lib/closed-loop.mjs';
+import {declaredBrainPool,currentBrainPool,routeAgentJob,transportAuthority,settleRouting,RoutingError} from './lib/brain-routing.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 // Kirby's only auto-acquisition candidate: a manifest already reviewed and
@@ -63,6 +64,16 @@ export function createYenoServer(options={}) {
  const env=options.env??process.env;
  const profiles=agentProfiles(env), agentSettings=profiles.primary;
  const configFor=job=>job.botAssignment?profiles[job.botAssignment.profile]:job.selectedProvider?agentConfigForProvider(env,job.selectedProvider):agentSettings;
+ // Owner-declared Brain Pool (YENO_BRAIN_POOL). Invalid declarations refuse to start.
+ const DECLARED_BRAIN_POOL=declaredBrainPool(env);
+ // Router in the real path: every model-backed job is routed here and carries
+ // the decision as provenance. A pool-declared installation follows the
+ // router's binding selection; an undeclared pool records legacy config use.
+ function routeJob({taskClass,pinnedProvider=null,trigger='owner',risk='local-reversible'}){
+   const legacyConfig=pinnedProvider?agentConfigForProvider(env,pinnedProvider):agentSettings;
+   try{return routeAgentJob({env,declared:DECLARED_BRAIN_POOL,taskClass,trigger,risk,pinnedProvider,legacyConfig,at:now()});}
+   catch(error){if(error instanceof RoutingError)throw new HttpError(409,error.code==='no_eligible_model'?'라우터가 이 작업에 쓸 수 있는 설정된 모델을 선택하지 못했습니다.':'선택한 모델의 API 키·모델 이름·하루 호출 상한 연결이 필요합니다. 자율 점검에서 연결 상태를 확인하세요.',{routing:error.detail});throw error;}
+ }
  const dataDir=path.resolve(options.dataDir??env.YENO_DATA_DIR??path.join(ROOT,'data'));
  const releaseLock=options.containerLease===true?acquireContainerLease(dataDir):acquireRuntimeLock(dataDir);
  let store;try{store=openStore(dataDir);}catch(error){releaseLock();throw error;}
@@ -89,6 +100,9 @@ export function createYenoServer(options={}) {
  if(store.recovered)event('State recovered from the verified previous backup.');
  if(store.recovered||(!aiEndpoint&&!agentSettings.ready&&!profiles.grok.ready))s.modules.ai=false;
  recoverAgentJournals(s.jobs);
+ // Routing provenance follows the durable receipts: a call reserved before a
+ // crash is an unknown outcome, never a fresh send.
+ for(const job of s.jobs)if(job.routing&&job.agentJournal?.calls.length)settleRouting(job.routing,job.agentJournal,now());
  if(!s.emergencyStop&&s.capabilities.entries.length===0&&s.capabilities.history.length===0){
    try{
      let registry=s.capabilities;
@@ -126,7 +140,8 @@ export function createYenoServer(options={}) {
    const type=body.type==='ai'&&agentSettings.ready?'agent':body.type;if(!['document','diagnostics','evolution','ai','agent','world','video','forai','capability','code'].includes(type))throw new HttpError(422,'Unsupported job type');
    if(type==='code'&&!codeExecution)throw new HttpError(422,'코드 작업 경로를 사용하세요.');
    if(type==='capability'&&!capabilityExecution)throw new HttpError(422,'기능 실행 경로에서 검증한 입력이 필요합니다.');
-   const jobConfig=body.provider?agentConfigForProvider(env,body.provider):agentSettings;
+   const routed=type==='agent'?routeJob({taskClass:body.taskClass??'tool-use',pinnedProvider:body.provider??null}):null;
+   const jobConfig=routed?routed.config:body.provider?agentConfigForProvider(env,body.provider):agentSettings;
    if(type==='agent'&&!jobConfig.ready)throw new HttpError(409,'선택한 모델의 API 키·모델 이름·하루 호출 상한 연결이 필요합니다. 자율 점검에서 연결 상태를 확인하세요.');
    if(!(questExecution&&type==='agent'))requireModule(moduleFor(type));
    if(type==='ai'&&!aiEndpoint)throw new HttpError(409,'AI provider is not configured');
@@ -138,9 +153,23 @@ export function createYenoServer(options={}) {
    if(type==='agent'&&text.length>20000)throw new HttpError(400,'Agent mission text is limited to 20000 characters');
    const title=body.title?requiredText(body.title,160):(type==='world'?'세계 현황 · 공개 재난':type==='document'?'문서 만들기':type==='diagnostics'?'YENO 상태 진단':type==='evolution'?'경험 기반 개선 제안':type==='agent'?'YENO 자율 임무':'AI 초안 작성');
    const job={id:uid(),title,type,input:text,status:'queued',step:0,totalSteps:3,createdAt:now(),updatedAt:now(),error:null,version:1,artifacts:[]};
-   if(type==='agent'){job.agentJournal={provider:jobConfig.provider,model:jobConfig.model,calls:[],history:[{role:'user',content:text}]};if(body.provider)job.selectedProvider=jobConfig.provider;}
+   if(type==='agent'){job.agentJournal={provider:jobConfig.provider,model:jobConfig.model,calls:[],history:[{role:'user',content:text}]};job.routing=routed.routing;if(body.provider||routed.routing.poolDeclared)job.selectedProvider=jobConfig.provider;}
    if(project)job.projectId=project.id;
    s.jobs.unshift(job);event(`Job queued: ${title}`);return job;
+ }
+ // The only path to a real provider request. Routing provenance already on
+ // the job is re-checked against live state right before sending; the outcome
+ // is read back from the durable call receipts (unknown -> owner review).
+ async function transportAgent(job,signal){
+   const config=configFor(job);
+   if(job.routing){
+     const last=job.agentJournal?.history.findLast(m=>m.role==='assistant');
+     const authority=transportAuthority({routing:job.routing,job,config,state:s,usage:agentUsage(s.jobs),at:now(),willSend:!(last&&last.toolCalls.length===0)});
+     if(!authority.allowed){job.routing.transportOutcome=job.routing.usage?job.routing.transportOutcome:'blocked';save();throw new AgentError({emergency_stop:'stopped',global_daily_budget_exhausted:'daily_call_limit',previous_call_outcome_unknown:'previous_call_outcome_unknown'}[authority.blockers[0]]??`transport_blocked_${authority.blockers[0]}`);}
+     job.routing.transportStartedAt??=now();save();
+   }
+   try{return await runAgent({job,state:s,config,save:()=>{if(closed)throw new AgentError('runtime_closed');save();},signal,fetchImpl:options.agentFetch});}
+   finally{if(job.routing&&job.agentJournal)settleRouting(job.routing,job.agentJournal,now());}
  }
  function providerStatus(){return agentSettings.providers.map(entry=>{
    const jobs=s.jobs.filter(job=>job.agentJournal?.provider===entry.provider&&job.agentJournal?.model===entry.model);
@@ -294,7 +323,7 @@ export function createYenoServer(options={}) {
    }
    validateCodeTask(task,s.codeWorkshop);
    const job=newJob({type:'code',title:task.name??`코드 ${action} · ${task.id??task.request?.id??task.spec?.id??''}`,text:JSON.stringify(task)},{codeExecution:true});job.codeTask=task;
-   if(['generate','repair'].includes(action)){const config=b.provider?agentConfigForProvider(env,b.provider):agentSettings;job.selectedProvider=config.provider;job.callLimit=2;job.agentJournal={provider:config.provider,model:config.model,calls:[],history:[{role:'user',content:codePrompt(task,s.codeWorkshop)}]};}
+   if(['generate','repair'].includes(action)){const routed=routeJob({taskClass:'coding',pinnedProvider:b.provider??null});const config=routed.config;job.routing=routed.routing;job.selectedProvider=config.provider;job.callLimit=2;job.agentJournal={provider:config.provider,model:config.model,calls:[],history:[{role:'user',content:codePrompt(task,s.codeWorkshop)}]};}
    return {status:201,payload:{jobId:job.id,job:publicJob(job)}};
  }
 
@@ -635,7 +664,7 @@ export function createYenoServer(options={}) {
        }else if(job.type==='code'){
          const controller=new AbortController();controllers.set(job.id,controller);const timeout=setTimeout(()=>controller.abort(),90000);
          try{
-           const result=await runCodeJob({job,state:s,save:()=>{if(!valid())throw new Error('Code job stopped');save();},signal:controller.signal,fetchImpl:options.codeFetch,runModel:()=>runAgent({job,state:s,config:configFor(job),save:()=>{if(!valid())throw new AgentError('runtime_closed');save();},signal:controller.signal,fetchImpl:options.agentFetch})});
+           const result=await runCodeJob({job,state:s,save:()=>{if(!valid())throw new Error('Code job stopped');save();},signal:controller.signal,fetchImpl:options.codeFetch,runModel:()=>transportAgent(job,controller.signal)});
            if(!valid())return;job.draft=result.markdown;if(result.source)job.codeOutput=JSON.stringify(result.source,null,2);
          }finally{clearTimeout(timeout);if(controllers.get(job.id)===controller)controllers.delete(job.id);}
        }else if(job.type==='capability'){
@@ -650,7 +679,7 @@ export function createYenoServer(options={}) {
        else if(job.type==='agent'){
          const controller=new AbortController();controllers.set(job.id,controller);
          const timeout=setTimeout(()=>controller.abort(),Math.max(1,Math.min(90000,job.deadlineAt?Date.parse(job.deadlineAt)-Date.now():90000)));
-         try {const bundle=job.researchRequest?await prepareResearch(job,controller.signal,valid):null;if(!valid())return;const draft=await runAgent({job,state:s,config:configFor(job),save:()=>{if(closed)throw new AgentError('runtime_closed');save();},signal:controller.signal,fetchImpl:options.agentFetch});if(!valid())return;job.draft=job.repositoryTask?JSON.stringify(parseRepositoryPatch(draft,job.repositoryTask)):bundle?researchAnswer(job,draft,bundle):draft;}
+         try {const bundle=job.researchRequest?await prepareResearch(job,controller.signal,valid):null;if(!valid())return;const draft=await transportAgent(job,controller.signal);if(!valid())return;job.draft=job.repositoryTask?JSON.stringify(parseRepositoryPatch(draft,job.repositoryTask)):bundle?researchAnswer(job,draft,bundle):draft;}
          finally{clearTimeout(timeout);if(controllers.get(job.id)===controller)controllers.delete(job.id);}
        }
        else {const draft=await aiDraft(job);if(!valid())return;job.draft=`# ${job.title}\n\n${draft}\n\n---\nAI 생성 초안 · 모델: ${aiModel}\n외부 사실 검증이나 도구 실행은 하지 않았습니다.\n입력 SHA-256: ${job.inputSha256}\n`;}
