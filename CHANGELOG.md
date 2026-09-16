@@ -1,3 +1,10 @@
+# 2026-09-15 — 커비 일반 능력 탐색 순수 모듈 (목표 → 필요한 능력 → 보유/검토 검색 → 격차/후보), 배선 없음
+
+- **신규** `runtime/lib/capability-discovery.mjs`: `requiredCapability(state, quest)`(근거가 이름 붙인 기록 → 기록 유형·필드·ID·SHA-256 지문), `manifestFits(manifest, requirement)`, `searchCapabilities(state, requirement, {manifests})`(보유 선언형·코드 레지스트리 + 검토 원본, 보유 ID는 중복 후보 아님, 거절 사유 명시), `projectInput(records, manifest)`, `discoverCapability(state, quest, {manifests})`/`discoverCapabilities(state, {manifests})`(`gap`: none / inactive_owner_review / acquire_reviewed / missing / evidence_changed / no_records). 고정 아키타입→기능 매핑 없음. 상태 변경·모델 호출·import/activate/실행 없음.
+- `server.mjs`·`quests.mjs`·`closed-loop.mjs` 변경 없음(PR #15 검수 중). 배선은 #15 merge 후.
+- **자동시험** `runtime/test/capability-discovery.test.mjs` 4건(실제 서버 경로로 만든 저장 상태, 모델 호출 0회 확인): 실제 실패 작업 2건의 `repair` 퀘스트 → `job` 요구사항 → 활성 `failure-triage` 일치·`ledger-digest`/`evidence-gap-brief`는 필드 부족으로 거절 → 투영 입력이 `createCapabilityRequest`에 그대로 수락 → 재시작 후 지문 동일; 실제 성과 기록으로 생긴 `acquire-capability` 퀘스트 → 검토 원본 `ledger-digest`가 `acquire_reviewed`(sandboxable, fixture 수) → 원본 없으면 `missing`(필요 필드 보고) → 기존 import/verify/activate 후 `none` → 소유자 disable 후 `inactive_owner_review`(우회 후보 없음); `measure-outcome` 퀘스트는 `missing`(`evidence-gap-brief`는 evidenceCount·priority·nextStep 부족); 소유자 퀘스트 `not_autonomous`, 기록 소실·상태 변경 `evidence_changed`, 미지 근거 종류·참조 없음 `no_records`, 코드 묶음 `no_declarative_schema`, 손상 레지스트리는 검색 거부.
+- **검증**: `npm test` 547건 540 pass·0 fail·7 skip(기존 Docker/환경 skip), `npm run test:developer` 78건 75 pass·0 fail·3 skip(Docker 필요).
+
 # 2026-09-15 — 호문쿨루스 자율 목표 합성 첫 조각: 저장된 근거 → 결정적 후보 → 일곱 동기 → `proposed` 퀘스트 1개
 
 - **결함**: 호문쿨루스는 이미 있는 `proposed` 퀘스트의 순위만 매길 수 있었고, 소유자가 목표를 하나도 쓰지 않으면 어떤 일이 존재하는지 스스로 정하지 못했다.
