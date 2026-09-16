@@ -83,7 +83,7 @@ const PRIORITY_NAMED = /우선순위.*(?:정해|잡아|알려|골라|판단)/;
 const IMPORTANCE_SPECIFIC = /(?:제일|가장)\s*(?:중요한|급한|시급한)\s*(?:일|목표|우선순위).*(?:뭐|뭔|무엇)/;
 const IMPORTANCE_GENERIC = /(?:제일|가장)\s*(?:중요한|급한|시급한)\s*(?:게|것).*(?:뭐|뭔|무엇)/;
 const WORK_CONTEXT = /지금|오늘|우선순위|할\s*일|해야\s*할|목표/;
-const DELEGATE = /알아서.*(?:정해|잡아|골라|판단)/;
+const DELEGATE = /알아서.*(?:정해|잡아|골라|판단|진행)/;
 export function isDecideRequest(text) {
   if (typeof text !== 'string') return false;
   if (DECIDE_PHRASES.some(pattern => pattern.test(text))) return true;

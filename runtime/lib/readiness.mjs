@@ -117,7 +117,7 @@ export function buildReadiness(facts) {
   const devices = Object.values(state.devices ?? {}).filter(device => !device.revokedAt);
   const devicePairing = {state: devices.length ? 'LIVE_VERIFIED' : 'WIRED_UNVERIFIED', enrolledDevices: devices.length, platforms: [...new Set(devices.map(device => device.platform))].sort()};
 
-  const emergencyStop = {state: 'LIVE_VERIFIED', active: !!state.emergencyStop, gate: 'blocks_new_jobs_loop_acquisition_and_transport'};
+  const emergencyStop = {state: state.emergencyStop ? 'LIVE_VERIFIED' : 'WIRED_UNVERIFIED', active: !!state.emergencyStop, gate: 'blocks_new_jobs_loop_acquisition_and_transport'};
   if (state.emergencyStop) blockers.push('emergency_stop_active');
 
   const synthesized = (state.quests ?? []).filter(quest => quest.synthesis);
