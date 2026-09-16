@@ -1,5 +1,11 @@
 # 2026-09-15 — 호문쿨루스 자율 목표 합성 첫 조각: 저장된 근거 → 결정적 후보 → 일곱 동기 → `proposed` 퀘스트 1개
 
+## 2026-09-15 Multi-Model Router 순수 정책 계층 (배선 없음)
+
+- **신규** `runtime/lib/model-router.mjs`: `validateDeclaredModel`/`parseDeclaredModels`(소유자 선언 metadata 16필드, 이름 기반 추정 없음, free는 verified-free 증거 필수), `configuredProviders(env)`(provider-config 요약에서 키 없이 configured 증거), `brainPool(declared, configuration)`, `routeModel(pool, request, {ownerOverride, policy, at})`(capability → owner pin → safety/background opt-in·budget → configured/available/quota → quality → 최소 비용; `authorizesCall:false` 고정 프로비넌스 + 지문), `validateRoutingDecision`, `failoverDecision`(pre-send 명확 실패만 다음 후보, post-send는 outcomeUnknown·재실행 금지), `assertNoSecrets`.
+- **자동시험** `runtime/test/model-router.test.mjs` 7건: 검증된 무료 NVIDIA 선택·증거 없는 NVIDIA는 무료 취급 안 함, configured Grok 후보/선택·미설정 Grok 제외, owner pin 우선·부적격 pin은 무선택, coding/reasoning/realtime 요구 미충족 제외, pre-send failover·post-send 금지·pin 시 failover 없음·후보 소진, 비밀 미노출·자격 증명 형태 입력 거부, 결정성·지문·변조 실패 폐쇄·background opt-in/budget 게이트·owner disabled.
+
+
 - **결함**: 호문쿨루스는 이미 있는 `proposed` 퀘스트의 순위만 매길 수 있었고, 소유자가 목표를 하나도 쓰지 않으면 어떤 일이 존재하는지 스스로 정하지 못했다.
 - **신규**: `runtime/lib/goal-synthesis.mjs` — `observeEvidenceGaps(state, {manifests})`(검증된 상태만 읽어 정규화된 근거 갭 반환) → `previewAutonomousGoals(state, at, {manifests})`(활성 원형의 결정적 후보를 기존 `rankMotivatedCandidates`로 채점) → `synthesizeAutonomousGoal(state, at, {emergencyStop, manifests})`(순수 계획: 새 퀘스트 1개 / 기존 퀘스트 / 근거 없음 / 소유자 퀘스트 대기 / 전체 멈춤 / 상한). 모델 호출·네트워크 없음.
 - `runtime/lib/quests.mjs`: 퀘스트 레코드에 선택적 `synthesis` 프로비넌스 블록(`version, archetype, evidence[{kind,references,values}], sourceState, reason, riskClass, approvalRequired, autonomousGoalId, sourceEvidenceFingerprint, motivation, createdAt`)을 허용하고, 로드마다 지문·ID·동기 점수를 재계산해 불일치 시 실패 폐쇄. `planQuest`는 여전히 `synthesis`를 받지 않는다(호출자가 프로비넌스를 제출할 수 없음). 원형·리스크 등급·지문 함수를 여기서 export한다.
