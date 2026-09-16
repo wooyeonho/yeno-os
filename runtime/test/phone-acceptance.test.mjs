@@ -126,3 +126,18 @@ test('with no proposed quest on file, the voice decide phrase falls through hone
   assert.equal(result.body.decision, undefined, 'falls through to the normal conversational job, not a fabricated decision');
   assert.ok(result.body.jobId);
 });
+
+test('natural, non-imperative phrasing reaches the same real Homunculus decision through the real /api/voice endpoint', async t => {
+  const app = await setup(t);
+  const lowGap = await app.post('/api/quests', { goal: '지난달 방문 기록을 다시 정리한다', baseline: '지난달 방문자 120명, 이미 집계 완료', successCriterion: '이미 확인된 수치를 표로 다시 정리한다.' });
+  assert.equal(lowGap.status, 201);
+  const highGap = await app.post('/api/quests', { goal: '가장 시급한 근거 공백을 확인한다', successCriterion: '근거가 부족한 항목과 다음 확인 계획을 저장한다.' });
+  assert.equal(highGap.status, 201);
+
+  // Never "정해줘"/"골라줘" - the owner just talking the way a person actually
+  // talks to an assistant, not issuing a command.
+  const asked = await app.post('/api/voice', { text: '네가 봤을 때 지금 제일 중요한 게 뭐야?', history: [] });
+  assert.equal(asked.status, 201, JSON.stringify(asked.body));
+  assert.equal(asked.body.decision.goal, highGap.body.quest.goal, 'reaches the real Homunculus ranking, same as the imperative phrase');
+  assert.ok(asked.body.jobId);
+});

@@ -888,11 +888,14 @@ export function createYenoServer(options={}) {
          if(!b.requestId||Object.keys(b).some(k=>!['requestId','text','history'].includes(k)))throw new HttpError(400,'Invalid voice request');
          requireModule('ai');const text=requiredText(b.text,6000),history=b.history??[];
          if(!Array.isArray(history)||history.length>6||history.some(m=>!m||Object.keys(m).sort().join()!=='content,role'||!['user','assistant'].includes(m.role)||typeof m.content!=='string')||JSON.stringify(history).length>10000)throw new HttpError(400,'음성 대화 기록이 너무 깁니다.');
-         // "지금 가장 먼저 할 일을 정해줘" routes to the real Homunculus ranking
-         // over already-proposed quests instead of becoming a generic free-text
-         // model call. If there is nothing proposed to decide among, this falls
-         // through to the normal conversational path below rather than failing
-         // silently - the agent can say honestly that no goal is on file yet.
+         // Both an explicit command ("지금 가장 먼저 할 일을 정해줘") and natural,
+         // non-imperative phrasing ("오늘 뭐부터 하면 돼?", "네가 봤을 때 지금 제일
+         // 중요한 게 뭐야?", "알아서 우선순위 잡아봐" - see decide.mjs's DECIDE_PHRASES)
+         // route to the real Homunculus ranking over already-proposed quests
+         // instead of becoming a generic free-text model call. If there is
+         // nothing proposed to decide among, this falls through to the normal
+         // conversational path below rather than failing silently - the agent
+         // can say honestly that no goal is on file yet.
          if(isDecideRequest(text)){
            const outcome=decideAndRunQuest();
            if(outcome)return {status:201,payload:{jobId:outcome.job.id,job:outcome.job,decision:{goal:outcome.decision.top.goal,successCriterion:outcome.decision.top.successCriterion,dominantDrives:outcome.decision.top.motivation.dominantDrives,announcement:decisionAnnouncement(outcome.decision)}}};

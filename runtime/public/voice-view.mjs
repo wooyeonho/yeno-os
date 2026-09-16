@@ -11,7 +11,7 @@ export function createVoiceView(root, {onSend, onReadResult} = {}) {
     <p class="voice-help">마이크를 누르고 한국어로 말하세요. 인식된 문장을 고쳐 보낼 수 있습니다. 답변은 실제 작업 결과가 도착하면 읽습니다.</p>
     <p class="voice-privacy">음성 인식·읽기는 브라우저 기능을 사용하며, 음성이나 답변이 브라우저 제공 업체로 전송될 수 있습니다. 이 화면을 벗어나면 마이크와 읽기를 멈춥니다.</p>
     <p class="voice-support" data-voice-support></p>
-    <label class="voice-label">보낼 말<textarea data-voice-input rows="3" maxlength="4000" placeholder="지금 가장 먼저 해야 할 일을 알려줘" aria-label="음성 대화 입력"></textarea></label>
+    <label class="voice-label">보낼 말<textarea data-voice-input rows="3" maxlength="4000" placeholder="오늘 뭐부터 하면 돼? / 알아서 우선순위 잡아봐" aria-label="음성 대화 입력"></textarea></label>
     <p data-voice-interim class="voice-interim" aria-live="polite"></p>
     <div class="voice-actions"><button type="button" class="button" data-voice-action="listen">마이크 켜기</button><button type="button" class="button primary" data-voice-action="send">보내기</button><button type="button" class="button subtle" data-voice-action="stop">음성 멈춤</button></div>
     <div class="voice-options"><label><input type="checkbox" data-voice-read checked> 답변 소리 내어 읽기</label><label><input type="checkbox" data-voice-handsfree> 연속 대화: 말이 끝나면 자동 전송</label></div>
