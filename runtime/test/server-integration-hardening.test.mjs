@@ -38,7 +38,7 @@ async function setup(t){
   const wait=async id=>{for(let i=0;i<400;i++){const j=openStore(dir).state.jobs.find(j=>j.id===id);if(j&&['completed','failed','paused'].includes(j.status))return j;await new Promise(r=>setTimeout(r,20));}assert.fail('job did not settle');};
   const restart=async()=>{runtime.shutdown();await new Promise(r=>setTimeout(r,5));runtime=await start({host:'127.0.0.1',port:0,dataDir:dir,token,env:ENV,agentFetch});};
   t.after(()=>{runtime.shutdown();fs.rmSync(dir,{recursive:true,force:true});});
-  return {dir,post,get,wait,restart,modelCalls,disk:()=>openStore(dir).state,state:()=>runtime.state()};
+  return {dir,request,post,get,wait,restart,modelCalls,disk:()=>openStore(dir).state,state:()=>runtime.state()};
 }
 
 test('TRACK A wiring: provider call receipts carry exact provider/model transport provenance; injected transport is never LIVE_VERIFIED',async t=>{
@@ -112,8 +112,13 @@ test('TRACK B wiring: Closed Loop runs an active verified QuickJS capability as 
 test('TRACK C/D wiring: owner device acceptance -> DEVICE_VERIFIED only for the exact current release; trusted proxy HTTPS classification; durable reload vs process restart evidence',async t=>{
   const app=await setup(t);
   const checks=Object.fromEntries(ACCEPTANCE_CHECKS.map(c=>[c,true]));
-  const enrolled=(await app.post('/api/devices/enroll',{name:'Pixel',platform:'android'})).body?.device;
-  const deviceId=enrolled?.id??'android-owner-phone';
+  const enrolled=(await app.post('/api/v1/devices/enroll',{name:'Pixel',platform:'android'})).body.device;
+  assert.ok(enrolled?.id&&enrolled.deviceToken);const deviceId=enrolled.id;
+  // A paired device credential cannot attest its own acceptance: owner pairing credential only.
+  {
+    const self=await app.request('POST','/api/device-acceptance',{requestId:randomUUID(),id:'acceptance-self-001',platform:'android',deviceId,release:{sourceCommit:COMMIT,clientVersionName:'1.2.0',clientVersionCode:12,apkSha256:APK},checks,observedAt:new Date().toISOString()},{Authorization:`Bearer ${enrolled.deviceToken}`});
+    assert.equal(self.status,403,JSON.stringify(self.body));
+  }
   let readiness=(await app.get('/api/readiness')).body;
   assert.notEqual(readiness.androidClient.state,'DEVICE_VERIFIED');
   assert.equal(readiness.androidClient.currentRelease.sourceCommit,COMMIT);
@@ -132,8 +137,7 @@ test('TRACK C/D wiring: owner device acceptance -> DEVICE_VERIFIED only for the 
   const dup=await app.post('/api/device-acceptance',{id:'acceptance-current-01',deviceId,platform:'android',release:{sourceCommit:COMMIT,clientVersionName:'1.2.0',clientVersionCode:12,apkSha256:APK},checks,observedAt:'2026-09-16T01:00:00.000Z'});
   assert.equal(dup.status,200);assert.equal(dup.body.added,false);
   readiness=(await app.get('/api/readiness')).body;
-  if(enrolled){assert.equal(readiness.androidClient.state,'DEVICE_VERIFIED',JSON.stringify(readiness.androidClient));}
-  else assert.ok(readiness.androidClient.blockers.some(b=>/device/.test(b)));
+  assert.equal(readiness.androidClient.state,'DEVICE_VERIFIED',JSON.stringify(readiness.androidClient));
   assert.equal(app.disk().deviceAcceptances.length,3);
 
   // HTTPS: plain request from loopback with a spoofed forwarded header, proxy-trusted only when remote is the configured proxy.

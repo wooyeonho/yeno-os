@@ -1086,7 +1086,7 @@ export function createYenoServer(options={}) {
          return {status:outcome.persisted?201:200,payload:outcome};
        }
        if(url.pathname==='/api/self-test')return startSelfTest(b);
-       if(url.pathname==='/api/device-acceptance')return recordAcceptance(b);
+       if(url.pathname==='/api/device-acceptance'){if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required for device acceptance attestation');return recordAcceptance(b);}
        if(url.pathname==='/api/quests/loop'){
         if(!b.requestId||Object.keys(b).some(k=>!['requestId'].includes(k)))throw new HttpError(400,'Persistent requestId required');
         if(s.emergencyStop)throw new HttpError(409,'전체 멈춤을 먼저 해제하세요.');
