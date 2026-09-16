@@ -40,6 +40,7 @@ import {decideQuest,isDecideRequest} from './lib/decide.mjs';
 import {synthesizeAutonomousGoal,previewAutonomousGoals} from './lib/goal-synthesis.mjs';
 import {DRIVE_DEFINITIONS} from './lib/motivation.mjs';
 import {tryAutoAcquireLedgerDigest} from './lib/kirby.mjs';
+import {planClosedLoop,closedLoopStatus,bindLoopExecution} from './lib/closed-loop.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 // Kirby's only auto-acquisition candidate: a manifest already reviewed and
@@ -186,7 +187,7 @@ export function createYenoServer(options={}) {
    return studioMutation({action:'chapter.create',requestId:body.requestId,seriesId:body.seriesId,number:body.number,title:body.title,content:manuscript,notes:`AI 원고 초안 · 작업 ${job.id} · 결과 SHA-256 ${item.sha256} · 출판 전 소유자 검토 필요`});
  }
  const SYNTHESIS_MANIFESTS=[LEDGER_DIGEST_MANIFEST];
- function questState(){return {...questsOverview(s),decision:decideQuest(s,now()),autonomous:previewAutonomousGoals(s,now(),{manifests:SYNTHESIS_MANIFESTS}),providers:providerStatus(),selectedProvider:agentSettings.provider,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs)};}
+ function questState(){return {...questsOverview(s),decision:decideQuest(s,now()),autonomous:previewAutonomousGoals(s,now(),{manifests:SYNTHESIS_MANIFESTS}),loop:closedLoopStatus(s,now(),{manifests:SYNTHESIS_MANIFESTS}),providers:providerStatus(),selectedProvider:agentSettings.provider,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs)};}
  // Homunculus Autonomous Goal Synthesis (goal-synthesis.mjs): observe -> rank
  // -> at most ONE new `proposed` quest. Observation always runs; persistence
  // is refused under emergency stop and while an owner-written quest is still
@@ -205,6 +206,32 @@ export function createYenoServer(options={}) {
  function decisionAnnouncement(decision){
    const names=decision.top.motivation.dominantDrives.map(id=>DRIVE_DEFINITIONS.find(d=>d.id===id)?.name??id).join('·');
    return `지금 가장 먼저 할 일로 "${decision.top.goal}"을(를) 골랐습니다. ${names}의 판단이 가장 크게 작용했습니다. 성공 기준: ${decision.top.successCriterion}`;
+ }
+ // BLACKHOLE Closed Loop (closed-loop.mjs): for an autonomous quest whose
+ // archetype maps to a reviewed declarative capability, Kirby closes the
+ // capability gap (demand-backed, fixture-verified) and Jarvis executes that
+ // capability with input drawn only from the quest's provenance - zero model
+ // calls, one action per call. 'owner' is the explicit POST /api/quests/loop;
+ // 'autopilot' is the scheduler under the owner's standing opt-in and never
+ // touches approvalRequired quests. Emergency stop refuses both.
+ function advanceClosedLoop(authorizedBy){
+   const action=planClosedLoop(s,now(),{emergencyStop:s.emergencyStop,authorizedBy,manifests:SYNTHESIS_MANIFESTS});
+   const status=()=>closedLoopStatus(s,now(),{manifests:SYNTHESIS_MANIFESTS});
+   if(action.kind==='none')return {...action,applied:false,loop:status()};
+   if(action.kind==='acquire'){
+     const acquisition=kirbyAutoAcquire();
+     return {...action,applied:!!acquisition,acquisition,loop:status()};
+   }
+   const quest=findQuest(action.questId);
+   const before={jobs:s.jobs,quests:s.quests,events:s.events};
+   s.jobs=s.jobs.slice();s.quests=s.quests.slice();s.events=s.events.slice();
+   try{
+     const job=capabilityJob(action.capabilityId,action.input,action.manifestHash);job.title=quest.goal.slice(0,160);job.questId=quest.id;
+     const bound=bindLoopExecution(s,quest,job,{authorizedBy,at:now()});
+     s.quests[s.quests.indexOf(quest)]=bound;
+     event(`닫힌 고리(${authorizedBy}): 자비스가 ${action.capabilityId} 기능으로 자율 목표를 실행합니다 · ${quest.goal.slice(0,80)}`);
+     return {...action,input:undefined,applied:true,quest:publicQuest(bound,s),job:publicJob(job),loop:status()};
+   }catch(error){s.jobs=before.jobs;s.quests=before.quests;s.events=before.events;throw error;}
  }
  function decideAndRunQuest(){
    const decision=decideQuest(s,now());
@@ -460,6 +487,7 @@ export function createYenoServer(options={}) {
      try{save();}catch{schedule();return;}
    }
    if(s.autopilot.enabled&&!s.emergencyStop){try{if(synthesizeGoal().persisted)save();}catch(error){event(`자율 목표 합성 실패(저장 없음): ${error.message}`);}}
+  if(s.autopilot.enabled&&!s.emergencyStop){try{if(advanceClosedLoop('autopilot').applied)save();}catch(error){if(persistencePending){schedule();return;}event(`닫힌 고리 진행 실패(저장 없음): ${error.message}`);}}
    const mission=automaticMission(s,agentSettings);
    if(mission){const job=newJob({type:'agent',title:'YENO 자동 자료 검토',text:mission.text});job.agentJournal.automaticKey=mission.key;job.agentJournal.automaticScope=mission.scope;save();}
    if(!s.emergencyStop){for(const job of s.jobs.slice().reverse()){
@@ -934,7 +962,13 @@ export function createYenoServer(options={}) {
          const outcome=synthesizeGoal();
          return {status:outcome.persisted?201:200,payload:outcome};
        }
-       if(url.pathname==='/api/quests/decide'){
+       if(url.pathname==='/api/quests/loop'){
+        if(!b.requestId||Object.keys(b).some(k=>!['requestId'].includes(k)))throw new HttpError(400,'Persistent requestId required');
+        if(s.emergencyStop)throw new HttpError(409,'전체 멈춤을 먼저 해제하세요.');
+        const outcome=advanceClosedLoop('owner');
+        return {status:outcome.applied?201:200,payload:outcome};
+      }
+      if(url.pathname==='/api/quests/decide'){
          if(!b.requestId||Object.keys(b).some(k=>!['requestId'].includes(k)))throw new HttpError(400,'Persistent requestId required');
          const outcome=decideAndRunQuest();
          if(!outcome)throw new HttpError(409,'선택할 수 있는 저장된 목표가 없습니다. 먼저 목표를 만들어 주세요.');
