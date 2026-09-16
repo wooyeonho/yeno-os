@@ -88,8 +88,17 @@ test('Loop 1 - repair goal -> failure-triage (Kirby active) -> owner loop -> Jar
   // The owner's outcome path accepts the capability job's artifact as real evidence.
   const outcome=await app.post('/api/outcomes',{questId:quest.id,ledger:'honor',summary:'실패 점검표 확보',value:2,unit:'건'});
   assert.equal(outcome.status,201,JSON.stringify(outcome.body));assert.equal(outcome.body.outcome.verification,'self_reported');
+  // executionVerified (artifact SHA == independent run record) is separate from
+  // outcomeVerified, which a self-reported ledger entry can never establish.
+  assert.equal(outcome.body.reality.executionVerified,true);assert.equal(outcome.body.reality.outcomeVerified,false);
+  assert.equal(outcome.body.reality.highGradeCandidate,false);assert.equal(outcome.body.reality.authorizesAction,false);
+  assert.ok(outcome.body.reality.reasons.includes('type_not_outcome_verifying:self_reported'));
 
   await app.restart();
+  const reality=(await app.get('/api/quests')).body.outcomeReality;
+  assert.equal(reality.length,1);assert.equal(reality[0].outcomeId,outcome.body.outcome.id);assert.equal(reality[0].executionVerified,true);assert.equal(reality[0].outcomeVerified,false);
+  const growthAfter=(await app.get('/api/state')).body.growth.capabilities.skills.find(k=>k.id==='failure-triage');
+  assert.equal(growthAfter.checks.S.met,false);
   const disk=app.disk();
   const stored=disk.quests.find(q=>q.id===quest.id);
   assert.equal(stored.loop.jobId,job.id);assert.equal(stored.loop.authorizedBy,'owner');assert.equal(stored.jobId,job.id);

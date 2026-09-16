@@ -60,19 +60,18 @@ function gradeA() {
 }
 
 // S: "강한 비교 대안보다 실제 지표 우세와 고객 가치 확인" needs an
-// externally-verified outcome. The wealth/honor/fame ledger
-// (runtime/lib/quests.mjs) only ever records verification:'self_reported' -
-// there is currently no path to an externally-verified outcome for any
-// skill, so S is unreachable by design until that verification path exists.
-function gradeS(outcomes) {
-  const verified = outcomes.some(outcome => outcome.verification && outcome.verification !== 'self_reported');
-  if (!verified) return { met: false, reason: '외부에서 검증된 성과 기록이 없습니다(현재 장부는 self_reported만 지원합니다).' };
+// externally-verified outcome.
+// Only an outcome-verification verdict (runtime/lib/outcome-verification.mjs)
+// with outcomeVerified && highGradeCandidate (external_verified) counts. A
+// ledger record's own `verification` string is a claim and is never consulted.
+function gradeS(verdicts) {
+  const verified = verdicts.some(v => v && v.outcomeVerified === true && v.highGradeCandidate === true && v.authorizesAction === false);
+  if (!verified) return { met: false, reason: '외부에서 검증된 성과 판정(outcomeVerified·external_verified)이 없습니다 — 장부의 self_reported 기록은 근거가 아닙니다.' };
   return { met: true, reason: null };
 }
 
-// outcomes: optional array of ledger outcomes (runtime/lib/quests.mjs
-// recordQuestOutcome results) that the caller believes relate to this skill.
-// Not required - omit it and S simply stays blocked, which is always true today.
+// outcomes: optional array of outcome-verification verdicts linked to this
+// skill's executions. Omit it and S simply stays blocked.
 export function gradeSkill(registry, id, { outcomes = [] } = {}) {
   if (!object(registry) || !Array.isArray(registry.entries) || !Array.isArray(registry.history)) throw new TypeError('Invalid registry');
   const entry = registry.entries.find(item => item.id === id);

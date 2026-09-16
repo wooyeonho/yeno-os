@@ -36,6 +36,7 @@ import {getCodeStatus,getCodeVersion,createCodeRequest,importCode,activateCode,d
 import {validateCodeTask,codePrompt,runCodeJob} from './lib/code-jobs.mjs';
 import {CodeSandboxError} from './lib/code-sandbox.mjs';
 import {growthOverview} from './lib/growth.mjs';
+import {outcomeRealities,verifiedOutcomesByCapability} from './lib/outcome-reality.mjs';
 import {decideQuest,isDecideRequest} from './lib/decide.mjs';
 import {synthesizeAutonomousGoal,previewAutonomousGoals} from './lib/goal-synthesis.mjs';
 import {DRIVE_DEFINITIONS} from './lib/motivation.mjs';
@@ -219,7 +220,7 @@ export function createYenoServer(options={}) {
    return studioMutation({action:'chapter.create',requestId:body.requestId,seriesId:body.seriesId,number:body.number,title:body.title,content:manuscript,notes:`AI 원고 초안 · 작업 ${job.id} · 결과 SHA-256 ${item.sha256} · 출판 전 소유자 검토 필요`});
  }
  const SYNTHESIS_MANIFESTS=REVIEWED_MANIFESTS;
- function questState(){return {...questsOverview(s),decision:decideQuest(s,now()),autonomous:previewAutonomousGoals(s,now(),{manifests:SYNTHESIS_MANIFESTS}),loop:closedLoopStatus(s,now(),{manifests:SYNTHESIS_MANIFESTS}),providers:providerStatus(),selectedProvider:agentSettings.provider,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs)};}
+ function questState(){return {...questsOverview(s),outcomeReality:outcomeRealities(s),decision:decideQuest(s,now()),autonomous:previewAutonomousGoals(s,now(),{manifests:SYNTHESIS_MANIFESTS}),loop:closedLoopStatus(s,now(),{manifests:SYNTHESIS_MANIFESTS}),providers:providerStatus(),selectedProvider:agentSettings.provider,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs)};}
  // Homunculus Autonomous Goal Synthesis (goal-synthesis.mjs): observe -> rank
  // -> at most ONE new `proposed` quest. Observation always runs; persistence
  // is refused under emergency stop and while an owner-written quest is still
@@ -291,7 +292,7 @@ export function createYenoServer(options={}) {
  // from a claim. See runtime/lib/growth.mjs for exactly what each grade requires
  // and why B/A/S report blocked (composition, intervention counts, and
  // externally-verified outcomes have no tracked evidence yet).
- function growthState(){return {capabilities:growthOverview(s.capabilities,'capability'),code:growthOverview(s.codeWorkshop,'code')};}
+ function growthState(){return {capabilities:growthOverview(s.capabilities,'capability',{outcomesById:verifiedOutcomesByCapability(s)}),code:growthOverview(s.codeWorkshop,'code')};}
  function codeMutation(action,b){
    if(!b.requestId)throw new HttpError(400,'Persistent requestId required');
    const fields={generate:['id','version','name','goal','fixtures','activate','provider'],repair:['id','goal','activate','provider'],github:['spec'],import:['manifest'],verify:['id','hash','activate'],run:['id','input'],activate:['id','hash'],disable:['id'],rollback:['id']}[action];
@@ -1018,7 +1019,7 @@ export function createYenoServer(options={}) {
        }
        const questAction=url.pathname.match(/^\/api\/quests\/([a-f0-9-]+)\/(run|review)$/);
        if(questAction){if(!b.requestId)throw new HttpError(400,'Persistent requestId required');if(Object.keys(b).some(k=>!(questAction[2]==='run'?['requestId']:['requestId','provider','maxCalls']).includes(k)))throw new HttpError(400,'Unknown goal action field');return questAction[2]==='run'?runQuest(questAction[1]):reviewQuest(questAction[1],b);}
-       if(url.pathname==='/api/outcomes'){if(!b.requestId)throw new HttpError(400,'Persistent requestId required');verifiedQuestArtifact(findQuest(b.questId),b.artifactId);const outcome=recordQuestOutcome(b,s);s.outcomes.unshift(outcome);event('Owner-reported outcome recorded with an actual output reference.');const kirbyAcquisition=kirbyAutoAcquire();return {status:201,payload:{outcome,...(kirbyAcquisition?{kirbyAcquisition}:{})}};}
+       if(url.pathname==='/api/outcomes'){if(!b.requestId)throw new HttpError(400,'Persistent requestId required');verifiedQuestArtifact(findQuest(b.questId),b.artifactId);const outcome=recordQuestOutcome(b,s);s.outcomes.unshift(outcome);event('Owner-reported outcome recorded with an actual output reference.');const reality=outcomeRealities(s).find(r=>r.outcomeId===outcome.id);const kirbyAcquisition=kirbyAutoAcquire();return {status:201,payload:{outcome,reality,...(kirbyAcquisition?{kirbyAcquisition}:{})}};}
        if(url.pathname==='/api/bots'){if(!b.requestId)throw new BotError(400,'Persistent requestId required');if(b.action==='start')return startBots(b);if(Object.keys(b).some(k=>!['action','requestId'].includes(k)))throw new BotError(400,'Unknown bot control field');return controlBots(b.action);}
        if(url.pathname==='/api/ecosystem'){
          if(typeof b.enabled!=='boolean'||Object.keys(b).some(key=>!['enabled','requestId'].includes(key))||!b.requestId)throw new HttpError(400,'Provide enabled:boolean and persistent requestId');
