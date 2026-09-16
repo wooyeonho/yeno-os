@@ -16,6 +16,9 @@ import crypto from 'node:crypto';
 import {searchCapabilities, projectInput} from './capability-discovery.mjs';
 import {verifyExecution} from './outcome-verification.mjs';
 import {gradeSkill} from './growth.mjs';
+import {liveEvidence} from './brain-routing.mjs';
+import {httpsReadiness, restartEvidence} from './https-evidence.mjs';
+import {deviceVerification} from './device-evidence.mjs';
 
 export const READINESS_VERSION = 1;
 export const STATES = Object.freeze(['NOT_WIRED', 'WIRED_UNVERIFIED', 'SYNTHETIC_VERIFIED', 'LIVE_VERIFIED', 'DEVICE_VERIFIED', 'BLOCKED']);
@@ -72,27 +75,32 @@ export function readDurableState(directory) {
   return JSON.parse(envelope.payload);
 }
 
+// Per-call transport provenance decides: LIVE_VERIFIED needs a settled call
+// whose receipt names exactly this provider+model over the real network.
+// Receipts without provenance (legacy) or via injected fetch are synthetic.
 export function providerReality(entry, {jobs = [], liveTransport = false} = {}) {
-  const related = jobs.filter(job => job.agentJournal?.provider === entry.provider);
+  const related = jobs.filter(job => job.agentJournal?.provider === entry.provider && (entry.model == null || job.agentJournal.model === entry.model));
   const calls = related.flatMap(job => (job.agentJournal.calls ?? []).map(call => ({...call, selfTest: !!job.selfTestId})));
   const settled = calls.filter(call => call.status === 'settled');
   const unknown = calls.filter(call => call.status === 'unknown');
   const lastSettledAt = settled.map(call => call.at).sort().at(-1) ?? null;
+  const exact = liveEvidence(jobs, {provider: entry.provider, model: entry.model ?? null});
   let state;
   if (!entry.configured) state = 'UNCONFIGURED';
   else if (entry.eligible === false) state = 'DISABLED';
-  else if (unknown.length && (!lastSettledAt || unknown.some(call => call.at > lastSettledAt))) state = 'DEGRADED';
-  else if (settled.length && liveTransport) state = 'LIVE_VERIFIED';
+  else if (exact.degraded || (unknown.length && (!lastSettledAt || unknown.some(call => call.at > lastSettledAt)))) state = 'DEGRADED';
+  else if (exact.liveCalls > 0) state = 'LIVE_VERIFIED';
   else state = 'CONFIGURED_UNVERIFIED';
   return {
     provider: entry.provider, model: entry.model ?? null, state,
     configured: !!entry.configured, missing: entry.missing ?? [],
     transport: liveTransport ? 'network' : 'injected',
     settledCalls: settled.length, unknownCalls: unknown.length, selfTestCalls: calls.filter(call => call.selfTest).length,
+    exactLiveCalls: exact.liveCalls, injectedCalls: exact.injectedCalls, lastLiveAt: exact.lastLiveAt, liveTriggers: exact.triggers,
     lastSettledAt,
     evidence: !entry.configured ? 'no_credentials_configured'
-      : state === 'LIVE_VERIFIED' ? 'real_endpoint_response_recorded'
-      : settled.length ? 'settled_calls_via_injected_transport_only' : 'no_call_evidence'
+      : state === 'LIVE_VERIFIED' ? 'real_endpoint_response_recorded_for_exact_provider_model'
+      : settled.length ? (exact.injectedCalls ? 'settled_calls_via_injected_transport_only' : 'settled_calls_without_exact_transport_provenance') : 'no_call_evidence'
   };
 }
 
@@ -100,7 +108,7 @@ const evidenceState = (records, blocked = null) => blocked ? 'BLOCKED' : !record
 
 // facts: everything the server knows; this function only classifies.
 export function buildReadiness(facts) {
-  const {state, sourceCommit, runtimeVersion, apiVersion, store, request, principal, providers, brainPool, liveTransport, manifests = [], deviceReports = [], at} = facts;
+  const {state, sourceCommit, runtimeVersion, apiVersion, store, request, principal, providers, brainPool, liveTransport, manifests = [], boots = [], currentBootId = null, deviceAcceptances = [], currentRelease = null, at} = facts;
   const blockers = [];
   const jobs = state.jobs ?? [];
   const selfTests = state.selfTests ?? [];
@@ -110,8 +118,8 @@ export function buildReadiness(facts) {
   const persistentStore = {state: store.durable ? 'LIVE_VERIFIED' : 'BLOCKED', directory: store.directory, durable: store.durable, recovered: store.recovered, revision: state.revision};
   if (!store.durable) blockers.push('persistent_store_not_durable');
 
-  const httpsReachable = {state: request.encrypted && request.publicHost ? 'LIVE_VERIFIED' : request.publicHost ? 'WIRED_UNVERIFIED' : 'BLOCKED', thisRequest: request.encrypted ? 'https' : 'http', publicHost: request.publicHost, allowedPublicHosts: request.allowedPublicHosts};
-  if (httpsReachable.state !== 'LIVE_VERIFIED') blockers.push('https_staging_not_verified_from_this_request');
+  const httpsReachable = httpsReadiness(request);
+  blockers.push(...httpsReachable.blockers);
 
   const authentication = {state: principal ? 'LIVE_VERIFIED' : 'BLOCKED', kind: principal?.kind ?? null, versionedApi: principal?.versioned ?? false};
   const devices = Object.values(state.devices ?? {}).filter(device => !device.revokedAt);
@@ -156,12 +164,12 @@ export function buildReadiness(facts) {
   const voice = {state: 'WIRED_UNVERIFIED', browserFallback: 'speechRecognition/speechSynthesis', liveVoice: 'NOT_WIRED', toolCallsGrantApproval: false};
   blockers.push('live_voice_not_wired');
 
-  const androidReports = deviceReports.filter(report => report.platform === 'android');
-  const androidClient = {state: androidReports.length ? 'DEVICE_VERIFIED' : devices.some(device => /android/i.test(device.platform)) ? 'WIRED_UNVERIFIED' : 'NOT_WIRED', enrolledAndroidDevices: devices.filter(device => /android/i.test(device.platform)).length, ownerReports: androidReports.length};
-  if (androidClient.state !== 'DEVICE_VERIFIED') blockers.push('android_device_acceptance_not_reported');
+  const android = deviceVerification(deviceAcceptances, {platform: 'android', current: currentRelease ? {sourceCommit: currentRelease.sourceCommit, client: currentRelease.client} : null, devices: state.devices ?? {}, at});
+  const androidClient = {...android, enrolledAndroidDevices: devices.filter(device => /android/i.test(device.platform)).length, currentRelease: currentRelease ? {sourceCommit: currentRelease.sourceCommit, versionName: currentRelease.client?.versionName ?? null, versionCode: currentRelease.client?.versionCode ?? null, apkSha256: currentRelease.client?.apkSha256 ?? null} : null};
+  blockers.push(...android.blockers.map(b => `android_${b}`));
 
-  const reloads = selfTests.filter(item => item.durableReload?.matched === true);
-  const restartPersistence = {state: store.recovered ? 'BLOCKED' : reloads.length ? 'SYNTHETIC_VERIFIED' : 'WIRED_UNVERIFIED', durableReloadChecks: reloads.length, processRestart: 'verified_only_by_integration_tests_and_owner_observation'};
+  const restartPersistence = restartEvidence({selfTests, boots, currentBootId, recovered: !!store.recovered});
+  blockers.push(...restartPersistence.blockers.map(b => `restart_${b}`));
 
   const overall = blockers.some(b => ['persistent_store_not_durable', 'emergency_stop_active', 'no_active_capability'].includes(b)) ? 'BLOCKED' : blockers.length ? 'PARTIAL_READY' : 'READY';
   const readiness = {version: READINESS_VERSION, at, sourceCommit, runtimeVersion, apiVersion, persistentStore, httpsReachable, authentication, devicePairing, emergencyStop, homunculus, closedLoop, kirbyDiscovery, capabilityRegistry, modelRouter, providers: providerMatrix, outcomeVerification, soloLeveling, voice, androidClient, restartPersistence, blockers, overall};

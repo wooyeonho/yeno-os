@@ -3,6 +3,8 @@ import {initialCodeWorkshop,validateCodeWorkshop,disableCodeForRestore} from './
 import {validateCodeJob} from './code-jobs.mjs';
 import {validateRouting} from './brain-routing.mjs';
 import {validateSelfTests} from './readiness.mjs';
+import {validateBootRecords} from './https-evidence.mjs';
+import {validateDeviceAcceptances} from './device-evidence.mjs';
 import {initialCapabilities,validateCapabilities,validateCapabilityRequest,capabilityInputSha256,disableAllCapabilitiesForRestore} from './capabilities.mjs';
 import {validateWorldSnapshot} from './world.mjs';
 import fs from 'node:fs';
@@ -54,6 +56,8 @@ function initializeQuestCollections(state) {
  validateStudio(state.studio);
  validateQuestState(state);
  validateSelfTests(state.selfTests);
+ if(Object.hasOwn(state,'runtimeBoots'))validateBootRecords(state.runtimeBoots);
+ if(Object.hasOwn(state,'deviceAcceptances'))validateDeviceAcceptances(state.deviceAcceptances);
  for(const job of state.jobs)if(job.selfTestId!==undefined&&!(state.selfTests??[]).some(item=>item.id===job.selfTestId))throw new Error('Invalid self-test job link');
  return state;
 }

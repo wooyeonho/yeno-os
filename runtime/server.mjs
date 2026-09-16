@@ -43,7 +43,9 @@ import {synthesizeAutonomousGoal,previewAutonomousGoals} from './lib/goal-synthe
 import {DRIVE_DEFINITIONS} from './lib/motivation.mjs';
 import {tryAutoAcquireLedgerDigest,autoAcquireCapability} from './lib/kirby.mjs';
 import {planClosedLoop,closedLoopStatus,bindLoopExecution} from './lib/closed-loop.mjs';
-import {declaredBrainPool,currentBrainPool,routeAgentJob,transportAuthority,settleRouting,RoutingError} from './lib/brain-routing.mjs';
+import {declaredBrainPool,currentBrainPool,routeAgentJob,transportAuthority,callTransportFor,settleRouting,RoutingError} from './lib/brain-routing.mjs';
+import {classifyRequest,parseTrustedProxies,parseAllowedHosts,createBootRecord,appendBoot} from './lib/https-evidence.mjs';
+import {createDeviceAcceptance,recordDeviceAcceptance} from './lib/device-evidence.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 // Kirby's only auto-acquisition candidate: a manifest already reviewed and
@@ -163,14 +165,15 @@ export function createYenoServer(options={}) {
  // the job is re-checked against live state right before sending; the outcome
  // is read back from the durable call receipts (unknown -> owner review).
  async function transportAgent(job,signal){
-   const config=configFor(job);
+   const config=configFor(job);let transport=null;
    if(job.routing){
      const last=job.agentJournal?.history.findLast(m=>m.role==='assistant');
      const authority=transportAuthority({routing:job.routing,job,config,state:s,usage:agentUsage(s.jobs),at:now(),willSend:!(last&&last.toolCalls.length===0)});
      if(!authority.allowed){job.routing.transportOutcome=job.routing.usage?job.routing.transportOutcome:'blocked';save();throw new AgentError({emergency_stop:'stopped',global_daily_budget_exhausted:'daily_call_limit',previous_call_outcome_unknown:'previous_call_outcome_unknown'}[authority.blockers[0]]??`transport_blocked_${authority.blockers[0]}`);}
      job.routing.transportStartedAt??=now();save();
+     transport=callTransportFor({routing:job.routing,config,fetchImpl:options.agentFetch,authority});
    }
-   try{return await runAgent({job,state:s,config,save:()=>{if(closed)throw new AgentError('runtime_closed');save();},signal,fetchImpl:options.agentFetch});}
+   try{return await runAgent({job,state:s,config,save:()=>{if(closed)throw new AgentError('runtime_closed');save();},signal,fetchImpl:options.agentFetch,transport});}
    finally{if(job.routing&&job.agentJournal)settleRouting(job.routing,job.agentJournal,now());}
  }
  function providerStatus(){return agentSettings.providers.map(entry=>{
@@ -270,10 +273,10 @@ export function createYenoServer(options={}) {
    const before={jobs:s.jobs,quests:s.quests,events:s.events};
    s.jobs=s.jobs.slice();s.quests=s.quests.slice();s.events=s.events.slice();
    try{
-     const job=capabilityJob(action.capabilityId,action.input,action.manifestHash);job.title=quest.goal.slice(0,160);job.questId=quest.id;
+     const job=action.engine==='quickjs-v1'?codeRunJob(action.capabilityId,action.input,action.manifestHash):capabilityJob(action.capabilityId,action.input,action.manifestHash);job.title=quest.goal.slice(0,160);job.questId=quest.id;
      const bound=bindLoopExecution(s,quest,job,{authorizedBy,at:now(),kirbyAction:action.kirbyAction,discoveryFingerprint:action.discoveryFingerprint});
      s.quests[s.quests.indexOf(quest)]=bound;
-     event(`닫힌 고리(${authorizedBy}): 자비스가 ${action.capabilityId} 기능으로 자율 목표를 실행합니다 · ${quest.goal.slice(0,80)}`);
+     event(`닫힌 고리(${authorizedBy}): 자비스가 ${action.capabilityId} 기능(${action.engine})으로 자율 목표를 실행합니다 · ${quest.goal.slice(0,80)}`);
      return {...action,input:undefined,applied:true,quest:publicQuest(bound,s),job:publicJob(job),loop:status()};
    }catch(error){s.jobs=before.jobs;s.quests=before.quests;s.events=before.events;throw error;}
  }
@@ -331,14 +334,28 @@ export function createYenoServer(options={}) {
 
  const SOURCE_COMMIT=detectSourceCommit(env,path.resolve(ROOT,'..'));
  const LIVE_TRANSPORT=!options.agentFetch;
+ const TRUSTED_PROXIES=parseTrustedProxies(env.YENO_TRUSTED_PROXIES),PUBLIC_HOSTS=parseAllowedHosts(env.YENO_ALLOWED_HOSTS);
+ const BOOT_ID=uid(),BOOTED_AT=now();
+ s.runtimeBoots=appendBoot(s.runtimeBoots??[],createBootRecord({bootId:BOOT_ID,bootedAt:BOOTED_AT,revisionAtBoot:s.revision??0,pid:process.pid})).records;
+ s.deviceAcceptances??=[];
+ save();
+ // Release the runtime serves now; the owner's device acceptance must match it exactly.
+ const CURRENT_RELEASE={sourceCommit:SOURCE_COMMIT?.sha??null,client:{versionName:env.YENO_CLIENT_VERSION_NAME??null,versionCode:Number.isInteger(Number(env.YENO_CLIENT_VERSION_CODE))&&env.YENO_CLIENT_VERSION_CODE?Number(env.YENO_CLIENT_VERSION_CODE):null,apkSha256:/^[a-f0-9]{64}$/.test(env.YENO_APK_SHA256??'')?env.YENO_APK_SHA256:null}};
  function requestFacts(req,principal,versioned){
-   const host=String(req.headers.host??'').toLowerCase();
-   const publicHosts=(env.YENO_ALLOWED_HOSTS??'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
-   return {request:{encrypted:!!req.socket.encrypted,publicHost:publicHosts.includes(host)?host:null,allowedPublicHosts:publicHosts.length},principal:{kind:principal.kind,versioned}};
+   const classification=classifyRequest({socketEncrypted:req.socket.encrypted===true,remoteAddress:req.socket.remoteAddress??'',host:String(req.headers.host??''),headers:req.headers,trustedProxies:TRUSTED_PROXIES,allowedHosts:PUBLIC_HOSTS});
+   return {request:classification,principal:{kind:principal.kind,versioned}};
+ }
+ function recordAcceptance(b){
+   if(!b.requestId)throw new HttpError(400,'Persistent requestId required');
+   const {requestId,...claim}=b;
+   let record;try{record=createDeviceAcceptance({...claim,observedBy:'owner',recordedAt:now()});}catch(error){throw new HttpError(error.status??400,error.message);}
+   const outcome=recordDeviceAcceptance(s.deviceAcceptances,record);s.deviceAcceptances=outcome.records;
+   if(outcome.added)event(`소유자 기기 검수 기록: ${record.platform} ${record.deviceId} · ${record.complete?'19/19':'미완료'} · ${record.release.sourceCommit.slice(0,7)}`);
+   return {status:outcome.added?201:200,payload:{acceptance:record,added:outcome.added}};
  }
  function readinessState(req,principal,versioned){
    return buildReadiness({state:s,sourceCommit:SOURCE_COMMIT,runtimeVersion:VERSION,apiVersion:API_VERSION,store:{directory:path.basename(dataDir),durable:!persistencePending&&fs.existsSync(path.join(dataDir,'state.json')),recovered:store.recovered},
-     ...requestFacts(req,principal,versioned),providers:agentSettings.providers,brainPool:{declared:DECLARED_BRAIN_POOL.length,configured:currentBrainPool(env,DECLARED_BRAIN_POOL).models.filter(m=>m.configured).length},liveTransport:LIVE_TRANSPORT,manifests:SYNTHESIS_MANIFESTS,at:now()});
+     ...requestFacts(req,principal,versioned),providers:agentSettings.providers,brainPool:{declared:DECLARED_BRAIN_POOL.length,configured:currentBrainPool(env,DECLARED_BRAIN_POOL).models.filter(m=>m.configured).length},liveTransport:LIVE_TRANSPORT,manifests:SYNTHESIS_MANIFESTS,boots:s.runtimeBoots,currentBootId:BOOT_ID,deviceAcceptances:s.deviceAcceptances,currentRelease:CURRENT_RELEASE,at:now()});
  }
  // Safe self-test: one real capability job from fixed synthetic records through
  // the same Kirby search / Jarvis execution / artifact / verification path real
@@ -378,6 +395,16 @@ export function createYenoServer(options={}) {
    const list=(s.selfTests??[]).map(record=>selfTestProgress(record,{state:s,directory:dataDir,liveTransport:LIVE_TRANSPORT}));
    for(const item of list){const record=s.selfTests.find(r=>r.id===item.id);if(item.durableReload?.matched&&!record.durableReload?.matched){record.durableReload={matched:true,at:now()};}}
    return {latest:list[0]??null,history:list,liveTransport:LIVE_TRANSPORT};
+ }
+ // Jarvis execution of an active, fixture-verified QuickJS capability: the same
+ // type:'code' mode:'run' job the owner's code workshop uses (sandbox, no model).
+ function codeRunJob(id,input,expectedHash){
+   if(s.emergencyStop)throw new HttpError(409,'전체 멈춤을 먼저 해제하세요.');
+   const request=createCodeRequest(s.codeWorkshop,id,input);
+   if(expectedHash&&request.hash!==expectedHash)throw new HttpError(409,'활성 코드 버전이 계획과 다릅니다.');
+   const task={mode:'run',request};validateCodeTask(task,s.codeWorkshop);
+   const job=newJob({type:'code',title:`코드 실행 · ${id}`,text:JSON.stringify(task)},{codeExecution:true});job.codeTask=task;
+   return job;
  }
  function capabilityJob(id,input,expectedHash){
    const request=createCapabilityRequest(s.capabilities,id,input);
@@ -1059,6 +1086,7 @@ export function createYenoServer(options={}) {
          return {status:outcome.persisted?201:200,payload:outcome};
        }
        if(url.pathname==='/api/self-test')return startSelfTest(b);
+       if(url.pathname==='/api/device-acceptance')return recordAcceptance(b);
        if(url.pathname==='/api/quests/loop'){
         if(!b.requestId||Object.keys(b).some(k=>!['requestId'].includes(k)))throw new HttpError(400,'Persistent requestId required');
         if(s.emergencyStop)throw new HttpError(409,'전체 멈춤을 먼저 해제하세요.');

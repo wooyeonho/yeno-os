@@ -29,11 +29,13 @@ const single = header => typeof header === 'string' && !header.includes(',') ? h
 // One request -> {scheme, via, publicHost, forwarded}. Never throws on odd
 // input: unknown is classified as plain http from an unknown host.
 export function classifyRequest({socketEncrypted = false, remoteAddress = '', host = '', headers = {}, trustedProxies = [], allowedHosts = []} = {}) {
-  const hostName = typeof host === 'string' ? host.trim().toLowerCase() : '';
-  const publicHost = allowedHosts.includes(hostName) ? hostName : null;
   const forwardedProto = headers['x-forwarded-proto'], forwardedHost = headers['x-forwarded-host'];
   const headerPresent = forwardedProto !== undefined || forwardedHost !== undefined;
   const proxyTrusted = trustedProxies.includes(normalizeAddress(remoteAddress));
+  // The public host is the one the trusted proxy forwarded; otherwise the socket's own Host.
+  const trustedHost = proxyTrusted ? single(forwardedHost) : null;
+  const hostName = (typeof trustedHost === 'string' ? trustedHost : typeof host === 'string' ? host : '').trim().toLowerCase();
+  const publicHost = allowedHosts.includes(hostName) ? hostName : null;
   let scheme = 'http', via = 'plain';
   if (socketEncrypted === true) { scheme = 'https'; via = 'direct-tls'; }
   else if (headerPresent && proxyTrusted) {
