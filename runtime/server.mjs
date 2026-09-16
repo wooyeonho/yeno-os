@@ -39,13 +39,16 @@ import {growthOverview} from './lib/growth.mjs';
 import {decideQuest,isDecideRequest} from './lib/decide.mjs';
 import {synthesizeAutonomousGoal,previewAutonomousGoals} from './lib/goal-synthesis.mjs';
 import {DRIVE_DEFINITIONS} from './lib/motivation.mjs';
-import {tryAutoAcquireLedgerDigest} from './lib/kirby.mjs';
+import {tryAutoAcquireLedgerDigest,autoAcquireCapability} from './lib/kirby.mjs';
 import {planClosedLoop,closedLoopStatus,bindLoopExecution} from './lib/closed-loop.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 // Kirby's only auto-acquisition candidate: a manifest already reviewed and
 // committed in this repo, never model output or a runtime-generated file.
 const LEDGER_DIGEST_MANIFEST=JSON.parse(fs.readFileSync(path.join(ROOT,'capabilities','ledger-digest.json'),'utf8'));
+// Every manifest reviewed and committed in runtime/capabilities/: the only
+// candidates General Kirby may search, qualify and (owner-approved) acquire.
+const REVIEWED_MANIFESTS=fs.readdirSync(path.join(ROOT,'capabilities')).filter(name=>name.endsWith('.json')).sort().map(name=>JSON.parse(fs.readFileSync(path.join(ROOT,'capabilities',name),'utf8')));
 const VERSION='0.2.2';
 const API_VERSION='1';
 const MAX_BODY=256*1024;
@@ -186,7 +189,7 @@ export function createYenoServer(options={}) {
    if(!manuscript)throw new HttpError(409,'가져올 원고 본문이 비어 있습니다.');
    return studioMutation({action:'chapter.create',requestId:body.requestId,seriesId:body.seriesId,number:body.number,title:body.title,content:manuscript,notes:`AI 원고 초안 · 작업 ${job.id} · 결과 SHA-256 ${item.sha256} · 출판 전 소유자 검토 필요`});
  }
- const SYNTHESIS_MANIFESTS=[LEDGER_DIGEST_MANIFEST];
+ const SYNTHESIS_MANIFESTS=REVIEWED_MANIFESTS;
  function questState(){return {...questsOverview(s),decision:decideQuest(s,now()),autonomous:previewAutonomousGoals(s,now(),{manifests:SYNTHESIS_MANIFESTS}),loop:closedLoopStatus(s,now(),{manifests:SYNTHESIS_MANIFESTS}),providers:providerStatus(),selectedProvider:agentSettings.provider,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs)};}
  // Homunculus Autonomous Goal Synthesis (goal-synthesis.mjs): observe -> rank
  // -> at most ONE new `proposed` quest. Observation always runs; persistence
@@ -219,15 +222,25 @@ export function createYenoServer(options={}) {
    const status=()=>closedLoopStatus(s,now(),{manifests:SYNTHESIS_MANIFESTS});
    if(action.kind==='none')return {...action,applied:false,loop:status()};
    if(action.kind==='acquire'){
-     const acquisition=kirbyAutoAcquire();
-     return {...action,applied:!!acquisition,acquisition,loop:status()};
+     // General Kirby qualified a repository-reviewed manifest for this goal and
+     // the owner asked: import -> fixture verify -> activate (inactive on failure).
+     const manifest=SYNTHESIS_MANIFESTS.find(item=>item.id===action.capabilityId);
+     if(!manifest)throw new HttpError(409,'검토된 원본을 찾을 수 없습니다.');
+     const acquisition=autoAcquireCapability(s.capabilities,manifest);
+     if(acquisition.result.hash!==action.manifestHash)throw new HttpError(409,'원본 해시가 커비 자격 검증과 다릅니다.');
+     assertProductionCapacity({...s,capabilities:acquisition.registry});
+     s.capabilities=acquisition.registry;
+     event(acquisition.result.acquired
+       ?`커비(${authorizedBy}): 목표 요구에 맞는 검토 원본 ${acquisition.result.id} 원본·시험·활성화 완료`
+       :`커비(${authorizedBy}): ${acquisition.result.id} 시험 불합격으로 비활성 상태 유지 · ${acquisition.result.error}`);
+     return {...action,applied:true,acquisition:acquisition.result,loop:status()};
    }
    const quest=findQuest(action.questId);
    const before={jobs:s.jobs,quests:s.quests,events:s.events};
    s.jobs=s.jobs.slice();s.quests=s.quests.slice();s.events=s.events.slice();
    try{
      const job=capabilityJob(action.capabilityId,action.input,action.manifestHash);job.title=quest.goal.slice(0,160);job.questId=quest.id;
-     const bound=bindLoopExecution(s,quest,job,{authorizedBy,at:now()});
+     const bound=bindLoopExecution(s,quest,job,{authorizedBy,at:now(),kirbyAction:action.kirbyAction,discoveryFingerprint:action.discoveryFingerprint});
      s.quests[s.quests.indexOf(quest)]=bound;
      event(`닫힌 고리(${authorizedBy}): 자비스가 ${action.capabilityId} 기능으로 자율 목표를 실행합니다 · ${quest.goal.slice(0,80)}`);
      return {...action,input:undefined,applied:true,quest:publicQuest(bound,s),job:publicJob(job),loop:status()};

@@ -9,8 +9,7 @@ import {openStore} from '../lib/store.mjs';
 import {planClosedLoop,closedLoopStatus,loopInput,ARCHETYPE_CAPABILITY} from '../lib/closed-loop.mjs';
 import {validateQuestState} from '../lib/quests.mjs';
 
-const LEDGER_DIGEST_MANIFEST=JSON.parse(fs.readFileSync(new URL('../capabilities/ledger-digest.json',import.meta.url),'utf8'));
-const MANIFESTS=[LEDGER_DIGEST_MANIFEST];
+const MANIFESTS=['evidence-gap-brief','failure-triage','ledger-digest'].map(name=>JSON.parse(fs.readFileSync(new URL(`../capabilities/${name}.json`,import.meta.url),'utf8')));
 const MODEL_ENV={YENO_AGENT_PROVIDER:'openai',YENO_OPENAI_API_KEY:'synthetic-openai-key',YENO_OPENAI_MODEL:'synthetic-openai',YENO_AGENT_DAILY_CALL_LIMIT:'6'};
 const ok=text=>new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:text,tool_calls:[]}}],usage:{prompt_tokens:30,completion_tokens:20}}),{headers:{'Content-Type':'application/json'}});
 
@@ -43,8 +42,10 @@ test('Loop 1 - repair goal -> failure-triage (Kirby active) -> owner loop -> Jar
   const calls=app.modelCalls.length;
 
   let trace=loopOf((await app.get('/api/quests')).body,quest.id);
-  assert.equal(trace.capabilityGap.capabilityId,'failure-triage');assert.equal(trace.capabilityGap.evidenceIntact,true);
-  assert.equal(trace.kirby.stage,'active','the reviewed boot capability already closes this gap');
+  assert.equal(trace.capabilityGap.capabilityId,'failure-triage','general discovery: failed-job records -> the manifest whose fields those records supply');assert.equal(trace.capabilityGap.evidenceIntact,true);
+  assert.equal(trace.capabilityGap.gap,'none');assert.equal(trace.capabilityGap.recordType,'job');assert.equal(trace.capabilityGap.agreesWithLegacy,true);assert.match(trace.capabilityGap.requirementFingerprint,/^[a-f0-9]{64}$/);
+  assert.equal(trace.kirby.stage,'active','the reviewed boot capability already closes this gap');assert.equal(trace.kirby.qualification.action,'reuse');assert.equal(trace.kirby.qualification.risk,'local-reversible');
+  assert.ok(trace.kirby.searched>=3,'registry + reviewed manifests were searched');assert.ok(trace.kirby.matches.every(m=>m.id==='failure-triage'),'evidence-gap-brief/ledger-digest do not fit job records');
   assert.equal(trace.execution,null);assert.equal(trace.verification.verified,false);assert.equal(trace.growth,null);
   assert.equal(trace.replan.evidenceUnchanged,true);assert.equal(trace.replan.nextOutcome,'existing_quest');
 
@@ -57,7 +58,7 @@ test('Loop 1 - repair goal -> failure-triage (Kirby active) -> owner loop -> Jar
   assert.equal(step.status,201,JSON.stringify(step.body));
   assert.equal(step.body.kind,'execute');assert.equal(step.body.applied,true);assert.equal(step.body.capabilityId,'failure-triage');assert.equal(step.body.authorizedBy,'owner');
   assert.equal(step.body.input,undefined,'raw capability input is not echoed');
-  assert.equal(step.body.job.type,'capability');assert.equal(step.body.quest.id,quest.id);assert.equal(step.body.quest.loop.jobId,step.body.job.id);assert.equal(step.body.quest.loop.gradeBefore,'E');
+  assert.equal(step.body.job.type,'capability');assert.equal(step.body.quest.id,quest.id);assert.equal(step.body.quest.loop.jobId,step.body.job.id);assert.equal(step.body.quest.loop.gradeBefore,'E');assert.equal(step.body.quest.loop.kirbyAction,'reuse');assert.equal(step.body.quest.loop.discoveryFingerprint,trace.capabilityGap.requirementFingerprint);
   const job=await app.wait(step.body.job.id);
   assert.equal(job.status,'completed',job.error);
   assert.deepEqual(new Set([a.job.id,b.job.id]),new Set(job.capabilityRequest.input.records.map(r=>r.id)),'input is exactly the failed jobs the provenance names');
@@ -69,7 +70,7 @@ test('Loop 1 - repair goal -> failure-triage (Kirby active) -> owner loop -> Jar
   const shown=overview.quests.find(q=>q.id===quest.id);
   assert.equal(shown.status,'completed');assert.equal(shown.resultStatus,'artifact_recorded');assert.equal(shown.artifacts.length,1);
   assert.equal(trace.execution.kind,'capability');assert.equal(trace.execution.status,'completed');
-  assert.equal(trace.verification.verified,true,JSON.stringify(trace.verification));
+  assert.equal(trace.verification.verified,true,JSON.stringify(trace.verification));assert.equal(trace.verification.executionVerified,true);assert.equal(trace.verification.outcomeVerified,false,'artifact hash proves execution integrity, never the outcome');
   assert.equal(trace.verification.artifact.sha256,trace.verification.run.outputSha256,'artifact on disk == capability run output hash');
   assert.equal(trace.verification.run.runId,job.id);
   assert.equal(trace.growth.gradeBefore,'E');assert.equal(trace.growth.grade,'D');assert.equal(trace.growth.promoted,true);
@@ -137,7 +138,8 @@ test('Loop 3 - acquire-capability goal: Kirby closes a real demand-backed gap on
   const quest=(await app.post('/api/quests/synthesize')).body.quest;
   assert.equal(quest.synthesis.archetype,'acquire-capability');assert.equal(quest.synthesis.approvalRequired,true);
   let trace=loopOf((await app.get('/api/quests')).body,quest.id);
-  assert.equal(trace.kirby.stage,'gap');assert.equal(trace.capabilityGap.capabilityId,'ledger-digest');
+  assert.equal(trace.kirby.stage,'gap');assert.equal(trace.capabilityGap.capabilityId,'ledger-digest');assert.equal(trace.capabilityGap.gap,'acquire_reviewed');
+  assert.equal(trace.kirby.qualification.action,'acquire_with_owner_approval');assert.equal(trace.kirby.qualification.risk,'capability-change');assert.equal(trace.kirby.qualification.approvalRequired,true);assert.deepEqual(trace.kirby.qualification.blockers,[]);
   assert.equal(planClosedLoop(app.disk(),new Date().toISOString(),{authorizedBy:'autopilot',manifests:MANIFESTS}).reason,'owner_approval_required');
   assert.equal((await app.post('/api/autopilot',{enabled:true,dailyAiLimit:1})).status,200);
   await new Promise(r=>setTimeout(r,400));
@@ -181,22 +183,23 @@ test('Loop 4 - owner-disabled capability is never re-activated; vanished evidenc
   assert.equal(loopOf((await app.get('/api/quests')).body,quest.id).kirby.stage,'inactive_owner_review');
 
   const state=app.disk();
-  assert.equal(loopInput({...state,jobs:state.jobs.slice(1)},state.quests.find(q=>q.id===quest.id)),null);
+  assert.equal(loopInput({...state,jobs:state.jobs.slice(1)},state.quests.find(q=>q.id===quest.id),{manifests:MANIFESTS}),null);
+  assert.equal(loopOf((await app.get('/api/quests')).body,quest.id).kirby.qualification.blockers[0],'owner_disabled_or_fixture_failed');
   const plan=planClosedLoop({...state,jobs:state.jobs.map(j=>({...j,status:'completed'})),capabilities:{...state.capabilities,entries:[{...entry}]}},new Date().toISOString(),{authorizedBy:'owner',manifests:MANIFESTS});
   assert.equal(plan.reason,'evidence_changed');
 
   // A loop link on a quest without a capability job, or with an invented
   // grade, is rejected by the store validator before anything loads.
   const proposed=state.quests.find(q=>q.id===quest.id);
-  assert.throws(()=>validateQuestState({...state,quests:state.quests.map(q=>q.id===quest.id?{...q,loop:{version:1,capabilityId:'failure-triage',jobId:null,gradeBefore:'S',startedAt:q.createdAt,authorizedBy:'owner'}}:q)}),/Unassigned quest cannot claim execution/);
+  assert.throws(()=>validateQuestState({...state,quests:state.quests.map(q=>q.id===quest.id?{...q,loop:{version:2,capabilityId:'failure-triage',jobId:null,gradeBefore:'S',startedAt:q.createdAt,authorizedBy:'owner',kirbyAction:'reuse',discoveryFingerprint:'a'.repeat(64)}}:q)}),/Unassigned quest cannot claim execution/);
   const agentJob=state.jobs[0];
-  assert.throws(()=>validateQuestState({...state,quests:state.quests.map(q=>q.id===quest.id?{...q,jobId:agentJob.id,status:'assigned',loop:{version:1,capabilityId:'failure-triage',jobId:agentJob.id,gradeBefore:'E',startedAt:q.createdAt,authorizedBy:'owner'}}:q)}),/Invalid quest/);
+  assert.throws(()=>validateQuestState({...state,quests:state.quests.map(q=>q.id===quest.id?{...q,jobId:agentJob.id,status:'assigned',loop:{version:2,capabilityId:'failure-triage',jobId:agentJob.id,gradeBefore:'E',startedAt:q.createdAt,authorizedBy:'owner',kirbyAction:'reuse',discoveryFingerprint:'a'.repeat(64)}}:q)}),/Invalid quest/);
   assert.equal(proposed.loop,undefined);
 });
 
-test('Loop 5 - archetypes without a reviewed capability stay owner-run only; owner-created quests are untouched',async t=>{
+test('Loop 5 - goals no reviewed capability fits are reported as missing (never executed); owner-created quests are untouched',async t=>{
   const app=await setup(t);
-  assert.deepEqual(Object.keys(ARCHETYPE_CAPABILITY).sort(),['acquire-capability','repair']);
+  assert.deepEqual(Object.keys(ARCHETYPE_CAPABILITY).sort(),['acquire-capability','repair'],'legacy mapping is a migration record only');
   app.setMode('ok');
   const owner=(await app.post('/api/quests',{goal:'소유자 목표',provider:'openai',maxCalls:1})).body.quest;
   const none=await app.post('/api/quests/loop');

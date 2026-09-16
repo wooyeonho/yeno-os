@@ -54,11 +54,12 @@ export function synthesisQuestId(fingerprint){
 // Closed-loop execution link: the quest's `jobId` is a capability job whose
 // request names the same reviewed capability, the grade snapshot is a real
 // grade, and the authority that started it is one of two known values.
-const LOOP_KEYS='authorizedBy,capabilityId,gradeBefore,jobId,startedAt,version';
+const LOOP_KEYS='authorizedBy,capabilityId,discoveryFingerprint,gradeBefore,jobId,kirbyAction,startedAt,version';
+const LOOP_KIRBY_ACTIONS=['reuse'];
 function validateLoop(q,job){
   const l=q.loop;
   if(!q.synthesis)throw new Error('Loop execution requires an autonomous quest');
-  if(!object(l)||Object.keys(l).sort().join()!==LOOP_KEYS||l.version!==1||!['owner','autopilot'].includes(l.authorizedBy)||!['E','D','C','B','A','S'].includes(l.gradeBefore)||!iso(l.startedAt))throw new Error('Invalid quest loop record');
+  if(!object(l)||Object.keys(l).sort().join()!==LOOP_KEYS||l.version!==2||!['owner','autopilot'].includes(l.authorizedBy)||!LOOP_KIRBY_ACTIONS.includes(l.kirbyAction)||!/^[a-f0-9]{64}$/.test(l.discoveryFingerprint??'')||!['E','D','C','B','A','S'].includes(l.gradeBefore)||!iso(l.startedAt))throw new Error('Invalid quest loop record');
   if(l.jobId!==q.jobId||!job||job.type!=='capability'||job.capabilityRequest?.id!==l.capabilityId||job.questId!==q.id)throw new Error('Invalid quest loop execution');
 }
 function validateSynthesis(q){
