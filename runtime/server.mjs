@@ -37,6 +37,7 @@ import {validateCodeTask,codePrompt,runCodeJob} from './lib/code-jobs.mjs';
 import {CodeSandboxError} from './lib/code-sandbox.mjs';
 import {growthOverview} from './lib/growth.mjs';
 import {decideQuest,isDecideRequest} from './lib/decide.mjs';
+import {synthesizeAutonomousGoal,previewAutonomousGoals} from './lib/goal-synthesis.mjs';
 import {DRIVE_DEFINITIONS} from './lib/motivation.mjs';
 import {tryAutoAcquireLedgerDigest} from './lib/kirby.mjs';
 
@@ -184,11 +185,23 @@ export function createYenoServer(options={}) {
    if(!manuscript)throw new HttpError(409,'가져올 원고 본문이 비어 있습니다.');
    return studioMutation({action:'chapter.create',requestId:body.requestId,seriesId:body.seriesId,number:body.number,title:body.title,content:manuscript,notes:`AI 원고 초안 · 작업 ${job.id} · 결과 SHA-256 ${item.sha256} · 출판 전 소유자 검토 필요`});
  }
- function questState(){return {...questsOverview(s),decision:decideQuest(s,now()),providers:providerStatus(),selectedProvider:agentSettings.provider,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs)};}
+ const SYNTHESIS_MANIFESTS=[LEDGER_DIGEST_MANIFEST];
+ function questState(){return {...questsOverview(s),decision:decideQuest(s,now()),autonomous:previewAutonomousGoals(s,now(),{manifests:SYNTHESIS_MANIFESTS}),providers:providerStatus(),selectedProvider:agentSettings.provider,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs)};}
+ // Homunculus Autonomous Goal Synthesis (goal-synthesis.mjs): observe -> rank
+ // -> at most ONE new `proposed` quest. Observation always runs; persistence
+ // is refused under emergency stop and while an owner-written quest is still
+ // proposed. Nothing here starts a job or calls a model.
+ function synthesizeGoal(){
+   const plan=synthesizeAutonomousGoal(s,now(),{emergencyStop:s.emergencyStop,manifests:SYNTHESIS_MANIFESTS});
+   if(plan.persist){s.quests.unshift(plan.quest);event(`호문쿨루스 자율 목표 제안(${plan.quest.synthesis.archetype}): ${plan.quest.goal}`);}
+   return {...plan,persisted:plan.persist,quest:plan.quest?publicQuest(plan.quest,s):null};
+ }
  // "지금 가장 먼저 해야 할 일을 정해줘": Homunculus ranks real proposed quests
  // (never invents one - see decide.mjs), then immediately runs the winner
  // through the exact same runQuest() path the owner's own Run button uses.
  // Returns null, not a fabricated decision, when nothing is proposed yet.
+ // A synthesized (autonomous) winner is never started here: it is reported as
+ // pending owner action and only POST /api/quests/:id/run may start it.
  function decisionAnnouncement(decision){
    const names=decision.top.motivation.dominantDrives.map(id=>DRIVE_DEFINITIONS.find(d=>d.id===id)?.name??id).join('·');
    return `지금 가장 먼저 할 일로 "${decision.top.goal}"을(를) 골랐습니다. ${names}의 판단이 가장 크게 작용했습니다. 성공 기준: ${decision.top.successCriterion}`;
@@ -196,6 +209,8 @@ export function createYenoServer(options={}) {
  function decideAndRunQuest(){
    const decision=decideQuest(s,now());
    if(!decision)return null;
+   const top=s.quests.find(q=>q.id===decision.top.questId);
+   if(top.synthesis){event(`호문쿨루스 결정(자율 목표, 실행 보류): ${decision.top.goal}`);return {decision,pendingOwnerAction:true,job:null,quest:publicQuest(top,s),message:'자율 합성된 목표는 소유자가 직접 실행을 눌러야 시작됩니다.'};}
    const result=runQuest(decision.top.questId);
    event(`호문쿨루스 결정: ${decision.top.goal}`);
    return {decision,...result.payload};
@@ -444,6 +459,7 @@ export function createYenoServer(options={}) {
      s.autopilot.retryAt=new Date(Date.now()+60*60*1000).toISOString();event(s.autopilot.lastError);
      try{save();}catch{schedule();return;}
    }
+   if(s.autopilot.enabled&&!s.emergencyStop){try{if(synthesizeGoal().persisted)save();}catch(error){event(`자율 목표 합성 실패(저장 없음): ${error.message}`);}}
    const mission=automaticMission(s,agentSettings);
    if(mission){const job=newJob({type:'agent',title:'YENO 자동 자료 검토',text:mission.text});job.agentJournal.automaticKey=mission.key;job.agentJournal.automaticScope=mission.scope;save();}
    if(!s.emergencyStop){for(const job of s.jobs.slice().reverse()){
@@ -898,7 +914,7 @@ export function createYenoServer(options={}) {
          // can say honestly that no goal is on file yet.
          if(isDecideRequest(text)){
            const outcome=decideAndRunQuest();
-           if(outcome)return {status:201,payload:{jobId:outcome.job.id,job:outcome.job,decision:{goal:outcome.decision.top.goal,successCriterion:outcome.decision.top.successCriterion,dominantDrives:outcome.decision.top.motivation.dominantDrives,announcement:decisionAnnouncement(outcome.decision)}}};
+           if(outcome)return {status:outcome.pendingOwnerAction?200:201,payload:{jobId:outcome.job?.id??null,job:outcome.job,...(outcome.pendingOwnerAction?{pendingOwnerAction:true,quest:outcome.quest,message:outcome.message}:{}),decision:{goal:outcome.decision.top.goal,successCriterion:outcome.decision.top.successCriterion,dominantDrives:outcome.decision.top.motivation.dominantDrives,announcement:decisionAnnouncement(outcome.decision)}}};
          }
          const context=`코어의 실제 요약: ${JSON.stringify({running:s.jobs.filter(j=>j.status==='running').map(j=>({title:j.title,type:j.type})),projects:s.projects.length,codeCapabilities:getCodeStatus(s.codeWorkshop).map(e=>({name:e.name,active:!!e.activeHash})),automatic:s.autopilot.enabled,aiCalls:agentUsage(s.jobs).attempts})}\n`;
          const prompt=context+(history.length?`이전 대화는 맥락 자료입니다. 현재 요청에 한국어로 답하세요.\n${JSON.stringify(history)}\n현재 요청: ${text}`:text);
@@ -913,11 +929,16 @@ export function createYenoServer(options={}) {
        if(url.pathname==='/api/studio/generate')return generateChapter(b);
        if(url.pathname==='/api/studio/import')return importChapter(b);
        if(url.pathname==='/api/quests'){if(!b.requestId)throw new HttpError(400,'Persistent requestId required');return {status:201,payload:{quest:publicQuest(addQuest(b),s)}};}
+       if(url.pathname==='/api/quests/synthesize'){
+         if(!b.requestId||Object.keys(b).some(k=>!['requestId'].includes(k)))throw new HttpError(400,'Persistent requestId required');
+         const outcome=synthesizeGoal();
+         return {status:outcome.persisted?201:200,payload:outcome};
+       }
        if(url.pathname==='/api/quests/decide'){
          if(!b.requestId||Object.keys(b).some(k=>!['requestId'].includes(k)))throw new HttpError(400,'Persistent requestId required');
          const outcome=decideAndRunQuest();
          if(!outcome)throw new HttpError(409,'선택할 수 있는 저장된 목표가 없습니다. 먼저 목표를 만들어 주세요.');
-         return {status:201,payload:outcome};
+         return {status:outcome.pendingOwnerAction?200:201,payload:outcome};
        }
        const questAction=url.pathname.match(/^\/api\/quests\/([a-f0-9-]+)\/(run|review)$/);
        if(questAction){if(!b.requestId)throw new HttpError(400,'Persistent requestId required');if(Object.keys(b).some(k=>!(questAction[2]==='run'?['requestId']:['requestId','provider','maxCalls']).includes(k)))throw new HttpError(400,'Unknown goal action field');return questAction[2]==='run'?runQuest(questAction[1]):reviewQuest(questAction[1],b);}

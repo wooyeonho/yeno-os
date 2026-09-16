@@ -1,4 +1,5 @@
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
+import {validateMotivation} from './motivation.mjs';
 
 // Drives generate bounded goals, not fabricated performance scores or seven
 // continuously running model calls. Execution belongs to the durable job loop.
@@ -23,6 +24,46 @@ const uuid=value=>typeof value==='string'&&UUID.test(value);
 const hash=value=>typeof value==='string'&&HASH.test(value);
 const STATUS=['proposed','assigned','queued','running','paused','completed','failed','cancelled'];
 const MAX_QUESTS=1000,MAX_OUTCOMES=5000;
+
+// Autonomous (Homunculus-synthesized) quests are ordinary quests plus a
+// `synthesis` provenance block. The block is derived core-side from validated
+// state only; a caller can never submit one through planQuest. Its fingerprint
+// is recomputed on every load so a tampered or stale provenance fails closed.
+export const SYNTHESIS_VERSION=1;
+export const SYNTHESIS_ARCHETYPES=Object.freeze(['repair','verify','acquire-capability','refresh-evidence','measure-outcome','reduce-owner-intervention']);
+export const SYNTHESIS_RISK_CLASSES=Object.freeze(['local-reversible','capability-change']);
+export const SYNTHESIS_RISK_CLASS='local-reversible';
+// Risk per archetype; approvalRequired follows the class. Observers disabled
+// for this slice keep their entry so stored quests from a later slice validate.
+export const SYNTHESIS_ARCHETYPE_RISK=Object.freeze({repair:'local-reversible',verify:'local-reversible','measure-outcome':'local-reversible','refresh-evidence':'local-reversible','acquire-capability':'capability-change','reduce-owner-intervention':'local-reversible'});
+export const synthesisApprovalRequired=riskClass=>riskClass!=='local-reversible';
+const SYNTHESIS_REFERENCE_TYPES=['job','quest','capability','project','outcome'];
+const SYNTHESIS_KEYS='approvalRequired,archetype,autonomousGoalId,createdAt,evidence,motivation,reason,riskClass,sourceEvidenceFingerprint,sourceState,version';
+function canonical(value){
+  if(Array.isArray(value))return value.map(canonical);
+  if(object(value))return Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])]));
+  return value;
+}
+export function synthesisFingerprint(archetype,evidence){
+  return createHash('sha256').update(JSON.stringify(canonical({version:SYNTHESIS_VERSION,archetype,evidence}))).digest('hex');
+}
+export function synthesisQuestId(fingerprint){
+  if(!hash(fingerprint))throw new Error('Invalid synthesis fingerprint');
+  return `${fingerprint.slice(0,8)}-${fingerprint.slice(8,12)}-${fingerprint.slice(12,16)}-${fingerprint.slice(16,20)}-${fingerprint.slice(20,32)}`;
+}
+function validateSynthesis(q){
+  const p=q.synthesis;
+  if(!object(p)||Object.keys(p).sort().join()!==SYNTHESIS_KEYS||p.version!==SYNTHESIS_VERSION||!SYNTHESIS_ARCHETYPES.includes(p.archetype)||!validText(p.reason,2000)||p.riskClass!==SYNTHESIS_ARCHETYPE_RISK[p.archetype]||p.approvalRequired!==synthesisApprovalRequired(p.riskClass)||!iso(p.createdAt)||p.createdAt!==q.createdAt)throw new Error('Invalid quest synthesis provenance');
+  if(!Array.isArray(p.evidence)||!p.evidence.length||p.evidence.length>16)throw new Error('Invalid quest synthesis evidence');
+  for(const item of p.evidence){
+    if(!object(item)||Object.keys(item).sort().join()!=='kind,references,values'||!validText(item.kind,80)||!/^[a-z_]+$/.test(item.kind)||!Array.isArray(item.references)||!item.references.length||item.references.length>1000||!object(item.values)||JSON.stringify(item.values).length>20000)throw new Error('Invalid quest synthesis evidence');
+    for(const ref of item.references)if(!object(ref)||Object.keys(ref).sort().join()!=='id,type'||!SYNTHESIS_REFERENCE_TYPES.includes(ref.type)||!validText(ref.id,200))throw new Error('Invalid quest synthesis reference');
+  }
+  if(!object(p.sourceState)||Object.keys(p.sourceState).sort().join()!=='jobs,quests,revision'||!integer(p.sourceState.revision,0,Number.MAX_SAFE_INTEGER)||!integer(p.sourceState.quests,0,MAX_QUESTS)||!integer(p.sourceState.jobs,0,Number.MAX_SAFE_INTEGER))throw new Error('Invalid quest synthesis source state');
+  if(p.sourceEvidenceFingerprint!==synthesisFingerprint(p.archetype,p.evidence)||p.autonomousGoalId!==synthesisQuestId(p.sourceEvidenceFingerprint)||q.id!==p.autonomousGoalId)throw new Error('Quest synthesis fingerprint mismatch');
+  validateMotivation(p.motivation);
+  if(p.motivation.goal!==q.goal||p.motivation.successCriterion!==q.successCriterion||p.motivation.decidedAt!==q.createdAt||p.motivation.dominantDrives[0]!==q.driveId)throw new Error('Quest synthesis motivation mismatch');
+}
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const iso=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString()===value;
 const validText=(value,max)=>typeof value==='string'&&value===value.trim()&&value.length>0&&value.length<=max&&!/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(value);
@@ -160,7 +201,8 @@ export function validateQuestState(state){
     }
     if(q.reviewOf!==undefined&&(!uuid(q.reviewOf)||q.reviewOf===q.id||!quests.some(item=>item.id===q.reviewOf)))throw new Error('Invalid quest review reference');
     if(q.sourceArtifactSha256!==undefined&&!hash(q.sourceArtifactSha256))throw new Error('Invalid quest review artifact');
-    if(Object.keys(q).some(key=>!['id','version','goal','driveId','drive','provider','projectId','successCriterion','baseline','maxCalls','durationMinutes','costUsd','status','jobId','createdAt','updatedAt','projectVersion','projectContext','reviewOf','sourceArtifactSha256','startedAt','deadlineAt','finishedAt'].includes(key)))throw new Error('Untrusted quest field');
+    if(q.synthesis!==undefined)validateSynthesis(q);
+    if(Object.keys(q).some(key=>!['id','version','goal','driveId','drive','provider','projectId','successCriterion','baseline','maxCalls','durationMinutes','costUsd','status','jobId','createdAt','updatedAt','projectVersion','projectContext','reviewOf','sourceArtifactSha256','startedAt','deadlineAt','finishedAt','synthesis'].includes(key)))throw new Error('Untrusted quest field');
   }
   const outcomeIds=new Set();
   for(const o of outcomes){
