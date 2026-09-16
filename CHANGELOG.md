@@ -7,10 +7,10 @@
 
 # 2026-09-15 — 호문쿨루스 자율 목표 합성 첫 조각: 저장된 근거 → 결정적 후보 → 일곱 동기 → `proposed` 퀘스트 1개
 
-## 2026-09-15 Multi-Model Router 순수 정책 계층 (배선 없음)
+## 2026-09-15 Real Outcome Verification 순수 계층 (배선 없음)
 
-- **신규** `runtime/lib/model-router.mjs`: `validateDeclaredModel`/`parseDeclaredModels`(소유자 선언 metadata 16필드, 이름 기반 추정 없음, free는 verified-free 증거 필수), `configuredProviders(env)`(provider-config 요약에서 키 없이 configured 증거), `brainPool(declared, configuration)`, `routeModel(pool, request, {ownerOverride, policy, at})`(capability → owner pin → safety/background opt-in·budget → configured/available/quota → quality → 최소 비용; `authorizesCall:false` 고정 프로비넌스 + 지문), `validateRoutingDecision`, `failoverDecision`(pre-send 명확 실패만 다음 후보, post-send는 outcomeUnknown·재실행 금지), `assertNoSecrets`.
-- **자동시험** `runtime/test/model-router.test.mjs` 7건: 검증된 무료 NVIDIA 선택·증거 없는 NVIDIA는 무료 취급 안 함, configured Grok 후보/선택·미설정 Grok 제외, owner pin 우선·부적격 pin은 무선택, coding/reasoning/realtime 요구 미충족 제외, pre-send failover·post-send 금지·pin 시 failover 없음·후보 소진, 비밀 미노출·자격 증명 형태 입력 거부, 결정성·지문·변조 실패 폐쇄·background opt-in/budget 게이트·owner disabled.
+- **신규** `runtime/lib/outcome-verification.mjs`: `verifyExecution`(산출물 SHA == run outputSha256·runId·inputSha256·완료 → `executionVerified`), 성과 근거 스키마 15필드(`createOutcomeEvidence`/`validateOutcomeEvidence`/`parseOutcomeEvidence`, 정의된 metric·unit·source 종류만, 타입별 authority 고정, 모델 출력은 외부 근거 불가, collectedAt 제외 결정적 지문), `verifyOutcome`(외부 타입 + 링크 일치 + source 식별 일치 + 같은 metric/value/unit/timestamp 보유 + execution 검증일 때만 `outcomeVerified`; `external_verified`만 `highGradeCandidate`; `authorizesAction:false`), `validateOutcomeVerdict`, `assertNoSecrets`.
+- **자동시험** `runtime/test/outcome-verification.test.mjs` 12건: 지시된 12 시나리오(실행 검증≠성과 검증, self_reported false, 외부 검증 true, source ID/링크 불일치, 소실·변경, 모델 텍스트, 가짜 부·명예·인지도·adoption 주장, 결정적 지문, 변조 실패 폐쇄, 비밀 거부, 재시작 동일 verdict).
 
 
 - **결함**: 호문쿨루스는 이미 있는 `proposed` 퀘스트의 순위만 매길 수 있었고, 소유자가 목표를 하나도 쓰지 않으면 어떤 일이 존재하는지 스스로 정하지 못했다.
