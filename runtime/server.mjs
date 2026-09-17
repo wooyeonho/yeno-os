@@ -682,8 +682,8 @@ export function createYenoServer(options={}) {
    event(`Project bots ${action}; no unattended shell, publish, payment or deployment.`);
    return {status:200,payload:{kind:'bots',bots:botStatus(s,profiles),stoppingJobIds:[...controllers.keys()].filter(id=>s.jobs.some(j=>j.id===id&&j.botAssignment))}};
  }
- function persistentBotsMutation(body){
-  if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required for persistent bot administration');
+ function persistentBotsMutation(body,{principal,versioned}={}){
+  if(versioned||principal?.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required for persistent bot administration');
   if(!body.requestId)throw new PersistentBotError(400,'request_id_required','Persistent requestId required');
   const action=body.action;
   const allowed=action==='memory'?['requestId','action','botId','memory']:action==='routine'?['requestId','action','botId','routine']:action==='handoff'?['requestId','action','handoff']:null;
@@ -1336,7 +1336,7 @@ export function createYenoServer(options={}) {
        const questAction=url.pathname.match(/^\/api\/quests\/([a-f0-9-]+)\/(run|review)$/);
        if(questAction){if(!b.requestId)throw new HttpError(400,'Persistent requestId required');if(Object.keys(b).some(k=>!(questAction[2]==='run'?['requestId']:['requestId','provider','maxCalls']).includes(k)))throw new HttpError(400,'Unknown goal action field');return questAction[2]==='run'?runQuest(questAction[1]):reviewQuest(questAction[1],b);}
        if(url.pathname==='/api/outcomes'){if(!b.requestId)throw new HttpError(400,'Persistent requestId required');verifiedQuestArtifact(findQuest(b.questId),b.artifactId);const outcome=recordQuestOutcome(b,s);s.outcomes.unshift(outcome);event('Owner-reported outcome recorded with an actual output reference.');const reality=outcomeRealities(s).find(r=>r.outcomeId===outcome.id);const kirbyAcquisition=kirbyAutoAcquire();return {status:201,payload:{outcome,reality,...(kirbyAcquisition?{kirbyAcquisition}:{})}};}
-       if(url.pathname==='/api/persistent-bots')return persistentBotsMutation(b);
+       if(url.pathname==='/api/persistent-bots')return persistentBotsMutation(b,{principal,versioned});
        if(url.pathname==='/api/bots'){if(!b.requestId)throw new BotError(400,'Persistent requestId required');if(b.action==='start')return startBots(b);if(Object.keys(b).some(k=>!['action','requestId'].includes(k)))throw new BotError(400,'Unknown bot control field');return controlBots(b.action);}
        if(url.pathname==='/api/ecosystem'){
          if(typeof b.enabled!=='boolean'||Object.keys(b).some(key=>!['enabled','requestId'].includes(key))||!b.requestId)throw new HttpError(400,'Provide enabled:boolean and persistent requestId');
