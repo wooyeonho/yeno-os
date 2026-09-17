@@ -1,11 +1,11 @@
-name: Verify live independent BLACKHOLE
+name: Read-only Koyeb compatibility check
 
 on:
   push:
     branches:
-      - codex
+      - blackhole/koyeb-readonly-check-20260917
     paths:
-      - .github/live-independent-check-trigger
+      - .github/workflows/live-independent-check.yml
 
 permissions:
   contents: read
@@ -15,23 +15,51 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
-      - name: Wait for the verified deploy branch on public HTTPS
+      - name: Verify current public Koyeb endpoint without mutation
         shell: bash
         run: |
           set -euo pipefail
-          url='https://global-iris-gyeol-98386a17.koyeb.app/autopilot-view.mjs'
-          marker='사용 안 함 · 명시적 호출만'
-          for attempt in $(seq 1 24); do
-            body="$(curl -fsSL --connect-timeout 10 --max-time 25 -H 'Cache-Control: no-cache' "${url}?independent=8ae0924d-${attempt}" || true)"
-            if grep -Fq "$marker" <<<"$body"; then
-              echo "LIVE_INDEPENDENT_CORE=verified"
-              echo "attempt=$attempt"
-              printf '%s' "$body" | sha256sum
-              curl -fsSL --connect-timeout 10 --max-time 25 -o /dev/null -w 'homepage_http=%{http_code}\n' 'https://global-iris-gyeol-98386a17.koyeb.app/'
-              exit 0
-            fi
-            echo "attempt=$attempt marker_not_visible"
-            sleep 10
-          done
-          echo 'The deploy branch is updated, but the live Koyeb service has not exposed the new independent-core asset.' >&2
-          exit 1
+          base='https://global-iris-gyeol-98386a17.koyeb.app'
+
+          health_code="$(curl -sS --connect-timeout 10 --max-time 25 -o "$RUNNER_TEMP/health.json" -w '%{http_code}' "$base/api/v1/health")"
+          echo "HEALTH_HTTP=$health_code"
+          test "$health_code" = '200'
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          body=json.loads(Path(os.environ['RUNNER_TEMP'],'health.json').read_text())
+          print('HEALTH_BODY='+json.dumps(body, ensure_ascii=False, sort_keys=True))
+          if body.get('apiVersion') not in (1, '1'):
+              raise SystemExit(f"unexpected apiVersion: {body.get('apiVersion')!r}")
+          if body.get('authRequired') is not True:
+              raise SystemExit('health does not report authRequired=true')
+          PY
+
+          state_code="$(curl -sS --connect-timeout 10 --max-time 25 -o /dev/null -w '%{http_code}' "$base/api/v1/state")"
+          echo "STATE_NOAUTH_HTTP=$state_code"
+          case "$state_code" in 401|403) ;; *) echo 'state endpoint did not fail closed without auth' >&2; exit 1;; esac
+
+          enroll_code="$(curl -sS --connect-timeout 10 --max-time 25 -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{"name":"readonly-check","platform":"android","requestId":"readonly-check"}' "$base/api/v1/devices/enroll")"
+          echo "ENROLL_NOAUTH_HTTP=$enroll_code"
+          case "$enroll_code" in 401|403) ;; 404) echo 'DEVICE_ENROLL_ROUTE=missing'; exit 2;; *) echo "unexpected enroll status $enroll_code" >&2; exit 1;; esac
+
+          homepage_code="$(curl -sS --connect-timeout 10 --max-time 25 -o /dev/null -w '%{http_code}' "$base/")"
+          echo "HOMEPAGE_HTTP=$homepage_code"
+          test "$homepage_code" = '200'
+
+          voice_code="$(curl -sS --http1.1 --connect-timeout 10 --max-time 25 -o /dev/null -w '%{http_code}' \
+            -H 'Connection: Upgrade' \
+            -H 'Upgrade: websocket' \
+            -H 'Sec-WebSocket-Version: 13' \
+            -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+            "$base/api/voice/live" || true)"
+          echo "VOICE_NOAUTH_UPGRADE_HTTP=$voice_code"
+          case "$voice_code" in
+            401|403) echo 'VOICE_ROUTE=present_auth_gated' ;;
+            404) echo 'VOICE_ROUTE=missing_on_current_koyeb' ;;
+            426) echo 'VOICE_ROUTE=present_upgrade_required' ;;
+            *) echo "VOICE_ROUTE=indeterminate_http_$voice_code" ;;
+          esac
+
+          echo 'KOYEB_BASIC_ANDROID_COMPAT=verified'
+          echo 'KOYEB_MUTATION=none'
