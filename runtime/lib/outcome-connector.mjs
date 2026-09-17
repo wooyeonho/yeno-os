@@ -25,6 +25,8 @@ export const CONNECTOR_FIELDS = Object.freeze(['version', 'id', 'sourceType', 's
 export const RECORD_FIELDS = Object.freeze(['metric', 'value', 'unit', 'timestamp']);
 export const READING_FIELDS = Object.freeze(['version', 'connectorId', 'sourceType', 'sourceId', 'transport', 'readAt', 'records', 'recordsSha256', 'fingerprint']);
 export const MAX_RECORDS = 500;
+export const MAX_CONNECTORS = 20;
+export const MAX_READINGS_PER_CONNECTOR = 20;
 export const MAX_RESPONSE_BYTES = 256 * 1024;
 export const READ_TIMEOUT_MS = 10_000;
 const BLOCKED_HOST = /^(?:localhost|.*\.localhost|.*\.local|.*\.internal|.*\.localdomain|metadata\.google\.internal|metadata|instance-data|.*\.arpa)$/i;
@@ -116,6 +118,29 @@ export function createConnector(declaration, {declaredAt}) {
   connector.fingerprint = connectorFingerprint(connector);
   validateConnector(connector);
   return connector;
+}
+
+// Durable, owner-only collection. Bounded and duplicate-id-free so a store
+// cannot silently accumulate unbounded external targets.
+export function validateConnectors(connectors) {
+  if (!Array.isArray(connectors) || connectors.length > MAX_CONNECTORS) fail('connectors는 20개 이하의 배열이어야 합니다.');
+  const ids = new Set();
+  for (const connector of connectors) {validateConnector(connector); if (ids.has(connector.id)) fail('중복된 connector id입니다.'); ids.add(connector.id);}
+  return true;
+}
+
+// Append-only by (connectorId, fingerprint): a re-read of the same source at
+// the same moment with the same claim is idempotent, never a fresh entry.
+export function addConnector(connectors, connector) {
+  validateConnectors(connectors); validateConnector(connector);
+  if (connectors.some(item => item.id === connector.id)) fail('이미 사용 중인 connector id입니다.', 'CONNECTOR_DUPLICATE');
+  if (connectors.length >= MAX_CONNECTORS) fail('connector 개수 한도에 도달했습니다.', 'CONNECTOR_CAPACITY');
+  return [...connectors, connector];
+}
+export function removeConnector(connectors, id) {
+  validateConnectors(connectors);
+  if (!connectors.some(item => item.id === id)) fail('connector를 찾을 수 없습니다.', 'CONNECTOR_NOT_FOUND');
+  return connectors.filter(item => item.id !== id);
 }
 
 // Structured record shape every transport must produce. Values are numbers
@@ -330,6 +355,28 @@ export function validateReading(reading) {
   if (reading.fingerprint !== readingFingerprint(reading)) fail('reading 지문이 다릅니다.', 'READING_TAMPERED');
   assertNoSecrets(reading, 'reading');
   return true;
+}
+
+// Durable, per-connector-bounded collection: only the most recent
+// MAX_READINGS_PER_CONNECTOR readings for any one connector are kept, so a
+// scheduled/owner-triggered re-read cannot grow the store without bound.
+export function validateReadings(readings) {
+  if (!Array.isArray(readings)) fail('readings는 배열이어야 합니다.');
+  const perConnector = new Map();
+  for (const reading of readings) {
+    validateReading(reading);
+    perConnector.set(reading.connectorId, (perConnector.get(reading.connectorId) ?? 0) + 1);
+  }
+  for (const count of perConnector.values()) if (count > MAX_READINGS_PER_CONNECTOR) fail('connector당 readings 개수 한도를 초과했습니다.');
+  return true;
+}
+export function addReading(readings, reading) {
+  validateReadings(readings); validateReading(reading);
+  if (readings.some(item => item.fingerprint === reading.fingerprint)) return readings;
+  const kept = readings.filter(item => item.connectorId !== reading.connectorId).concat(readings.filter(item => item.connectorId === reading.connectorId).slice(-(MAX_READINGS_PER_CONNECTOR - 1)));
+  const next = [...kept, reading].sort((a, b) => a.readAt < b.readAt ? -1 : 1);
+  validateReadings(next);
+  return next;
 }
 
 // Adapter into `verifyOutcome({source})`. A reading from a different connector

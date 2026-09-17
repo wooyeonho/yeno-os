@@ -19,6 +19,8 @@ import {gradeSkill} from './growth.mjs';
 import {liveEvidence} from './brain-routing.mjs';
 import {httpsReadiness, restartEvidence} from './https-evidence.mjs';
 import {deviceVerification} from './device-evidence.mjs';
+import {connectorReadiness} from './outcome-connector.mjs';
+import {outcomeRealities} from './outcome-reality.mjs';
 
 export const READINESS_VERSION = 1;
 export const STATES = Object.freeze(['NOT_WIRED', 'WIRED_UNVERIFIED', 'SYNTHETIC_VERIFIED', 'LIVE_VERIFIED', 'DEVICE_VERIFIED', 'BLOCKED']);
@@ -156,7 +158,9 @@ export function buildReadiness(facts) {
   if (!providerMatrix.some(p => p.state === 'LIVE_VERIFIED')) blockers.push(PROVIDER_BLOCKER);
 
   const outcomes = state.outcomes ?? [];
-  const outcomeVerification = {state: outcomes.length || runJobs.length ? evidenceState(runJobs.map(tag)) : 'WIRED_UNVERIFIED', executionVerifiedRuns: runJobs.length, ledgerOutcomes: outcomes.length, externallyVerifiedOutcomes: 0, externalSourceConnector: 'NOT_WIRED'};
+  const realities = outcomeRealities(state, at);
+  const connectorState = connectorReadiness(state.outcomeConnectors ?? [], state.outcomeReadings ?? []);
+  const outcomeVerification = {state: outcomes.length || runJobs.length ? evidenceState(runJobs.map(tag)) : 'WIRED_UNVERIFIED', executionVerifiedRuns: runJobs.length, ledgerOutcomes: outcomes.length, externallyVerifiedOutcomes: realities.filter(r => r.outcomeVerified).length, externalSourceConnector: connectorState.status, connectors: (state.outcomeConnectors ?? []).length};
 
   const grades = active.map(entry => gradeSkill(registry, entry.id));
   const soloLeveling = {state: !active.length ? 'BLOCKED' : grades.some(g => g.grade !== 'E') ? evidenceState(runJobs.map(tag)) : 'WIRED_UNVERIFIED', grades: Object.fromEntries(grades.map(g => [g.id, g.grade])), blockedGrades: {B: 'composition_evidence_not_tracked', A: 'intervention_count_not_tracked', S: 'external_verified_outcome_required'}};

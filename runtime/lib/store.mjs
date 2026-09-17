@@ -5,6 +5,8 @@ import {validateRouting} from './brain-routing.mjs';
 import {validateSelfTests} from './readiness.mjs';
 import {validateBootRecords} from './https-evidence.mjs';
 import {validateDeviceAcceptances} from './device-evidence.mjs';
+import {validateConnectors,validateReadings} from './outcome-connector.mjs';
+import {validateOutcomeEvidences} from './outcome-verification.mjs';
 import {initialCapabilities,validateCapabilities,validateCapabilityRequest,capabilityInputSha256,disableAllCapabilitiesForRestore} from './capabilities.mjs';
 import {validateWorldSnapshot} from './world.mjs';
 import fs from 'node:fs';
@@ -58,6 +60,10 @@ function initializeQuestCollections(state) {
  validateSelfTests(state.selfTests);
  if(Object.hasOwn(state,'runtimeBoots'))validateBootRecords(state.runtimeBoots);
  if(Object.hasOwn(state,'deviceAcceptances'))validateDeviceAcceptances(state.deviceAcceptances);
+ if(Object.hasOwn(state,'outcomeConnectors'))validateConnectors(state.outcomeConnectors);
+ if(Object.hasOwn(state,'outcomeReadings'))validateReadings(state.outcomeReadings);
+ if(Object.hasOwn(state,'outcomeEvidence'))validateOutcomeEvidences(state.outcomeEvidence);
+ if((state.outcomeReadings??[]).some(r=>!(state.outcomeConnectors??[]).some(c=>c.id===r.connectorId)))throw new Error('Reading references an unknown connector');
  for(const job of state.jobs)if(job.selfTestId!==undefined&&!(state.selfTests??[]).some(item=>item.id===job.selfTestId))throw new Error('Invalid self-test job link');
  return state;
 }

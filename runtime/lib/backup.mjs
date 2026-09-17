@@ -1,5 +1,7 @@
 import {validateBootRecords} from './https-evidence.mjs';
 import {validateDeviceAcceptances} from './device-evidence.mjs';
+import {validateConnectors,validateReadings} from './outcome-connector.mjs';
+import {validateOutcomeEvidences} from './outcome-verification.mjs';
 import {validateRepositoryJob,validateJobEvidence} from './repository-patch.mjs';
 import {initialCodeWorkshop,validateCodeWorkshop,disableCodeForRestore} from './code-workshop.mjs';
 import {validateCodeJob} from './code-jobs.mjs';
@@ -56,9 +58,12 @@ function memories(value) {
   }
 }
 function validateState(state) {
-  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop', 'selfTests', 'runtimeBoots', 'deviceAcceptances'], STATE_KEYS);
+  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop', 'selfTests', 'runtimeBoots', 'deviceAcceptances', 'outcomeConnectors', 'outcomeReadings', 'outcomeEvidence'], STATE_KEYS);
   if (Object.hasOwn(state, 'runtimeBoots')) validateBootRecords(state.runtimeBoots);
   if (Object.hasOwn(state, 'deviceAcceptances')) validateDeviceAcceptances(state.deviceAcceptances);
+  if (Object.hasOwn(state, 'outcomeConnectors')) validateConnectors(state.outcomeConnectors);
+  if (Object.hasOwn(state, 'outcomeReadings')) validateReadings(state.outcomeReadings);
+  if (Object.hasOwn(state, 'outcomeEvidence')) validateOutcomeEvidences(state.outcomeEvidence);
   if(!Object.hasOwn(state,'autopilot'))state.autopilot=initialAutopilot();
   if(!Object.hasOwn(state,'capabilities'))state.capabilities=initialCapabilities();
   validateCapabilities(state.capabilities);

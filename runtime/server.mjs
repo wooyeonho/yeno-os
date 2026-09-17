@@ -37,6 +37,8 @@ import {validateCodeTask,codePrompt,runCodeJob} from './lib/code-jobs.mjs';
 import {CodeSandboxError} from './lib/code-sandbox.mjs';
 import {growthOverview} from './lib/growth.mjs';
 import {outcomeRealities,verifiedOutcomesByCapability} from './lib/outcome-reality.mjs';
+import {createConnector,addConnector,removeConnector,readConnector,addReading} from './lib/outcome-connector.mjs';
+import {createOutcomeEvidence,addOutcomeEvidence,OutcomeVerificationError} from './lib/outcome-verification.mjs';
 import {buildReadiness,detectSourceCommit,selfTestDiscovery,selfTestInput,selfTestProgress,PROVIDER_BLOCKER,MAX_SELF_TESTS,READINESS_VERSION} from './lib/readiness.mjs';
 import {decideQuest,isDecideRequest} from './lib/decide.mjs';
 import {synthesizeAutonomousGoal,previewAutonomousGoals} from './lib/goal-synthesis.mjs';
@@ -226,7 +228,7 @@ export function createYenoServer(options={}) {
    return studioMutation({action:'chapter.create',requestId:body.requestId,seriesId:body.seriesId,number:body.number,title:body.title,content:manuscript,notes:`AI 원고 초안 · 작업 ${job.id} · 결과 SHA-256 ${item.sha256} · 출판 전 소유자 검토 필요`});
  }
  const SYNTHESIS_MANIFESTS=REVIEWED_MANIFESTS;
- function questState(){return {...questsOverview(s),outcomeReality:outcomeRealities(s),decision:decideQuest(s,now()),autonomous:previewAutonomousGoals(s,now(),{manifests:SYNTHESIS_MANIFESTS}),loop:closedLoopStatus(s,now(),{manifests:SYNTHESIS_MANIFESTS}),providers:providerStatus(),selectedProvider:agentSettings.provider,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs)};}
+ function questState(){return {...questsOverview(s),outcomeReality:outcomeRealities(s,now()),decision:decideQuest(s,now()),autonomous:previewAutonomousGoals(s,now(),{manifests:SYNTHESIS_MANIFESTS}),loop:closedLoopStatus(s,now(),{manifests:SYNTHESIS_MANIFESTS}),providers:providerStatus(),selectedProvider:agentSettings.provider,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs)};}
  // Homunculus Autonomous Goal Synthesis (goal-synthesis.mjs): observe -> rank
  // -> at most ONE new `proposed` quest. Observation always runs; persistence
  // is refused under emergency stop and while an owner-written quest is still
@@ -298,7 +300,7 @@ export function createYenoServer(options={}) {
  // from a claim. See runtime/lib/growth.mjs for exactly what each grade requires
  // and why B/A/S report blocked (composition, intervention counts, and
  // externally-verified outcomes have no tracked evidence yet).
- function growthState(){return {capabilities:growthOverview(s.capabilities,'capability',{outcomesById:verifiedOutcomesByCapability(s)}),code:growthOverview(s.codeWorkshop,'code')};}
+ function growthState(){return {capabilities:growthOverview(s.capabilities,'capability',{outcomesById:verifiedOutcomesByCapability(s,now())}),code:growthOverview(s.codeWorkshop,'code')};}
  function codeMutation(action,b){
    if(!b.requestId)throw new HttpError(400,'Persistent requestId required');
    const fields={generate:['id','version','name','goal','fixtures','activate','provider'],repair:['id','goal','activate','provider'],github:['spec'],import:['manifest'],verify:['id','hash','activate'],run:['id','input'],activate:['id','hash'],disable:['id'],rollback:['id']}[action];
@@ -340,6 +342,7 @@ export function createYenoServer(options={}) {
  const BOOT_ID=uid(),BOOTED_AT=now();
  s.runtimeBoots=appendBoot(s.runtimeBoots??[],createBootRecord({bootId:BOOT_ID,bootedAt:BOOTED_AT,revisionAtBoot:s.revision??0,pid:process.pid})).records;
  s.deviceAcceptances??=[];
+ s.outcomeConnectors??=[];s.outcomeReadings??=[];s.outcomeEvidence??=[];
  save();
  // Release the runtime serves now; the owner's device acceptance must match it exactly.
  const CURRENT_RELEASE={sourceCommit:SOURCE_COMMIT?.sha??null,client:{versionName:env.YENO_CLIENT_VERSION_NAME??null,versionCode:Number.isInteger(Number(env.YENO_CLIENT_VERSION_CODE))&&env.YENO_CLIENT_VERSION_CODE?Number(env.YENO_CLIENT_VERSION_CODE):null,apkSha256:/^[a-f0-9]{64}$/.test(env.YENO_APK_SHA256??'')?env.YENO_APK_SHA256:null}};
@@ -361,6 +364,71 @@ export function createYenoServer(options={}) {
    const outcome=recordDeviceAcceptance(s.deviceAcceptances,record);s.deviceAcceptances=outcome.records;
    if(outcome.added)event(`소유자 기기 검수 기록: ${record.platform} ${record.deviceId} · ${record.complete?'19/19':'미완료'} · ${record.release.sourceCommit.slice(0,7)}`);
    return {status:outcome.added?201:200,payload:{acceptance:record,added:outcome.added}};
+ }
+ // Outcome connector/evidence mutations: declaration and removal are owner-
+ // authority only (gated at the call site like /api/device-acceptance), so a
+ // device credential can never declare or delete what counts as an external
+ // source. A connector read is a real network operation (readConnector goes
+ // out over pinned HTTPS) gated on emergency stop, and any credential header
+ // the owner supplies lives only in this one call - never persisted onto the
+ // connector or the reading.
+ function outcomeError(error){
+   if(error instanceof OutcomeVerificationError){
+     const status=error.code==='CONNECTOR_NOT_FOUND'?404:['CONNECTOR_DUPLICATE','CONNECTOR_CAPACITY'].includes(error.code)?409:400;
+     throw new HttpError(status,error.message,{code:error.code});
+   }
+   throw error;
+ }
+ function declareOutcomeConnector(b){
+   if(!b.requestId)throw new HttpError(400,'Persistent requestId required');
+   const {requestId,...claim}=b;
+   let connector;
+   try{connector=createConnector(claim,{declaredAt:now()});}catch(error){outcomeError(error);}
+   try{s.outcomeConnectors=addConnector(s.outcomeConnectors,connector);}catch(error){outcomeError(error);}
+   event(`외부 성과 connector 등록: ${connector.sourceType} ${connector.sourceId} (${connector.transport})`);
+   return {status:201,payload:{connector}};
+ }
+ function removeOutcomeConnector(id){
+   let next;
+   try{next=removeConnector(s.outcomeConnectors,id);}catch(error){outcomeError(error);}
+   s.outcomeConnectors=next;
+   // A reading left behind for a now-missing connector would fail the store's
+   // own cross-referential integrity check on the very next save.
+   s.outcomeReadings=(s.outcomeReadings??[]).filter(reading=>reading.connectorId!==id);
+   event(`외부 성과 connector 해제: ${id}`);
+   return {status:200,payload:{removed:true,id}};
+ }
+ // owner_export_json reads a structured file the owner placed inside the
+ // repository tree - a real disk read, never a caller-supplied object - and
+ // stays SYNTHETIC_VERIFIED (connectorReadiness never grants LIVE_VERIFIED to
+ // this transport). The locator was already validated to be a repository-
+ // relative path with no '..' segment; this still re-confirms the resolved
+ // path never leaves the repository root before reading it.
+ function ownerExportRead(locator){
+   const root=path.resolve(ROOT,'..');
+   const file=path.resolve(root,locator);
+   if(file!==root&&!file.startsWith(root+path.sep))throw new Error('저장소 범위를 벗어난 경로입니다.');
+   return fs.readFileSync(file,'utf8');
+ }
+ async function readOutcomeConnector(id,b){
+   if(s.emergencyStop)throw new HttpError(409,'전체 멈춤 상태에서는 외부 읽기를 수행할 수 없습니다.');
+   const connector=(s.outcomeConnectors??[]).find(item=>item.id===id);
+   if(!connector)throw new HttpError(404,'Connector를 찾을 수 없습니다.');
+   if(b.headers!==undefined&&(!b.headers||typeof b.headers!=='object'||Array.isArray(b.headers)||Object.values(b.headers).some(v=>typeof v!=='string')))throw new HttpError(400,'headers는 문자열 값의 객체여야 합니다.');
+   const outcome=await readConnector(connector,{readAt:now(),headers:b.headers??null,readFile:ownerExportRead});
+   if(!outcome.ok)return {status:502,payload:{ok:false,reason:outcome.reason}};
+   try{s.outcomeReadings=addReading(s.outcomeReadings,outcome.reading);}catch(error){outcomeError(error);}
+   event(`외부 성과 connector 실측 읽기 성공: ${connector.sourceType} ${connector.sourceId}`);
+   return {status:201,payload:{ok:true,reading:outcome.reading}};
+ }
+ function declareOutcomeEvidence(b){
+   if(!b.requestId)throw new HttpError(400,'Persistent requestId required');
+   const {requestId,...claim}=b;
+   let evidence;
+   try{evidence=createOutcomeEvidence(claim,{collectedAt:now()});}catch(error){outcomeError(error);}
+   try{s.outcomeEvidence=addOutcomeEvidence(s.outcomeEvidence,evidence);}catch(error){outcomeError(error);}
+   event(`성과 근거 등록: ${evidence.metric} · quest ${evidence.questId.slice(0,8)}`);
+   return {status:201,payload:{evidence}};
  }
  function readinessState(req,principal,versioned){
    return buildReadiness({state:s,sourceCommit:SOURCE_COMMIT,runtimeVersion:VERSION,apiVersion:API_VERSION,store:{directory:path.basename(dataDir),durable:!persistencePending&&fs.existsSync(path.join(dataDir,'state.json')),recovered:store.recovered},
@@ -828,7 +896,7 @@ export function createYenoServer(options={}) {
  }
  async function body(req,limit=MAX_BODY){let total=0,parts=[];for await(const part of req){total+=part.length;if(total>limit)throw new HttpError(413,'Request body exceeds allowed size');parts.push(part);}if(!total)return {};let result;try{result=JSON.parse(Buffer.concat(parts).toString('utf8'));}catch{throw new HttpError(400,'Invalid JSON body');}if(!result||typeof result!=='object'||Array.isArray(result))throw new HttpError(400,'JSON object required');return result;}
  function respond(res,status,payload){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(payload));}
- function mutation(req,url,b,operation,{required=false,safetyAction=false,fingerprintPath=url.pathname}={}){
+ async function mutation(req,url,b,operation,{required=false,safetyAction=false,fingerprintPath=url.pathname}={}){
    ensureDurable();
    const requestId=validateRequestId(b.requestId,{required});
    const hash=fingerprintRequest(req.method,fingerprintPath,b);
@@ -843,7 +911,9 @@ export function createYenoServer(options={}) {
        persistReceipt=false;
      }
    }
-   const result=operation();
+   // operation() may be async (e.g. an owner-triggered real connector read);
+   // await handles both a plain value and a promise identically.
+   const result=await operation();
    if(result.payload?.name==='YENO OS')result.payload.revision=s.revision+1;
    if(result.payload?.state?.name==='YENO OS')result.payload.state.revision=s.revision+1;
    if(persistReceipt)rememberReceipt(s,requestId,hash,result);
@@ -897,7 +967,7 @@ export function createYenoServer(options={}) {
        const b=await body(req,4096);
        if(Object.keys(b).some(key=>key!=='requestId'))throw new HttpError(400,'연결 요청 번호만 지정해 주세요.');
        const entry=webPairings.get(b.requestId);
-       const result=mutation(req,url,{requestId:entry.id},()=>{
+       const result=await mutation(req,url,{requestId:entry.id},()=>{
          const devices=Object.values(s.devices).filter(device=>device.platform==='web');
          if(devices.length>=1000||devices.filter(device=>!device.revokedAt).length>=100)throw new HttpError(409,'등록된 브라우저가 많습니다. 이전 브라우저 연결을 해제해 주세요.');
          return {status:200,payload:{device:enrollDevice({name:entry.name,platform:'web'})}};
@@ -916,7 +986,7 @@ export function createYenoServer(options={}) {
        const b=await body(req,4096);
        if(Object.keys(b).some(key=>!['requestId','name','remember'].includes(key))||(b.remember!==undefined&&typeof b.remember!=='boolean'))throw new HttpError(400,'브라우저 연결 입력을 확인해 주세요.');
        const name=b.name===undefined?'BLACKHOLE 브라우저':requiredText(b.name,80);
-       const result=mutation(req,url,b,()=>{
+       const result=await mutation(req,url,b,()=>{
          const devices=Object.values(s.devices).filter(device=>device.platform==='web');
          if(devices.length>=1000||devices.filter(device=>!device.revokedAt).length>=100)throw new HttpError(409,'등록된 브라우저가 많습니다. 이전 브라우저 연결을 해제해 주세요.');
          return {status:201,payload:{device:enrollDevice({name,platform:'web'})}};
@@ -940,20 +1010,20 @@ export function createYenoServer(options={}) {
        // login must not revoke the newly connected browser identity.
        if(b.deviceId!==undefined&&b.deviceId!==id)throw new HttpError(409,'브라우저 연결이 바뀌었습니다. 현재 연결을 확인한 뒤 로그아웃해 주세요.');
        if(principal.device.revokedAt){res.setHeader('Set-Cookie',webSessions.clear(req));return respond(res,200,{loggedOut:true,revoked:true,deviceId:id});}
-       const result=mutation(req,url,b,()=>{s.devices[id].revokedAt=now();event(`Browser connection revoked: ${id}`);return {status:200,payload:{loggedOut:true,revoked:true,deviceId:id}};},{required:true,safetyAction:true,fingerprintPath:`/api/devices/${id}/web-logout`});
+       const result=await mutation(req,url,b,()=>{s.devices[id].revokedAt=now();event(`Browser connection revoked: ${id}`);return {status:200,payload:{loggedOut:true,revoked:true,deviceId:id}};},{required:true,safetyAction:true,fingerprintPath:`/api/devices/${id}/web-logout`});
        res.setHeader('Set-Cookie',webSessions.clear(req));return respond(res,result.status,result.payload);
      }
      const versioned=url.pathname.startsWith('/api/v1/');
      if(versioned&&req.method==='POST'&&url.pathname==='/api/v1/devices/enroll'){
        const b=await body(req);const credential=bearer(req);if(!credential||!crypto.timingSafeEqual(Buffer.from(digest(credential)),Buffer.from(tokenHash)))throw new HttpError(401,'Valid pairing token required');
-       const result=mutation(req,url,b,()=>({status:201,payload:{device:enrollDevice(b)}}),{required:true});return respond(res,result.status,{device:enrollmentResponse(result.payload.device)});
+       const result=await mutation(req,url,b,()=>({status:201,payload:{device:enrollDevice(b)}}),{required:true});return respond(res,result.status,{device:enrollmentResponse(result.payload.device)});
      }
      const principal=authenticate(req,versioned);
      if(versioned)url.pathname=url.pathname.replace(/^\/api\/v1/,'/api');
      ensureDurable();
      if(req.method==='POST'&&['/api/hankki/invite','/api/hankki/revoke'].includes(url.pathname)){
        const b=await body(req,4096),isInvite=url.pathname.endsWith('/invite');
-       const result=mutation(req,url,b,()=>{
+       const result=await mutation(req,url,b,()=>{
          if(isInvite&&s.emergencyStop)throw new HttpError(409,'전체 멈춤을 먼저 해제하세요.');
          const output=isInvite?issueHankkiInvite(s.studio,b,{key:token}):revokeHankkiInvite(s.studio,b);
          s.studio=output.studio;event(isInvite?'Hankki response link issued.':'Hankki response link revoked.');return {status:200,payload:{result:output.receipt}};
@@ -971,12 +1041,16 @@ export function createYenoServer(options={}) {
        if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required for device administration');
        return respond(res,200,{devices:publicDevices(s)});
      }
+     if(req.method==='GET'&&url.pathname==='/api/outcome-connectors'){
+       if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required for outcome connector administration');
+       return respond(res,200,{connectors:s.outcomeConnectors??[],readings:s.outcomeReadings??[],evidence:s.outcomeEvidence??[]});
+     }
      const ownerRevoke=url.pathname.match(/^\/api\/devices\/([^/]+)\/revoke$/);
      if(req.method==='POST'&&ownerRevoke){
        if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required for device administration');
        const b=await body(req);
        if(typeof b.requestId!=='string'||!b.requestId.trim())throw new HttpError(400,'Persistent requestId required');
-       const result=mutation(req,url,b,()=>{
+       const result=await mutation(req,url,b,()=>{
          const receipt=revokeDevice(s,ownerRevoke[1]);
          if(!receipt.alreadyRevoked)event(`Device revoked by owner: ${receipt.deviceId}`);
          return {status:200,payload:receipt};
@@ -1003,7 +1077,7 @@ export function createYenoServer(options={}) {
        // The effective target comes from authentication, not the body. Bind
        // that target into the fingerprint so another device cannot receive a
        // successful cached revocation for a different device and stay active.
-       const result=mutation(req,url,b,()=>{s.devices[id].revokedAt=now();event(`Device revoked: ${s.devices[id].name}`);return {status:200,payload:{revoked:true,deviceId:id}};},{required:versioned||!!principal.web,safetyAction:true,fingerprintPath:`/api/devices/${id}/self-revoke`});
+       const result=await mutation(req,url,b,()=>{s.devices[id].revokedAt=now();event(`Device revoked: ${s.devices[id].name}`);return {status:200,payload:{revoked:true,deviceId:id}};},{required:versioned||!!principal.web,safetyAction:true,fingerprintPath:`/api/devices/${id}/self-revoke`});
        return respond(res,result.status,result.payload);
      }
      const requestMatch=url.pathname.match(/^\/api\/requests\/([^/]+)$/);
@@ -1030,7 +1104,7 @@ export function createYenoServer(options={}) {
      if(req.method==='GET'&&artifactMatch){const item=s.artifacts[artifactMatch[1]];if(!item)throw new HttpError(404,'Artifact not found');const file=path.join(dataDir,'artifacts',item.filename);if(path.dirname(file)!==path.join(dataDir,'artifacts')||!fs.existsSync(file))throw new HttpError(404,'Artifact file is missing');const bytes=fs.readFileSync(file);if(digest(bytes)!==item.sha256)throw new HttpError(409,'Artifact checksum mismatch; download blocked');res.writeHead(200,{'Content-Type':item.mimeType??'text/plain; charset=utf-8','Content-Disposition':`attachment; filename="${item.name}"`,'Content-Length':bytes.length,'X-Content-SHA256':item.sha256});return res.end(bytes);}
      if(req.method!=='POST')throw new HttpError(404,'Not found');
      const b=await body(req);
-     const result=mutation(req,url,b,()=>{
+     const result=await mutation(req,url,b,async()=>{
        const codeMatch=url.pathname.match(/^\/api\/code\/(generate|repair|github|import|verify|run|activate|disable|rollback)$/);if(codeMatch)return codeMutation(codeMatch[1],b);
        if(url.pathname==='/api/developer/plan'){
          if(!b.requestId||Object.keys(b).some(k=>!['requestId','task'].includes(k)))throw new HttpError(400,'Invalid repository plan request');
@@ -1096,6 +1170,12 @@ export function createYenoServer(options={}) {
        }
        if(url.pathname==='/api/self-test')return startSelfTest(b);
        if(url.pathname==='/api/device-acceptance'){if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required for device acceptance attestation');return recordAcceptance(b);}
+       if(url.pathname==='/api/outcome-connectors'){if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required for outcome connector administration');return declareOutcomeConnector(b);}
+       const connectorRemoveMatch=url.pathname.match(/^\/api\/outcome-connectors\/([a-z0-9][a-z0-9-]{0,63})\/remove$/);
+       if(connectorRemoveMatch){if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required for outcome connector administration');if(!b.requestId)throw new HttpError(400,'Persistent requestId required');return removeOutcomeConnector(connectorRemoveMatch[1]);}
+       const connectorReadMatch=url.pathname.match(/^\/api\/outcome-connectors\/([a-z0-9][a-z0-9-]{0,63})\/read$/);
+       if(connectorReadMatch){if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required to trigger an outcome connector read');if(!b.requestId)throw new HttpError(400,'Persistent requestId required');return readOutcomeConnector(connectorReadMatch[1],b);}
+       if(url.pathname==='/api/outcome-evidence'){if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required to declare outcome evidence');return declareOutcomeEvidence(b);}
        if(url.pathname==='/api/quests/loop'){
         if(!b.requestId||Object.keys(b).some(k=>!['requestId'].includes(k)))throw new HttpError(400,'Persistent requestId required');
         if(s.emergencyStop)throw new HttpError(409,'전체 멈춤을 먼저 해제하세요.');

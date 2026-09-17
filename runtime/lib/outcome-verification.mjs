@@ -128,6 +128,29 @@ export function createOutcomeEvidence(claim, {collectedAt}) {
   return evidence;
 }
 
+export const MAX_EVIDENCE = 500;
+// Durable, bounded, at-most-one-claim-per-(questId,jobId,metric) collection:
+// a later claim for the same outcome+metric replaces the earlier one instead
+// of accumulating contradictory claims about the same execution.
+export function validateOutcomeEvidences(list) {
+  if (!Array.isArray(list) || list.length > MAX_EVIDENCE) fail(`성과 근거는 ${MAX_EVIDENCE}개 이하의 배열이어야 합니다.`);
+  const seen = new Set();
+  for (const evidence of list) {
+    validateOutcomeEvidence(evidence);
+    const key = `${evidence.questId}:${evidence.jobId}:${evidence.metric}`;
+    if (seen.has(key)) fail('같은 목표·작업·metric에 대한 성과 근거가 중복됩니다.');
+    seen.add(key);
+  }
+  return true;
+}
+export function addOutcomeEvidence(list, evidence) {
+  validateOutcomeEvidences(list); validateOutcomeEvidence(evidence);
+  const key = e => `${e.questId}:${e.jobId}:${e.metric}`;
+  const next = [...list.filter(item => key(item) !== key(evidence)), evidence];
+  validateOutcomeEvidences(next);
+  return next;
+}
+
 export function parseOutcomeEvidence(text) {
   let parsed;
   try {parsed = JSON.parse(text);} catch {fail('성과 근거 JSON을 읽을 수 없습니다.');}
