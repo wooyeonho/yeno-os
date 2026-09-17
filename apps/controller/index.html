@@ -5,7 +5,7 @@
 <header class="app-header"><div><b>BLACKHOLE</b><small>PERSONAL AI OS</small></div><span id="connection" class="connection-chip">연결 안 됨</span></header>
 <section id="unlock" class="auth-card" hidden><span class="eyebrow">SECURE VAULT</span><h1>블랙홀 열기</h1><p class="muted">이 폰에 암호화해 저장한 기기 인증을 불러옵니다.</p><form id="unlock-form"><label>보관소 암호<input id="unlock-password" type="password" minlength="8" required autocomplete="current-password"></label><button>다시 연결</button></form></section>
 <section id="setup" class="auth-card"><span class="eyebrow">FIRST CONNECTION</span><h1>본체 연결</h1><p class="muted">상주 코어의 HTTPS 주소와 연결 키를 한 번만 입력하세요. 이후 기기 인증은 이 폰에 암호화해 보관합니다.</p><form id="pair"><label>코어 주소<input id="origin" type="url" placeholder="https://your-core.koyeb.app" required inputmode="url"></label><label>연결 키<input id="pairing" type="password" required autocomplete="off"></label><label>보관소 암호<input id="vault-password" type="password" minlength="8" required autocomplete="new-password" placeholder="8자 이상"></label><button id="pair-button">BLACKHOLE 연결</button></form></section>
-<div id="workspace" hidden>
+<div id="workspace" class="view-studio" hidden>
 <nav class="native-nav" aria-label="블랙홀 화면">
 <button type="button" data-native-view="studio" aria-pressed="true"><span>홈</span></button>
 <button type="button" data-native-view="world" aria-pressed="false"><span>God Eye</span></button>
@@ -29,7 +29,7 @@
 </div>
 
 <section id="tab-world" class="page-panel" hidden>
-<div class="section-heading"><div><span class="eyebrow">BLACKHOLE / WORLD</span><h2>God Eye</h2><p class="muted">USGS 지진과 NASA 자연재해를 출처별로 확인합니다.</p></div><button id="world-refresh" type="button" disabled>새로 조회</button></div>
+<div class="section-heading"><div><span class="eyebrow">BLACKHOLE / WORLD</span><h2>God Eye</h2><p class="muted">USGS 지진과 NASA 자연재해를 출처별로 확인합니다.</p></div><button id="world-refresh" class="secondary compact" type="button" disabled>새로 조회</button></div>
 <div class="world-bar"><span id="world-status" role="status">첫 조회 대기</span><label>최소 규모 <select id="world-magnitude"><option value="2.5">M 2.5</option><option value="4.5">M 4.5</option><option value="6">M 6.0</option></select></label></div>
 <p id="world-error" role="alert"></p>
 <div class="world-map-wrap"><svg id="world-map" viewBox="0 0 1000 500" role="group" aria-label="공개 재난 위치 지도"><rect width="1000" height="500" fill="#0a1917"/><path d="M0 250H1000M500 0V500M0 125H1000M0 375H1000M250 0V500M750 0V500" stroke="#1d342f"/><image id="world-land" width="1000" height="500"/><g id="world-markers"></g></svg><div class="world-map-caption">발생 위치</div></div>

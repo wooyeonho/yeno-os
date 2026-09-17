@@ -145,6 +145,10 @@ function renderPending() {
   $<HTMLButtonElement>('submit-command').disabled = submitting || disconnecting;
   $<HTMLButtonElement>('retry-command').disabled = submitting || disconnecting;
 }
+const JOB_STATUS_LABEL: Record<string, string> = {
+  queued: '대기 중', running: '진행 중', paused: '일시정지됨',
+  completed: '완료', cancelled: '취소됨', failed: '실패',
+};
 function render() {
   renderConnection();
   renderPending();
@@ -153,7 +157,7 @@ function render() {
     const node = document.createElement('article');
     node.className = 'job';
     const title = document.createElement('strong'); title.textContent = job.title;
-    const meta = document.createElement('p'); meta.textContent = `${job.status} · ${new Date(job.updatedAt).toLocaleString()}`;
+    const meta = document.createElement('p'); meta.textContent = `${JOB_STATUS_LABEL[job.status] ?? job.status} · ${new Date(job.updatedAt).toLocaleString()}`;
     node.append(title, meta);
     for (const artifact of job.artifacts) {
       const button = document.createElement('button'); button.className = 'artifact'; button.textContent = `결과 열기: ${artifact.name}`;
@@ -172,7 +176,9 @@ function renderReceipt(receipt: CommandReceipt | null) {
   $('command-result').hidden = !receipt;
   $('receipt-body').replaceChildren();
   if (!receipt) return;
-  $('receipt-meta').textContent = `${receipt.text}\n접수 확인 ${new Date(receipt.receivedAt).toLocaleString()} · 요청 ${receipt.requestId}`;
+  // Request IDs are a support/debug detail, not something a nondeveloper
+  // owner needs on the primary screen - kept, but behind 상세.
+  $('receipt-meta').textContent = `${receipt.text}\n접수 확인 ${new Date(receipt.receivedAt).toLocaleString()}`;
   const payload = receipt.payload as { kind?: string; memory?: Memory; memories?: Memory[]; job?: Job };
   const paragraph = (text: string) => { const node = document.createElement('p'); node.textContent = text; $('receipt-body').append(node); };
   if (payload.kind === 'memory' && payload.memory) {
@@ -181,9 +187,13 @@ function renderReceipt(receipt: CommandReceipt | null) {
     paragraph(`찾은 기억 ${payload.memories.length}개`);
     for (const memory of payload.memories) paragraph(memory.text);
   } else if (payload.kind === 'job' && payload.job) {
-    paragraph(`작업을 접수했습니다: ${payload.job.title} · ${payload.job.id}`);
+    paragraph(`작업을 접수했습니다: ${payload.job.title}`);
     paragraph('진행 상태와 생성된 파일은 아래 작업 목록에서 확인하세요.');
   } else paragraph(JSON.stringify(receipt.payload, null, 2));
+  const details = document.createElement('details'); details.className = 'meta-details';
+  const summary = document.createElement('summary'); summary.textContent = '상세';
+  const requestLine = document.createElement('p'); requestLine.textContent = `요청 ID: ${receipt.requestId}`;
+  details.append(summary, requestLine); $('receipt-body').append(details);
 }
 async function refresh() {
   if (!connection || refreshing || disconnecting) return;
@@ -353,6 +363,11 @@ function guard(task: () => Promise<void>) { void task().catch(error => showMessa
 function showView(view: typeof activeView) {
   activeView = view;
   $('cockpit').hidden = view !== 'jobs'; $('native-studio').hidden = view !== 'studio'; $('tab-world').hidden = view !== 'world';
+  // Android WebView :has() support is uncertain across older devices, so the
+  // home/tools-drawer visibility for the world/jobs tabs is driven by this
+  // explicit class rather than a :has() selector reading nav aria-pressed.
+  $('workspace').classList.remove('view-studio', 'view-world', 'view-jobs');
+  $('workspace').classList.add(`view-${view}`);
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-native-view]')) button.setAttribute('aria-pressed', String(button.dataset.nativeView === view));
   if (view === 'studio' && connectionStatus === 'online') guard(async () => { await studio?.refresh(); });
 }

@@ -20,3 +20,4 @@ node_modules/
 build-artifacts/
 **/__pycache__/
 apps/controller/src-tauri/gen/android/
+apps/controller/mobile-evidence/
