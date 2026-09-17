@@ -92,7 +92,10 @@ test('Loop 1 - repair goal -> failure-triage (Kirby active) -> owner loop -> Jar
   // outcomeVerified, which a self-reported ledger entry can never establish.
   assert.equal(outcome.body.reality.executionVerified,true);assert.equal(outcome.body.reality.outcomeVerified,false);
   assert.equal(outcome.body.reality.highGradeCandidate,false);assert.equal(outcome.body.reality.authorizesAction,false);
-  assert.ok(outcome.body.reality.reasons.includes('type_not_outcome_verifying:self_reported'));
+  // No owner-declared outcome-verification evidence exists for this outcome,
+  // so outcomeVerified stays honestly false for exactly that reason - the
+  // ledger's own self_reported field is never itself treated as a reason.
+  assert.deepEqual(outcome.body.reality.reasons,['no_outcome_evidence_declared']);
 
   await app.restart();
   const reality=(await app.get('/api/quests')).body.outcomeReality;

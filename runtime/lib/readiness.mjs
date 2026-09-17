@@ -21,6 +21,7 @@ import {httpsReadiness, restartEvidence} from './https-evidence.mjs';
 import {deviceVerification} from './device-evidence.mjs';
 import {connectorReadiness} from './outcome-connector.mjs';
 import {outcomeRealities} from './outcome-reality.mjs';
+import {levelingHistoriesFromState} from './leveling-evidence.mjs';
 
 export const READINESS_VERSION = 1;
 export const STATES = Object.freeze(['NOT_WIRED', 'WIRED_UNVERIFIED', 'SYNTHETIC_VERIFIED', 'LIVE_VERIFIED', 'DEVICE_VERIFIED', 'BLOCKED']);
@@ -162,8 +163,15 @@ export function buildReadiness(facts) {
   const connectorState = connectorReadiness(state.outcomeConnectors ?? [], state.outcomeReadings ?? []);
   const outcomeVerification = {state: outcomes.length || runJobs.length ? evidenceState(runJobs.map(tag)) : 'WIRED_UNVERIFIED', executionVerifiedRuns: runJobs.length, ledgerOutcomes: outcomes.length, externallyVerifiedOutcomes: realities.filter(r => r.outcomeVerified).length, externalSourceConnector: connectorState.status, connectors: (state.outcomeConnectors ?? []).length};
 
-  const grades = active.map(entry => gradeSkill(registry, entry.id));
-  const soloLeveling = {state: !active.length ? 'BLOCKED' : grades.some(g => g.grade !== 'E') ? evidenceState(runJobs.map(tag)) : 'WIRED_UNVERIFIED', grades: Object.fromEntries(grades.map(g => [g.id, g.grade])), blockedGrades: {B: 'composition_evidence_not_tracked', A: 'intervention_count_not_tracked', S: 'external_verified_outcome_required'}};
+  // B (composition) and A (autonomy) are graded from real evidence -
+  // leveling-evidence.mjs derives per-skill executions/interventions from
+  // this same state (jobs, quests, artifacts, registry history) and
+  // solo-leveling.mjs turns that into a per-skill history; growth.mjs's own
+  // gradeSkill consumes it instead of staying permanently blocked. S still
+  // needs a separately declared, externally-verified outcome (unchanged).
+  const levelingById = Object.fromEntries(levelingHistoriesFromState(state, 'capability').map(h => [h.skillId, h]));
+  const grades = active.map(entry => gradeSkill(registry, entry.id, {leveling: levelingById[entry.id] ?? null}));
+  const soloLeveling = {state: !active.length ? 'BLOCKED' : grades.some(g => g.grade !== 'E') ? evidenceState(runJobs.map(tag)) : 'WIRED_UNVERIFIED', grades: Object.fromEntries(grades.map(g => [g.id, g.grade])), blockedGrades: {B: 'composition_evidence_required', A: 'autonomous_verified_success_low_intervention_required', S: 'external_verified_outcome_required'}};
 
   const voice = {state: 'WIRED_UNVERIFIED', browserFallback: 'speechRecognition/speechSynthesis', liveVoice: 'NOT_WIRED', toolCallsGrantApproval: false};
   blockers.push('live_voice_not_wired');

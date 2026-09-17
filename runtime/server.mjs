@@ -36,6 +36,7 @@ import {getCodeStatus,getCodeVersion,createCodeRequest,importCode,activateCode,d
 import {validateCodeTask,codePrompt,runCodeJob} from './lib/code-jobs.mjs';
 import {CodeSandboxError} from './lib/code-sandbox.mjs';
 import {growthOverview} from './lib/growth.mjs';
+import {levelingHistoriesFromState} from './lib/leveling-evidence.mjs';
 import {outcomeRealities,verifiedOutcomesByCapability} from './lib/outcome-reality.mjs';
 import {createConnector,addConnector,removeConnector,readConnector,addReading} from './lib/outcome-connector.mjs';
 import {createOutcomeEvidence,addOutcomeEvidence,OutcomeVerificationError} from './lib/outcome-verification.mjs';
@@ -300,7 +301,8 @@ export function createYenoServer(options={}) {
  // from a claim. See runtime/lib/growth.mjs for exactly what each grade requires
  // and why B/A/S report blocked (composition, intervention counts, and
  // externally-verified outcomes have no tracked evidence yet).
- function growthState(){return {capabilities:growthOverview(s.capabilities,'capability',{outcomesById:verifiedOutcomesByCapability(s,now())}),code:growthOverview(s.codeWorkshop,'code')};}
+ function levelingById(engine){return Object.fromEntries(levelingHistoriesFromState(s,engine).map(h=>[h.skillId,h]));}
+ function growthState(){return {capabilities:growthOverview(s.capabilities,'capability',{outcomesById:verifiedOutcomesByCapability(s,now()),levelingById:levelingById('capability')}),code:growthOverview(s.codeWorkshop,'code',{levelingById:levelingById('code')})};}
  function codeMutation(action,b){
    if(!b.requestId)throw new HttpError(400,'Persistent requestId required');
    const fields={generate:['id','version','name','goal','fixtures','activate','provider'],repair:['id','goal','activate','provider'],github:['spec'],import:['manifest'],verify:['id','hash','activate'],run:['id','input'],activate:['id','hash'],disable:['id'],rollback:['id']}[action];
