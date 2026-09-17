@@ -1,5 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {randomUUID} from 'node:crypto';
+import {start} from '../server.mjs';
 import {
   initialPersistentBots,
   validatePersistentBots,
@@ -82,4 +87,48 @@ test('routines remain declarative and handoffs remain owner-gated', () => {
     summary: 'self handoff',
     evidenceRefs: []
   }, {at}), /cannot hand off to itself/);
+});
+
+
+test('owner API persists classified memory and survives runtime restart', async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yeno-persistent-bots-'));
+  const token = 'persistent-bot-owner-token';
+  let runtime = await start({dataDir, host: '127.0.0.1', port: 0, token, env: {}});
+  t.after(() => {
+    runtime.shutdown();
+    fs.rmSync(dataDir, {recursive: true, force: true});
+  });
+  const base = () => 'http://127.0.0.1:' + runtime.server.address().port;
+  const request = async (route, body) => {
+    const response = await fetch(base() + route, {
+      method: body ? 'POST' : 'GET',
+      headers: {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
+      ...(body ? {body: JSON.stringify({requestId: randomUUID(), ...body})} : {})
+    });
+    return {status: response.status, body: await response.json()};
+  };
+  const initial = await request('/api/persistent-bots');
+  assert.equal(initial.status, 200);
+  assert.equal(initial.body.bots.length, 6);
+  const saved = await request('/api/persistent-bots', {
+    action: 'memory',
+    botId: 'scout',
+    memory: {
+      kind: 'source',
+      text: 'A reviewed source remains a candidate until a reproducible test exists.',
+      sourceUrl: 'https://github.com/google/artemis',
+      confidence: 'high',
+      disposition: 'candidate',
+      evidenceRefs: ['reference:artemis']
+    }
+  });
+  assert.equal(saved.status, 201);
+  assert.equal(saved.body.memory.sourceUrl, 'https://github.com/google/artemis');
+  assert.equal(runtime.state().persistentBots.bots[1].memoryCount, 1);
+  runtime.shutdown();
+  runtime = await start({dataDir, host: '127.0.0.1', port: 0, token, env: {}});
+  const afterRestart = await request('/api/persistent-bots');
+  assert.equal(afterRestart.status, 200);
+  assert.equal(afterRestart.body.bots.find(bot => bot.id === 'scout').memory.length, 1);
+  assert.equal((await request('/api/state')).body.capabilities.externalPublishing, false);
 });
