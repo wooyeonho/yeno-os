@@ -46,6 +46,7 @@ import {planClosedLoop,closedLoopStatus,bindLoopExecution} from './lib/closed-lo
 import {declaredBrainPool,currentBrainPool,routeAgentJob,transportAuthority,callTransportFor,settleRouting,RoutingError} from './lib/brain-routing.mjs';
 import {classifyRequest,parseTrustedProxies,parseAllowedHosts,createBootRecord,appendBoot} from './lib/https-evidence.mjs';
 import {createDeviceAcceptance,recordDeviceAcceptance} from './lib/device-evidence.mjs';
+import {validateLedger as validateAndroidLedger} from '../scripts/android-release.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 // Kirby's only auto-acquisition candidate: a manifest already reviewed and
@@ -54,6 +55,7 @@ const LEDGER_DIGEST_MANIFEST=JSON.parse(fs.readFileSync(path.join(ROOT,'capabili
 // Every manifest reviewed and committed in runtime/capabilities/: the only
 // candidates General Kirby may search, qualify and (owner-approved) acquire.
 const REVIEWED_MANIFESTS=fs.readdirSync(path.join(ROOT,'capabilities')).filter(name=>name.endsWith('.json')).sort().map(name=>JSON.parse(fs.readFileSync(path.join(ROOT,'capabilities',name),'utf8')));
+const ANDROID_LEDGER_PATH=path.resolve(ROOT,'..','docs','builds','android-release-ledger.json');
 const VERSION='0.2.2';
 const API_VERSION='1';
 const MAX_BODY=256*1024;
@@ -341,6 +343,13 @@ export function createYenoServer(options={}) {
  save();
  // Release the runtime serves now; the owner's device acceptance must match it exactly.
  const CURRENT_RELEASE={sourceCommit:SOURCE_COMMIT?.sha??null,client:{versionName:env.YENO_CLIENT_VERSION_NAME??null,versionCode:Number.isInteger(Number(env.YENO_CLIENT_VERSION_CODE))&&env.YENO_CLIENT_VERSION_CODE?Number(env.YENO_CLIENT_VERSION_CODE):null,apkSha256:/^[a-f0-9]{64}$/.test(env.YENO_APK_SHA256??'')?env.YENO_APK_SHA256:null}};
+ // Signed-release ledger (docs/builds/android-release-ledger.json): a
+ // separate durable record of what was actually built+signed, read once at
+ // boot and re-validated so a tampered ledger never silently informs readiness.
+ let ANDROID_LEDGER=null;
+ try{
+   if(fs.existsSync(ANDROID_LEDGER_PATH)){const parsed=JSON.parse(fs.readFileSync(ANDROID_LEDGER_PATH,'utf8'));validateAndroidLedger(parsed);ANDROID_LEDGER=parsed;}
+ }catch{ANDROID_LEDGER=null;}
  function requestFacts(req,principal,versioned){
    const classification=classifyRequest({socketEncrypted:req.socket.encrypted===true,remoteAddress:req.socket.remoteAddress??'',host:String(req.headers.host??''),headers:req.headers,trustedProxies:TRUSTED_PROXIES,allowedHosts:PUBLIC_HOSTS});
    return {request:classification,principal:{kind:principal.kind,versioned}};
@@ -355,7 +364,7 @@ export function createYenoServer(options={}) {
  }
  function readinessState(req,principal,versioned){
    return buildReadiness({state:s,sourceCommit:SOURCE_COMMIT,runtimeVersion:VERSION,apiVersion:API_VERSION,store:{directory:path.basename(dataDir),durable:!persistencePending&&fs.existsSync(path.join(dataDir,'state.json')),recovered:store.recovered},
-     ...requestFacts(req,principal,versioned),providers:agentSettings.providers,brainPool:{declared:DECLARED_BRAIN_POOL.length,configured:currentBrainPool(env,DECLARED_BRAIN_POOL).models.filter(m=>m.configured).length},liveTransport:LIVE_TRANSPORT,manifests:SYNTHESIS_MANIFESTS,boots:s.runtimeBoots,currentBootId:BOOT_ID,deviceAcceptances:s.deviceAcceptances,currentRelease:CURRENT_RELEASE,at:now()});
+     ...requestFacts(req,principal,versioned),providers:agentSettings.providers,brainPool:{declared:DECLARED_BRAIN_POOL.length,configured:currentBrainPool(env,DECLARED_BRAIN_POOL).models.filter(m=>m.configured).length},liveTransport:LIVE_TRANSPORT,manifests:SYNTHESIS_MANIFESTS,boots:s.runtimeBoots,currentBootId:BOOT_ID,deviceAcceptances:s.deviceAcceptances,currentRelease:CURRENT_RELEASE,androidLedger:ANDROID_LEDGER,at:now()});
  }
  // Safe self-test: one real capability job from fixed synthetic records through
  // the same Kirby search / Jarvis execution / artifact / verification path real

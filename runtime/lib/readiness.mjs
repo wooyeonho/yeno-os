@@ -108,7 +108,7 @@ const evidenceState = (records, blocked = null) => blocked ? 'BLOCKED' : !record
 
 // facts: everything the server knows; this function only classifies.
 export function buildReadiness(facts) {
-  const {state, sourceCommit, runtimeVersion, apiVersion, store, request, principal, providers, brainPool, liveTransport, manifests = [], boots = [], currentBootId = null, deviceAcceptances = [], currentRelease = null, at} = facts;
+  const {state, sourceCommit, runtimeVersion, apiVersion, store, request, principal, providers, brainPool, liveTransport, manifests = [], boots = [], currentBootId = null, deviceAcceptances = [], currentRelease = null, androidLedger = null, at} = facts;
   const blockers = [];
   const jobs = state.jobs ?? [];
   const selfTests = state.selfTests ?? [];
@@ -165,7 +165,21 @@ export function buildReadiness(facts) {
   blockers.push('live_voice_not_wired');
 
   const android = deviceVerification(deviceAcceptances, {platform: 'android', current: currentRelease ? {sourceCommit: currentRelease.sourceCommit, client: currentRelease.client} : null, devices: state.devices ?? {}, at});
-  const androidClient = {...android, enrolledAndroidDevices: devices.filter(device => /android/i.test(device.platform)).length, currentRelease: currentRelease ? {sourceCommit: currentRelease.sourceCommit, versionName: currentRelease.client?.versionName ?? null, versionCode: currentRelease.client?.versionCode ?? null, apkSha256: currentRelease.client?.apkSha256 ?? null} : null};
+  // The signed-release ledger (docs/builds/android-release-ledger.json) is a
+  // separate durable record from the runtime's own env-declared belief about
+  // what it is serving (`currentRelease`) - cross-checking the two catches a
+  // runtime deployed from a commit/APK the ledger never actually signed.
+  const latestSigned = androidLedger?.releases?.length ? androidLedger.releases.at(-1) : null;
+  const releaseMatchesLedger = !!(latestSigned && currentRelease && latestSigned.sourceCommit === currentRelease.sourceCommit
+    && latestSigned.versionCode === currentRelease.client?.versionCode && latestSigned.apkSha256 === currentRelease.client?.apkSha256);
+  const androidRelease = {
+    state: !latestSigned ? 'NOT_WIRED' : releaseMatchesLedger ? 'LIVE_VERIFIED' : 'BLOCKED',
+    ledgerReleases: androidLedger?.releases?.length ?? 0,
+    latestSigned: latestSigned ? {sourceCommit: latestSigned.sourceCommit, versionName: latestSigned.versionName, versionCode: latestSigned.versionCode, apkSha256: latestSigned.apkSha256, aabSha256: latestSigned.aabSha256, signerSha256: latestSigned.signerSha256, builtAt: latestSigned.builtAt} : null,
+    servingMatchesLedgerSignature: latestSigned ? releaseMatchesLedger : null,
+    blockers: !latestSigned ? ['no_signed_release_in_ledger'] : !releaseMatchesLedger ? ['serving_release_not_in_signed_ledger'] : []
+  };
+  const androidClient = {...android, enrolledAndroidDevices: devices.filter(device => /android/i.test(device.platform)).length, currentRelease: currentRelease ? {sourceCommit: currentRelease.sourceCommit, versionName: currentRelease.client?.versionName ?? null, versionCode: currentRelease.client?.versionCode ?? null, apkSha256: currentRelease.client?.apkSha256 ?? null} : null, release: androidRelease};
   blockers.push(...android.blockers.map(b => `android_${b}`));
 
   const restartPersistence = restartEvidence({selfTests, boots, currentBootId, recovered: !!store.recovered});

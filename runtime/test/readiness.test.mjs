@@ -106,3 +106,32 @@ test('GET /api/v1/readiness (device surface) reports honest states, PROVIDER blo
   assert.equal(stopped.body.emergencyStop.active,true);assert.equal(stopped.body.overall,'BLOCKED');
   assert.equal(app.disk().selfTests.length,2);
 });
+
+test('android release ledger cross-check: no ledger -> NOT_WIRED; serving release matches the signed ledger -> LIVE_VERIFIED; mismatch (unsigned build) -> BLOCKED',()=>{
+  const facts=(over={})=>({
+    state:{jobs:[],quests:[],outcomes:[],devices:{},emergencyStop:false,capabilities:{entries:[{id:'x',activeHash:'a'.repeat(64),versions:[]}],history:[]}},
+    sourceCommit:{sha:'c'.repeat(40),source:'test'},runtimeVersion:'0.0.0',apiVersion:'1',
+    store:{directory:'d',durable:true,recovered:false},
+    request:{scheme:'https',via:'direct-tls',publicHost:'blackhole.example.test',encrypted:true,forwarded:{present:false,trusted:false,ignored:false},trustedProxyCount:0,allowedHostCount:1},
+    principal:{kind:'pairing',versioned:false}, providers:[], brainPool:{declared:0,configured:0}, liveTransport:false, at:'2026-09-17T00:00:00.000Z',
+    ...over
+  });
+  const noLedger=buildReadiness(facts());
+  assert.equal(noLedger.androidClient.release.state,'NOT_WIRED');
+  assert.equal(noLedger.androidClient.release.ledgerReleases,0);
+
+  const signed={sourceCommit:'c'.repeat(40),versionName:'1.2.0',versionCode:12,apkSha256:'a'.repeat(64),aabSha256:'b'.repeat(64),signerSha256:'d'.repeat(64),builtAt:'2026-09-16T00:00:00.000Z',workflowRun:'123'};
+  const currentRelease={sourceCommit:'c'.repeat(40),client:{versionName:'1.2.0',versionCode:12,apkSha256:'a'.repeat(64)}};
+  const matched=buildReadiness(facts({androidLedger:{version:1,releases:[signed]},currentRelease}));
+  assert.equal(matched.androidClient.release.state,'LIVE_VERIFIED');
+  assert.equal(matched.androidClient.release.servingMatchesLedgerSignature,true);
+  assert.deepEqual(matched.androidClient.release.latestSigned.signerSha256,'d'.repeat(64));
+  assert.deepEqual(matched.androidClient.release.blockers,[]);
+
+  // Serving an APK the ledger never signed (drift, or an unsigned/debug build) is BLOCKED, not silently accepted.
+  const driftedRelease={sourceCommit:'c'.repeat(40),client:{versionName:'1.2.0',versionCode:12,apkSha256:'f'.repeat(64)}};
+  const drifted=buildReadiness(facts({androidLedger:{version:1,releases:[signed]},currentRelease:driftedRelease}));
+  assert.equal(drifted.androidClient.release.state,'BLOCKED');
+  assert.equal(drifted.androidClient.release.servingMatchesLedgerSignature,false);
+  assert.deepEqual(drifted.androidClient.release.blockers,['serving_release_not_in_signed_ledger']);
+});
