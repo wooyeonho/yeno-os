@@ -3,7 +3,7 @@ run-name: Android APK · ${{ github.event_name }} · ${{ github.event_name == 'w
 
 on:
   push:
-    branches: [codex, blackhole/android-live-voice-claude-20260917]
+    branches: [codex, blackhole/android-live-voice-claude-20260917, blackhole/android-live-voice-smoke-20260917]
     paths:
       - 'apps/controller/**'
       - 'runtime/public/studio-view.mjs'
@@ -66,7 +66,18 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Verify core and controller logic
         working-directory: .
-        run: npm --offline test
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_NAME}" = "blackhole/android-live-voice-smoke-20260917" ]; then
+            # The smoke branch intentionally uses a distinct application id so it can
+            # coexist with the owner's existing BLACKHOLE installation. Keep all
+            # runtime/controller/native-scope tests, but skip the production release
+            # identity contract which intentionally requires kr.yeno.controller.
+            node --test runtime/test/*.test.mjs apps/controller/test/*.test.mjs scripts/native-config.test.mjs
+          else
+            npm --offline test
+          fi
       - name: Build frontend
         run: npm run build
       - name: Verify shipped UI against a temporary core
