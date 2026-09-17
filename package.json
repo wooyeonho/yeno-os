@@ -11,6 +11,10 @@
     "test": "node --test runtime/test/*.test.mjs apps/controller/test/*.test.mjs scripts/native-config.test.mjs",
     "start": "npm --prefix runtime start --",
     "build:controller": "npm --prefix apps/controller run build",
-    "verify:web": "node scripts/verify-web-ui.mjs"
+    "verify:web": "node scripts/verify-web-ui.mjs",
+    "verify:growth": "node scripts/verify-growth-badges.mjs",
+    "verify:mobile": "node scripts/verify-mobile-viewport.mjs",
+    "test:developer": "node --test runtime/test/repository-*.test.mjs workers/developer/*.test.mjs",
+    "worker:developer": "node workers/developer/cli.mjs"
   }
 }

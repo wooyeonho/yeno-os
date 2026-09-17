@@ -151,6 +151,10 @@ test('independent core contract classifies every existing execution boundary and
   for (const mode of ['github', 'verify', 'run']) {
     assert.equal(executionBoundary({ type: 'code', codeTask: { mode } }).kind, 'local-core');
   }
+  const repositoryPlan = executionBoundary({ type: 'agent', repositoryTask: { baseCommit: 'a'.repeat(40) } });
+  assert.equal(repositoryPlan.kind, 'development-model-call');
+  assert.equal(repositoryPlan.requiresModel, true);
+  assert.equal(executionBoundary({ type: 'agent' }).kind, 'model-call');
   const unknown = executionBoundary({ type: 'future-worker' });
   assert.equal(unknown.kind, 'unclassified');
   assert.equal(unknown.requiresModel, null);

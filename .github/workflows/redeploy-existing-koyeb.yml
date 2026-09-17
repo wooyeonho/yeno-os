@@ -1,0 +1,162 @@
+name: Redeploy existing BLACKHOLE Koyeb service
+
+on:
+  push:
+    branches:
+      - codex
+    paths:
+      - .github/redeploy-existing-koyeb-trigger
+
+permissions:
+  contents: read
+
+concurrency:
+  group: redeploy-existing-blackhole-koyeb
+  cancel-in-progress: false
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      KOYEB_TOKEN: ${{ secrets.KOYEB_API_TOKEN || secrets.KOYEB_TOKEN || secrets.YENO_KOYEB_API_TOKEN || secrets.KOYEB_ACCESS_TOKEN }}
+      TARGET_DOMAIN: global-iris-gyeol-98386a17.koyeb.app
+      TARGET_REPOSITORY: wooyeonho/yeno-os
+      TARGET_BRANCH: yeno-koyeb-pilot
+      TARGET_COMMIT: 8ae0924d1bf8d823bf64dcaae74590b0902949bc
+    steps:
+      - name: Confirm a stored Koyeb deployment credential exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${KOYEB_TOKEN:-}" ]; then
+            echo 'KOYEB_CREDENTIAL_AVAILABLE=false'
+            echo 'No supported Koyeb token secret is stored in this repository.' >&2
+            exit 2
+          fi
+          echo 'KOYEB_CREDENTIAL_AVAILABLE=true'
+
+      - name: Install official Koyeb CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
+          echo "$HOME/.koyeb/bin" >> "$GITHUB_PATH"
+          "$HOME/.koyeb/bin/koyeb" version
+
+      - name: Resolve the existing app and service without creating resources
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.koyeb/bin:$PATH"
+          koyeb apps list --token "$KOYEB_TOKEN" --output json > "$RUNNER_TEMP/koyeb-apps.json"
+          python <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+
+          def records(value, keys):
+              if isinstance(value, list):
+                  return value
+              if isinstance(value, dict):
+                  for key in keys:
+                      candidate = value.get(key)
+                      if isinstance(candidate, list):
+                          return candidate
+              return []
+
+          def strings(value):
+              if isinstance(value, str):
+                  yield value
+              elif isinstance(value, list):
+                  for item in value:
+                      yield from strings(item)
+              elif isinstance(value, dict):
+                  for item in value.values():
+                      yield from strings(item)
+
+          target_domain = os.environ['TARGET_DOMAIN']
+          apps = records(json.loads(Path(os.environ['RUNNER_TEMP'], 'koyeb-apps.json').read_text()), ('apps','items','data'))
+          matches = [app for app in apps if target_domain in set(strings(app))]
+          if len(matches) != 1:
+              names = [str(app.get('name','<unnamed>')) for app in apps if isinstance(app,dict)]
+              raise SystemExit(f'Expected one existing app for the target domain, found {len(matches)}. Visible app names: {names}')
+          app = matches[0]
+          app_name = app.get('name')
+          if not isinstance(app_name, str) or not app_name:
+              raise SystemExit('Resolved app has no usable name.')
+
+          result = subprocess.run([
+              str(Path.home()/'.koyeb/bin/koyeb'), 'services', 'list',
+              '--app', app_name, '--token', os.environ['KOYEB_TOKEN'], '--output', 'json'
+          ], check=True, capture_output=True, text=True)
+          service_file = Path(os.environ['RUNNER_TEMP'], 'koyeb-services.json')
+          service_file.write_text(result.stdout)
+          services = records(json.loads(result.stdout), ('services','items','data'))
+          if not services:
+              raise SystemExit('The existing app has no service to redeploy.')
+
+          target_repo = os.environ['TARGET_REPOSITORY'].lower()
+          target_branch = os.environ['TARGET_BRANCH'].lower()
+          ranked = []
+          for service in services:
+              if not isinstance(service, dict):
+                  continue
+              material = '\n'.join(strings(service)).lower()
+              score = (10 if target_repo in material else 0) + (5 if target_branch in material else 0)
+              if str(service.get('status','')).lower() in {'healthy','active'}:
+                  score += 1
+              ranked.append((score, service))
+          ranked.sort(key=lambda item: item[0], reverse=True)
+          best_score = ranked[0][0]
+          best = [service for score, service in ranked if score == best_score]
+          if len(services) == 1:
+              selected = services[0]
+          elif best_score > 0 and len(best) == 1:
+              selected = best[0]
+          else:
+              names = [str(service.get('name','<unnamed>')) for service in services if isinstance(service,dict)]
+              raise SystemExit(f'Refusing to guess among multiple services: {names}')
+          service_name = selected.get('name')
+          if not isinstance(service_name, str) or not service_name:
+              raise SystemExit('Resolved service has no usable name.')
+
+          output = Path(os.environ['GITHUB_OUTPUT'])
+          with output.open('a') as stream:
+              stream.write(f'app={app_name}\nservice={service_name}\n')
+          print(f'EXISTING_APP={app_name}')
+          print(f'EXISTING_SERVICE={service_name}')
+          print(f'EXPECTED_SOURCE_BRANCH={os.environ["TARGET_BRANCH"]}')
+          print(f'EXPECTED_SOURCE_COMMIT={os.environ["TARGET_COMMIT"]}')
+          PY
+
+      - name: Redeploy only the resolved existing service
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.koyeb/bin:$PATH"
+          koyeb services redeploy "${{ steps.target.outputs.service }}" \
+            --app "${{ steps.target.outputs.app }}" \
+            --token "$KOYEB_TOKEN" \
+            --wait \
+            --wait-timeout 12m
+
+      - name: Verify the independent-core asset on public HTTPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://${TARGET_DOMAIN}/autopilot-view.mjs"
+          marker='사용 안 함 · 명시적 호출만'
+          for attempt in $(seq 1 30); do
+            body="$(curl -fsSL --connect-timeout 10 --max-time 25 -H 'Cache-Control: no-cache' "${url}?commit=${TARGET_COMMIT}&attempt=${attempt}" || true)"
+            if grep -Fq "$marker" <<<"$body"; then
+              echo 'LIVE_INDEPENDENT_CORE=verified'
+              echo "LIVE_SOURCE_COMMIT=${TARGET_COMMIT}"
+              printf '%s' "$body" | sha256sum
+              curl -fsSL --connect-timeout 10 --max-time 25 -o /dev/null -w 'homepage_http=%{http_code}\n' "https://${TARGET_DOMAIN}/"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo 'Redeployment completed but the verified independent-core asset is not visible on public HTTPS.' >&2
+          exit 1

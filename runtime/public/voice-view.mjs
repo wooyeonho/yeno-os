@@ -154,7 +154,13 @@ export function createVoiceView(root, {onSend, onReadResult} = {}) {
     turn.accepted = true; stagedTurn = null;
     pending = {id,speak:turn.audioToken === audioEpoch && read.checked,handled:false}; lastQuestion = turn.question;
     if (input.value.trim() === turn.question) input.value = '';
-    status = '접수했습니다. 실제 결과를 기다리고 있습니다.';
+    // Homunculus already decided by the time the receipt comes back (decide.mjs
+    // ran server-side before the quest job was even created) - announce the
+    // choice and its reason immediately, separately from the eventual result.
+    if (receipt.decision?.announcement) {
+      status = receipt.decision.announcement;
+      if (pending.speak) speakAnswer(receipt.decision.announcement, false);
+    } else status = '접수했습니다. 실제 결과를 기다리고 있습니다.';
     if (receipt.job) void receive(receipt.job);
     else { const job = (state.jobs || []).find(item => item.id === id); if (job) void receive(job); }
     render(); return true;

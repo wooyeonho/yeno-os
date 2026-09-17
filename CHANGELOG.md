@@ -1,3 +1,98 @@
+# 2026-09-15 — 실제 브라우저 모바일 viewport 검증이 실제 버그 2건을 잡아냈다
+
+- **지적된 문제**: `growth-ui.test.mjs`의 "생성된 HTML에 고정 px 폭이 없다" 검사는 실제 viewport 시험이 아니었다 — jsdom에는 CSS 레이아웃 엔진이 없어, 실제 `cockpit.css`(고정 픽셀 그리드 트랙과 실제 `@media(max-width:650px)` 분기점을 쓴다)가 실제로 좁은 휴대폰 화면 안에 성장 화면을 담아내는지 확인할 수 없었다.
+- **신규**: `scripts/verify-mobile-viewport.mjs` — 실제 Chromium(Playwright), 실제 서버, 실제 `index.html`/`app.js`/`growth-view.mjs`/`cockpit.css`를 실제 **360×800**·**412×915** 뷰포트에서 확인한다. 실제 페어링 폼으로 로그인하고, 실제 목표를 저장하고, 실제 성장 탭을 열어 가로 스크롤 없음, 모든 필수 영역의 실제 렌더 영역 존재, 세로 스크롤로 도달 가능, 전체 멈춤 버튼의 실제 터치 영역 크기, 650px 분기점이 실제로 계산된 padding을 바꾸는지까지 확인한다.
+- 이 시험이 `growth-view.mjs` 자체의 레이아웃을 검사하기도 전에 실제 버그 2건을 찾아냈다:
+  1. **이 브랜치와 무관한 기존 버그**: `autopilot-view.mjs`가 `autopilot-view-engine.mjs`를 import하는데, 이 파일이 `server.mjs`의 기본 거부 정적 파일 허용 목록에 한 번도 등록된 적이 없었다 — 실제 브라우저는 이 파일에서 404를 받고 전체 동적 import 체인이 실패해, 앱 전체가 페어링 화면을 넘어서지 못했다. 기존 jsdom 기반 UI 시험(`scripts/verify-web-ui.mjs`)은 `app.js`를 esbuild로 먼저 번들링해 이 import를 인라인시키므로 실제 HTTP 요청이 전혀 발생하지 않아 지금까지 발견되지 못했다. **수정 완료.**
+  2. **이번 브랜치의 버그**: `growth-view.mjs`의 "지금 하는 일" 영역이 `.cockpit-hero`(자동 운영 탭의 core-orbit 시각 요소와 짝을 이루는, 고정 290px 트랙을 가진 2열 그리드)를 단일 콘텐츠에 재사용했다 — 그리드 항목이 하나뿐이면 그 항목이 첫 트랙 폭에 갇힌다. 같은 화면의 다른 영역이 이미 쓰던 단순 박스 클래스 `.cockpit-mind`로 바꿔 **수정 완료.**
+- 실제 red→green 사이클로 확인했다: `.cockpit-hero` 수정을 되돌리고 시험을 다시 실행하면 "`.cockpit-hero`를 재사용하면 안 된다"는 명시적 단언에서 실패하고, 수정을 복원하면 다시 통과한다.
+- 이 회귀 방지의 빠른 절반(`.cockpit-hero`가 이 화면 마크업에 다시는 나타나지 않는지 확인하는 결정적 검사)은 `runtime/test/growth-ui.test.mjs`에도 추가해 기존의 강화된 Docker CI 샌드박스 안에서도 항상 실행되도록 했다. 실제 브라우저 스크립트 자체는 그 샌드박스(`workers/developer/Verification.Dockerfile`, `--network none --cap-drop ALL --read-only`)에서 실행하지 않는다 — 그 샌드박스에는 브라우저 바이너리가 없고 시험 단계에는 그것을 내려받을 네트워크도 없다. 이 저장소의 다른 CI 샌드박스 UI 검사들이 이미 실제 브라우저 대신 jsdom을 쓰는 이유, 그리고 `apps/controller/verify-ui.mjs`가 마찬가지로 Docker 샌드박스 밖에서 실행되는 이유와 같다. 그 특정 강화 이미지에 실제 브라우저를 넣는 것은 별도의, 보안과 직결된 인프라 결정(이미지 크기 증가, `--cap-drop ALL`/`--read-only`와의 호환성 미검증 — 이 조합을 시험할 Docker 데몬이 이 세션에는 없었다 — 그리고 이 프로젝트 자신이 선언한 능력 목록이 이미 `browserAutomation:false`라고 명시하고 있다는 점)이므로 이번 커밋에서 임의로 내리지 않았다. `npm run verify:mobile`로 직접 실행한다.
+- `apps/controller`의 devDependency로 `playwright`를 추가했다(기존 `jsdom`과 같은 위치). `apps/controller/package-lock.json`은 `npm`으로 재생성했다(직접 편집하지 않음).
+- 전체 회귀: 로컬 521개 중 493 통과, 21 실패(이전과 동일한 QuickJS/WASM·`URLPattern` 환경 한계), 7 건너뜀 — 신규 회귀 없음. 기존 CI 샌드박스 UI 검사(`verify-web-ui.mjs`, `verify-research-ui.mjs`) 모두 정적 파일 허용 목록 수정 이후에도 그대로 통과.
+- 이 커밋에 대한 실제 GitHub Actions 검증: run `34911108907`, head `38bff700b8bab0a625dbf55cd723cbe91542465b`, conclusion success, artifact `10374632492` / SHA-256 `f103da99eeb44819526eaf8795e565b5f8cbc9053843d6006722c3092a215813`.
+
+# 2026-09-14 — 휴대폰 성장 화면: 현재 퀘스트·호문쿨루스 판단·커비 등급·장부를 한 화면에서
+
+- **신규**: `runtime/public/growth-view.mjs`를 추가하고 기존 폰/PWA 조종석(`app.js`/`index.html`)에 "성장" 탭으로 연결했다. 단일 인수 시나리오가 요구한 한 화면 구성 — 현재 퀘스트, 호문쿨루스가 그 퀘스트를 고른 이유(우세 동기 + 성공 기준), 커비의 기능·코드 스킬과 실제 E→D→C→B→A→S 등급, 소유자 확인이 필요한(멈춤 상태) 목표, 부·명예·인지도 장부, 전체 멈춤 상태 — 를 한 화면에서 확인한다.
+- 다른 `*-view.mjs`와 동일하게 순수 표시 모듈이다(`createGrowthView({root,onNavigate,storage})` → `{updateState(state,questData),reset(),destroy()}`) — 자체 fetch나 변경 요청이 없다. 표시하는 모든 값은 이미 존재하는 `/api/state`·`/api/quests` 응답에서만 가져오며, 지어낸 레벨·경험치·퍼센트는 없다. 유일한 클라이언트 계산인 "새로 확인"/"승급" 배지도 이 브라우저가 그 기능 id에 대해 마지막으로 본 등급과의 실제 비교일 뿐, 추정한 최근성 기준이 아니다(앱이 이미 쓰던 기기별 scoped storage에 저장).
+- `runtime/server.mjs`의 기본 거부 정적 파일 허용 목록에 `/growth-view.mjs`를 명시적으로 추가했다.
+- **자동시험**: `runtime/test/growth-ui.test.mjs` — 기존 `*-ui.test.mjs` 관례와 동일한 jsdom 단위 시험 8건(실제 퀘스트/결정 표시와 정직한 빈 상태, 동기별 사유, 스킬 이름 해석과 등급 배지, 새로 확인/승급 배지의 실제 diff 로직, 멈춤 퀘스트 처리, XSS 안전한 장부 표시, 전체 멈춤 표시, 고정 픽셀 폭을 쓰지 않는지 확인 — 이 컨테이너에서는 실제 물리 폰·브라우저 뷰포트 검증이 불가능하므로 좁은 화면을 실제로 깨뜨릴 수 있는 유일한 요소인 고정폭 하드코딩을 대신 검사했다) + 실제 HTTP API 왕복 시험 1건(퀘스트 실행 → 실제 성과 기록 → 커비의 `ledger-digest` 자동 흡수 → 실제 `/api/state`·`/api/quests` 응답으로 화면 렌더 → **실제 서버 재시작** 후에도 같은 성장 증거가 그대로 표시되는지 확인).
+- 전체 회귀: 로컬 520개 중 492 통과, 21 실패(기존과 동일한 QuickJS/WASM 샌드박스·`URLPattern` 환경 한계), 7 건너뜀 — 신규 회귀 없음. (`apps/controller`의 devDependency인 jsdom을 로컬에 설치해 보니 그동안 여기서 "환경 한계"로 실패해 온 다른 UI 시험 4개도 모두 통과했다 — 이 커밋의 신규 시험과 같은 결과다.)
+- 이 커밋에 대한 실제 GitHub Actions 검증: run `34908740990`, head `aa592fba3752ac19b000fddb66729904570a2107`, conclusion success, artifact `10373872176` / SHA-256 `23c3ef22307543967e08505ea60152b7d4a458234aaa2115a683efc7c4a3a2aa`. 네트워크 없는 읽기 전용 비루트 컨테이너에서 전체 회귀·개발 워커 시험이 통과했다.
+
+# 2026-09-14 — 커비 자동 흡수 첫 조각: 실제 갭 탐지 → 원본 가져오기 → 격리 시험 → 활성화
+
+- **신규**: `runtime/lib/kirby.mjs`. 지금까지 모든 기능은 소유자가 직접 `import`→`verify`→`activate`를 호출해야 등록됐다(부팅 시 기본 등록되는 `evidence-gap-brief`/`failure-triage` 2종 제외). 이번 조각은 커비가 **실제 근거**를 보고 스스로 새 기능을 흡수하게 한다 — 목표 문장이나 모델 호출로 후보를 지어내지 않는다: 갭은 오직 이미 저장된 부·명예·인지도 장부에 숫자 측정값을 가진 `outcome` 기록이 존재하고, 그것을 정리해 줄 저장소에 이미 검토된 원본(`runtime/capabilities/ledger-digest.json`, 필터·정렬·행 제한만 실행하는 선언형 기능)이 아직 활성화되지 않았을 때만 성립한다.
+  - `detectLedgerDigestGap(state, manifest)`: 숫자·음수 아닌 측정값을 가진 실제 outcome 개수를 근거로 갭을 정직하게 보고한다(이미 활성화됐으면 `null`).
+  - `autoAcquireCapability(registry, manifest)`: 기존 `capabilities.mjs`의 `importCapability`→`verifyCapability`(모든 fixture를 실제로 재실행하는 결정적·네트워크 없는 격리 시험)→`activateCapability`를 그대로 재사용한다. fixture 시험에 불합격하면 그 버전은 가져온 채 비활성 상태로 정직하게 남고(시도했다는 기록은 지워지지 않는다) 활성화되지 않는다 — 이 비활성 상태 자체가 복구 경로이며, 별도의 롤백 처리가 필요 없다.
+- `runtime/server.mjs`: `POST /api/outcomes`(실제 장부 근거가 생기는 시점) 직후 `kirbyAutoAcquire()`를 호출한다. 흡수에 성공하거나 실패해도 `event()` 로그와 응답의 `kirbyAcquisition` 필드로 정직하게 보고한다. `capabilityCandidates()`에도 `ledger-digest` 후보를 추가해, 활성화된 뒤에는 `failure-triage`/`evidence-gap-brief`와 동일하게 자율 루프의 동기 채점 대상이 되도록 `runtime/lib/autopilot.mjs`의 허용 목록에도 추가했다.
+- **자동시험**: `runtime/test/kirby.test.mjs` — 순수 함수 단위 시험 6건(갭 없음/있음, 성공 흡수, fixture 불합격 시 비활성 유지, 흡수 후 멱등성) + 실제 HTTP API로 처음부터 끝까지 왕복하는 통합 시험 1건(퀘스트 실행 → 실제 outcome 기록 → 커비가 자동으로 `ledger-digest`를 가져오고 시험하고 활성화 → 그 기능을 실제로 실행 → 성장 등급 `D` 확인 → 두 번째 outcome은 이미 활성화돼 있어 흡수가 다시 일어나지 않음 확인 → **실제 서버 재시작** 후에도 활성 상태와 등급이 그대로 유지).
+- 전체 회귀: 로컬 498개(기존 491 + 신규 7) 중 466 통과, 25 실패(이전과 완전히 동일한 사전 환경 한계 — QuickJS/WASM 샌드박스, 실제 브라우저가 필요한 UI DOM 시험, `URLPattern` 전역 누락), 7 건너뜀 — 신규 회귀 없음.
+- 이 커밋에 대한 실제 GitHub Actions 검증: run `34881793245`, head `f0be513218ee4b02c81667f36cdacb4aff107802`, conclusion success, artifact `10362748462` / SHA-256 `095dcb02e9b0353e3d736517f0869474868d0e86707ca801fa17c9a39e73c54d`. 네트워크 없는 읽기 전용 비루트 컨테이너에서 전체 회귀·개발 워커 시험이 통과했다.
+
+# 2026-09-14 — 휴대폰 단일 인수 시나리오: "정해줘" 음성 명령이 실제 호문쿨루스 판단·자비스 실행·커비 재사용·성장 등급·재시작 보존까지 왕복하는 자동시험
+
+- **신규**: `runtime/lib/decide.mjs`의 `decideQuest(state, at)`가 "지금 가장 먼저 해야 할 일을 정해줘" 음성 명령을 실제 호문쿨루스 일곱 동기 채점(`motivation.mjs`의 `rankMotivatedCandidates`, 기존 자율 루프가 쓰던 바로 그 함수)에 연결한다. 후보는 오직 이미 `POST /api/quests`로 저장된 `status:'proposed'` 목표뿐이다 — 없는 목표를 지어내지 않는다. 신호는 목표 레코드 자신의 검증된 필드에서만 뽑는다: 결과물이 아직 없으면(`assetGap`), 저장된 기준값이 기본값(`기준값 미측정`)이면(`verificationGap`), 호출 상한 대비 예상 호출 비율(`estimatedCalls`).
+- `runtime/server.mjs`: `POST /api/voice`가 이 정해줘류 문장을 감지하면(`isDecideRequest`, 좁게 고정된 문구 3개) 일반 자유 텍스트 모델 호출로 새지 않고 바로 `decideAndRunQuest()`를 호출한다 — 결정된 목표를 기존 `runQuest()` 그대로 실행하고, 선택 이유(우세한 동기 이름·성공 기준을 담은 완성 문장)를 `decision.announcement`로 함께 돌려준다. 결정할 후보가 없으면 조용히 실패하지 않고 기존 대화 경로로 넘어가(모델이 "저장된 목표가 없다"고 정직하게 답하도록) 자연스럽게 대체한다. `GET /api/quests`에도 `decision` 필드로 같은 판단을 실시간 노출한다(저장하지 않고 매번 다시 계산 — 기존 자율 루프의 `mind` 패널과 같은 방식).
+- `runtime/public/voice-view.mjs`: `acceptReceipt`가 `decision.announcement`를 받으면 결과가 도착하기 전에 먼저 그 문장을 읽는다 — "왜 이 일을 골랐는지"를 결과 보고와 분리된 별도 발화로 전달한다.
+- **자동시험**: `runtime/test/phone-acceptance.test.mjs`가 연호님이 지정한 인수 시나리오를 실제 서버·실제 HTTP API로(폰 브라우저가 쓰는 것과 같은 경로) 왕복 확인한다 — ① 서로 다른 근거 공백을 가진 목표 2개 저장 ② "정해줘" 음성 명령 → 실제로 더 큰 공백을 가진 목표가 선택되고 이유가 함께 돌아옴 ③ 자비스가 해당 목표를 실행해 실제 다운로드 가능한 결과 생성 ④ 커비의 선언형 기능(`evidence-gap-brief`, 부팅 시 기본 등록)을 서로 다른 입력 2건으로 실제 실행 ⑤ `GET /api/state`의 `growth.capabilities`가 그 기능을 정확히 `C` 등급으로, 건드리지 않은 다른 기능은 `E` 등급으로 보고 ⑥ 결과물에 부·명예·인지도 장부 항목 기록 ⑦ **실제 서버 재시작** 후 목표 상태·성장 등급·장부 항목이 모두 그대로 유지되는지 확인. 두 번째 시험은 저장된 목표가 없을 때 "정해줘"가 판단을 지어내지 않고 일반 대화로 자연스럽게 넘어가는지 확인한다.
+- **이 시험이 다루지 않는 것(정직하게 범위 밖으로 표시)**: 실제 마이크·스피커·물리 휴대폰(이 컨테이너에는 없다 — 브라우저 음성 I/O 자체는 `voice-view.mjs`에 이미 있고 이번 변경으로 건드리지 않았다), 코드 실행형 커비(`code-workshop.mjs`)의 QuickJS 샌드박스 경로(이 컨테이너에서 계속 실패하는 기존 25개 환경 한계 중 하나이므로 새 시험에서 의도적으로 피하고 선언형 커비로 같은 성장 등급 메커니즘을 증명했다), 능력이 없을 때 커비가 **자동으로** 후보를 탐색·등록하는 것(이번 시험은 부팅 시 이미 등록된 기능을 재사용했을 뿐 — 자동 발견은 아직 구현되지 않았다).
+- 전체 회귀: 로컬 491개 중 459 통과, 25 실패(이전과 완전히 동일한 사전 환경 한계), 7 건너뜀 — 신규 회귀 없음.
+- 이 커밋에 대한 실제 GitHub Actions 검증: run `34862113226`, head `8ad757a8cf58d16dc0483305e8cbc279bf6d98af`, conclusion success, artifact `10355187966` / SHA-256 `56dad8ff09b790a7a35143869325910d230f461dcd1d71edcf948cb507187820`. 네트워크 없는 읽기 전용 비루트 컨테이너에서 전체 회귀·개발 워커 시험이 통과했다.
+
+# 2026-09-14 — E→D→C→B→A→S 성장 엔진의 첫 조각: 정직하게 계산되는 등급, 정직하게 막히는 등급
+
+- **신규 (부분)**: `runtime/lib/growth.mjs`를 추가했다. `capabilities.mjs`/`code-workshop.mjs` 레지스트리(둘 다 `{entries:[{id,versions,activeHash,previousHash}], history:[{at,action,id,hash,runId,inputSha256,outputSha256}]}` 형태를 공유한다)를 읽어 각 기능에 E→D→C→B→A→S 등급을 매긴다. 판정은 오직 레지스트리 자신의 검증기가 이미 보장하는 사실만 사용한다 — 주장이나 추정은 쓰지 않는다.
+  - **D**: 활성화(시험 통과)된 버전이 실제로 `run` 이력을 최소 1건 가지고 있어야 한다. fixture 시험(가져올 때 고정된, 나중에 바꿀 수 없는 서로 다른 입력 ≥2개)이 "독립 검수" 역할을 한다.
+  - **C**: `run` 이력의 `inputSha256`이 서로 다른 것이 2건 이상이어야 한다 — **동일 입력을 재실행한 것은 재사용으로 인정하지 않는다.**
+  - **B("조합과 복구")**: 복구(롤백 이후 실제 재실행)는 이력으로 확인 가능해 실제로 검사한다. 그러나 다른 기능과의 조합은 현재 `capabilities.mjs`/`code-workshop.mjs` 어디에도 기록되는 필드가 없다 — 그래서 B는 **항상 막힘**으로 보고하고, 이유도 "조합 사용을 기록하는 구조가 아직 없습니다"라고 정확히 표시한다. 복구만 증명되고 조합이 없는 경우와, 애초에 복구조차 없는 경우를 구분해서 이유를 다르게 낸다.
+  - **A("낮은 개입 반복 운영")**: 실행마다 필요했던 소유자 개입 횟수를 기록하는 구조가 없어 **항상 막힘**.
+  - **S("실제 지표 우세와 고객 가치")**: `runtime/lib/quests.mjs`의 부·명예·인지도 장부는 `verification:'self_reported'`만 지원하고 `externallyVerified`는 항상 0으로 고정돼 있다(기존 코드) — 외부 검증 경로가 아예 없으므로 S는 **항상 막힘**. 이는 버그가 아니라 지금 시스템이 실제로 증명할 수 없는 것을 정직하게 드러낸 것이다.
+  - `runtime/server.mjs`의 `/api/state`에 `growth:{capabilities,code}` 필드로 연결했다(`growthState()`). 실제로 기본 내장된 커비 기능 2종(`evidence-gap-brief`, `failure-triage`)을 실제 서버로 기동해 확인한 결과, 둘 다 시작 시 자동 활성화만 됐을 뿐 아직 한 번도 실행되지 않아 정확히 `E`, "활성화 이후 실제 실행 기록이 없습니다"로 표시됐다 — 합성 픽스처가 아니라 실제 기본 상태에서 확인했다.
+  - `runtime/test/growth.test.mjs`(8개): E→D 전이, 동일 입력 재사용 거부, D→C 전이, B가 복구만으로는 열리지 않음, A/S가 어떤 증거를 넣어도 열리지 않고 그 이유를 정확히 보고함, `growthOverview`의 등급별 집계.
+- **아직 하지 않은 것 (범위 밖)**: 이건 "휴대폰에서 자비스에게 말하면 호문쿨루스가 목표를 고르고 커비가 능력을 처리하고 성장 엔진이 판정하고 앱을 다시 열어도 유지되는" 단일 인수 시나리오의 여러 조각 중 성장 등급 계산 하나일 뿐이다. 폰 네이티브 자비스 경험, 호문쿨루스의 목표 선정·충돌 조정을 보여주는 화면, 커비의 "보유 스킬 목록" UI, 기능 간 조합 추적, 실행별 개입 횟수 추적, 장부의 외부 검증 경로는 전부 별도로 필요하다.
+- 전체 회귀: 로컬 484개 중 452 통과, 25 실패(이전과 완전히 동일한 사전 환경 한계), 7 건너뜀 — 신규 회귀 없음.
+- 이 커밋에 대한 실제 GitHub Actions 검증: run `34860885679`, head `a4955b51bba98fce13c4e5194584f8f444c31ad9`, conclusion success, artifact `10353909485` / SHA-256 `02a74c09cff67a1ec2cd7eb27051acef40226b744ab314e67949c53857e22457`. 네트워크 없는 읽기 전용 비루트 컨테이너에서 전체 회귀·개발 워커 시험이 통과했다.
+
+# 2026-09-13 — evidence 보고 실패의 정합성 확보, docker-verified 라벨 정확성 수정
+
+- **버그 수정 (정합성)**: `workers/developer/cli.mjs`의 `reportEvidence()`가 코어 전송 실패를 `console.error` 경고만 남기고 삼켜, Docker 검증이나 GitHub 승격/롤백이 실제로 성공한 뒤 evidence 보고만 실패해도 CLI가 성공으로 종료했다. 같은 저널을 다시 실행해도 이미 끝난 작업(`runDeveloperTask`가 조기 반환)이라 `core.lastJobId`가 다시 설정되지 않아 실패한 evidence가 자동 재전송되지 않았다 — 외부 저널과 코어 상태가 영구히 어긋날 수 있었다.
+  - `workers/developer/gateways.mjs`에 `reportEvidenceDurably(core, jobId, evidence, pendingPath, signal)`를 추가했다. 전송에 실패하면 `{jobId, evidence}`를 `<record>.evidence-pending.json`에 원자적으로 기록하고, 성공하면 그 파일을 지운다. `mergeDeveloperEvidence`는 이미 접수된 사실의 재전송을 그대로(모순 없이) 받아들이므로, "요청은 갔는데 응답을 못 받은" 모호한 실패도 안전하게 재시도할 수 있다.
+  - `cli.mjs`의 `run` 모드는 이제 `core.lastJobId`가 이번에 새로 설정되지 않았어도 저널에 이미 저장된 `jobId`를 읽어 evidence 재전송을 시도한다 — 같은 `--journal`로 재실행해도 모델·Docker·GitHub 작업은 반복하지 않고(저널이 이미 종료 상태면 `runDeveloperTask`가 그대로 조기 반환) evidence만 다시 보낸다. `promote`/`rollback`도 evidence 보고 실패 시 exit code 1로 종료해 "GitHub 쓰기는 성공했지만 코어에 안 알려짐" 상태를 명시적으로 드러낸다(단, 이미 성공한 GitHub 쓰기 자체는 절대 반복하지 않는다).
+  - 별도 `sync-evidence --pending <path>` 명령을 추가했다. Docker나 GitHub를 전혀 건드리지 않고 parked evidence만 재전송한다 — `run`/`promote`/`rollback` 재실행이 아닌 경로로도 정합화할 수 있다.
+  - `workers/developer/gateways.test.mjs`에 `reportEvidenceDurably`의 실패→park→재전송→정리 경로와, park된 evidence를 그대로 재전송하는 것이 `mergeDeveloperEvidence`에서 충돌이 아니라 멱등 처리됨을 확인하는 시험을 추가했다.
+- **버그 수정 (라벨 정확성)**: `developerEvidenceStatus`가 `attempts.some(a=>a.passed)`만으로 `docker-verified`를 판정해, `isolation`이 `'synthetic-test-adapter'`(테스트용 가짜 러너)여도, 혹은 `patchSha256`이 아직 `null`이어도 진짜 Docker 검증과 동일하게 표시됐다. `docker-verified`는 이제 (1) 통과한 시도 중 `isolation === 'docker-no-network'`인 것이 있고 (2) `patchSha256`이 채워져 있을 때만(그 값은 `/api/developer/evidence`에서 이미 코어의 실제 저장 아티팩트 해시와 대조됨) 반환한다. 그 밖의 통과(가짜 어댑터, 또는 해시가 아직 없는 경우)는 새 상태 `test-adapter-verified`로 구분해, 소유자가 실제로 승격 판단에 쓸 수 있는 라벨과 시험용 라벨이 절대 섞이지 않게 했다.
+  - `runtime/test/repository-patch.test.mjs`에 회귀 시험을 추가하고, `workers/developer/core-integration.test.mjs`의 synthetic 경로(진짜 Docker가 아님을 스스로 명시하는 어댑터) 기대값을 `test-adapter-verified`로 바로잡았다(`DEVELOPER_DOCKER_REQUIRED=1`로 실행되는 실제 Docker 경로는 여전히 `docker-verified`를 기대한다).
+- 전체 회귀: 로컬 476개 중 444 통과, 25 실패(이전과 완전히 동일한 사전 환경 한계 — WASM 샌드박스·UI DOM·Node 네이티브 전역 부재), 7 건너뜀. `npm run test:developer` 78개 중 75 통과, 3 건너뜀(로컬 Docker 부재).
+- 이 커밋에 대한 실제 GitHub Actions 검증: run `34779646920`, head `976eb0df9f084ede491ec5ac033bc87ab2075bc9`, conclusion success, artifact `10324741353` / SHA-256 `c7f3a52de58addf02911f0dff5b8dcceaca8da0006287c617ab2b07134bc2651`. 네트워크 없는 읽기 전용 비루트 컨테이너에서 실패→1회 수리→재시험 경로를 포함한 실제 Docker 시험이 이번에도 통과했다.
+
+# 2026-09-13 — runtime/public 잠금, evidence 실제 연결과 신뢰 경계 수정
+
+- **보안 수정**: `runtime/public/`도 `runtime/lib/`과 같은 기본 거부형 허용 목록(`ALLOWED_PUBLIC_FILES`, 현재 빈 목록)으로 바꿨다. 이전 수정은 `runtime/lib/`만 잠갔고 `runtime/public/`은 여전히 전체 허용이어서, 모델 패치가 브라우저에 그대로 서빙되는 `app.js`·`web-client.mjs`·`device-connect.mjs`·`sw.js` 등을 바꿔 승인 버튼의 실제 동작이나 인증된 세션의 요청 대상을 변조할 수 있었다. Docker 시험의 `--network none`은 배포 후 브라우저에서 실행되는 JS와는 무관하다.
+- **연결**: `POST /api/developer/evidence`가 라우트만 있고 실제로 호출하는 코드가 없었다. `workers/developer/gateways.mjs`에 `CoreGateway.reportEvidence()`와 (run() 저널에서 evidence를 만드는) `dockerEvidenceFrom()`을 추가하고, `workers/developer/cli.mjs`의 `run`/`promote`/`rollback` 각 단계가 끝날 때마다 이를 자동 호출하도록 연결했다. `core-integration.test.mjs`에 실제 HTTP 코어에 대해 이 경로를 그대로 실행하는 검사를 추가했다 — 검사 코드가 evidence 객체를 직접 만들어 API를 호출하는 대신, CLI가 실제로 실행하는 함수를 그대로 호출한다.
+- 이 과정에서 별도의 실제 버그를 발견해 수정했다: 코어가 패치 아티팩트를 `JSON.stringify(patch, null, 2)`(들여쓰기 포함)로 저장했지만, 워커와 GitHub 게이트웨이는 어디서나 들여쓰기 없는 `JSON.stringify(patch)`로 `patchSha256`을 계산하고 있어 evidence의 patchSha256 검증이 실제로는 항상 실패하는 상태였다. 코어의 저장 형식을 들여쓰기 없는 쪽으로 맞췄다.
+- **신뢰 경계 강화**: (1) `/api/developer/evidence`는 소유자 pairing 토큰 또는 `platform:'developer-worker'`로 등록한 기기만 호출 가능(일반 브라우저·다른 기기는 403). (2) 신고된 `patchSha256`을 코어가 실제로 저장한 아티팩트 SHA-256과 대조. (3) `attempts[].passed`는 신고값을 그대로 믿지 않고 `exitCode===0 && !timedOut && !outputOverflow`에서 코어가 직접 계산 — 모순된 조합(`exitCode:1, timedOut:true, passed:true` 등)을 구조적으로 통과시키던 문제를 막았다.
+- **버그 수정**: `mergeDeveloperEvidence`가 `patchSha256`·`candidateCommit`을 항상 완전히 동일해야 한다고 요구해, 실제 워커 순서(Docker 검증 완료 시점엔 이 값들이 아직 없고, GitHub 후보 생성 이후에야 채워짐)에서 두 번째 보고가 무조건 `evidence_conflict`로 거부됐다. null → 값 채움은 허용하고, 값이 채워진 뒤에만 그 값을 고정하도록 고쳤다. 또한 두 번째 보고부터는 전체 evidence가 아니라 **새 사실만 담은 부분 패치**를 보낼 수 있도록 계약을 바꿔, 서로 다른 시점에 실행되는 별도 프로세스인 `promote`/`rollback` CLI 명령이 원래 저널 전체를 다시 알 필요가 없게 했다.
+- **버그 수정**: 롤백 evidence 스키마가 `rollback.sourceCommit === promotion.sourceCommit`을 요구했지만, 실제 `approveRollback()`은 되돌리는 대상과 다른 **새 forward-revert 커밋**을 반환한다 — 즉 실제 롤백은 항상 이 검사에 걸려 거부됐을 것이다. `{rollbackCommit, revertedPromotionCommit}`로 필드를 분리하고 `rollbackCommit !== revertedPromotionCommit`, `revertedPromotionCommit === promotion.sourceCommit`을 요구하도록 고쳤다.
+- 전체 회귀: 로컬 475개 중 443 통과, 25 실패(이전과 완전히 동일한 사전 환경 한계), 7 건너뜀. `npm run test:developer` 75개 중 72 통과, 3 건너뜀(로컬 Docker 부재).
+- 이 커밋에 대한 실제 GitHub Actions 검증: run `34758673800`, head `b15dd8732a780babdf97fbcfac8e48d69158cf07`, conclusion success, artifact `10318068791` / SHA-256 `8bedd52c681cc4e837bd0cae06c5909b29e70df20448c1e193a5d00901f5bf83`. 이번에도 네트워크 없는 읽기 전용 비루트 컨테이너에서 실패→1회 수리→재시험 경로를 포함한 실제 Docker 시험이 통과했다.
+
+# 2026-09-13 — 저장소 편집 허용 목록 보안 수정과 Docker 검증 기록 정정
+
+- **보안 수정**: `runtime/lib/repository-patch.mjs`의 `editablePath()`가 `runtime/lib/` 아래 파일을 차단 목록(`PROTECTED`) 방식으로 걸러 실제로는 최신 `agent-engine.mjs`, `independent-core.mjs`/`independent-core-engine.mjs`, `job-view-engine.mjs`, `provider-config-engine.mjs`, `motivation.mjs`, `quests.mjs`, `capabilities.mjs`가 목록에서 빠져 있었다. 즉 모델이 작성한 패치가 모델 호출 방화벽·호문쿨루스 평가식·부명예인지도 장부 판정·기능 검증 로직을 직접 수정할 수 있는 상태였다. `runtime/lib/`을 기본 거부형 허용 목록(`ALLOWED_LIB_FILES`, 현재 빈 목록)으로 바꿔 신설 파일을 포함한 모든 `runtime/lib/*`가 개별 검토 전까지 기본 차단되도록 했다. 위 7개 파일과 임의의 미래 파일(`runtime/lib/future-policy.mjs`)을 거부하는 회귀 시험을 추가했다.
+- `POST /api/developer/evidence`를 추가해 신뢰 개발 호스트가 실제로 확인한 Docker 시험 결과·후보 커밋·GitHub Draft PR·CI 실행 결론·소유자 승인·승격/롤백 커밋을 코어 상태(`job.developerEvidence`)와 암호화 백업에 되돌린다. `mergeDeveloperEvidence`는 이미 접수된 사실을 이후 제출로 뒤집거나 지울 수 없게 하고, `developerEvidenceStatus`는 `repositoryPlan.executionStatus`를 `patch-drafted → docker-failed|docker-verified → awaiting-ci → awaiting-approval → approved → promoted → rolled-back`로 명확히 구분해 패치 초안과 실제 검증 완료를 더 이상 같은 상태로 섞지 않는다.
+- **기록 정정**: 앞선 통합 커밋의 "Docker 기반 시험 미수행" 기록은 부정확했다. 실제로는 PR #4의 GitHub Actions `verify` 잡이 진짜 Docker(네트워크 없는 읽기 전용 비루트 컨테이너, `DEVELOPER_DOCKER_REQUIRED=1`)로 실패→1회 수리→재시험 경로를 포함해 통과했다: run `34755163501`, head `80f7574d869cab970a93ed1a32bf82b3e325d6f6`, conclusion success, artifact `10316922073` / SHA-256 `07c5ccdeda4b46353f5a7cd9eb4336f2f36ea4ae1f4856aed1097ee4eb05f1af`. 이 세션의 로컬 컨테이너에는 Docker가 없어 관련 3개 시험만 로컬에서 skip된다.
+- `codex`와 배포 브랜치 `yeno-koyeb-pilot`의 트리가 이미 다르므로(`254b4515...` vs `d55420d5...`) 첫 실제 승격은 기존 `production_base_tree_mismatch` 안전 조건에 그대로 막힌다. 이 조건은 약화하지 않았다 — 대신 운영 트리를 먼저 수동으로 정렬해야 한다는 필요조건으로 AGENTS.md에 남겼다.
+- 전체 회귀: 로컬 466개 중 434 통과, 25 실패(모두 기존 환경 한계 — WASM/QuickJS 샌드박스, Node 24 전용 전역 객체 부재 — 로 이전과 완전히 동일), 7 건너뜀. `npm run test:developer` 65개 중 62 통과, 3 건너뜀(로컬 Docker 부재; CI에서는 위 run에서 실제로 통과).
+
+# 2026-09-13 — 저장소 개발 워커를 독립 코어에 통합
+
+- `blackhole/developer-worker-20260913`(PR #2)의 저장소 패치 작업자(`runtime/lib/repository-patch.mjs`, `workers/developer/*`)를 최신 `codex` 기준으로 다시 연결했다. PR #2 이후 `agent.mjs→agent-engine.mjs`, `job-view.mjs→job-view-engine.mjs`, 그리고 새 `independent-core(-engine).mjs` 모델 호출 방화벽이 추가돼 있어 단순 병합이 아니라 새 위치에 다시 연결했다.
+- 저장소 패치 작업(`job.repositoryTask`)을 `independent-core-engine.mjs`에서 코드 생성·수리와 같은 `development-model-call`로 분류해, 배경 자동 실행이 아닌 명시적 개발 요청에서만 모델을 호출하도록 했다.
+- `blackhole/`(별도 실험용 Seven Drives MVP, PR #3)는 이번 통합에 포함하지 않았다. 같은 `codex` 코어에 이미 더 엄격한 wealth/honor/fame 장부(`runtime/lib/quests.mjs`)와 해시·픽스처 기반 코드/기능 검증·승급 체계(`runtime/lib/capabilities.mjs`, `runtime/lib/code-workshop.mjs`)가 있어, PR #3의 자체 서버·상태 파일·자기신고형 boolean 검증 코드를 옮기면 오히려 더 약한 두 번째 BLACKHOLE가 생긴다고 판단했다.
+- Node 24 로컬 회귀: 기존 `npm test`(Docker 불필요) 전체와 신규 `runtime/test/repository-*.test.mjs`, `workers/developer/gateways.test.mjs`를 실행했다. `workers/developer/worker.test.mjs`·`core-integration.test.mjs`의 실제 Docker 필요 검사(`DEVELOPER_DOCKER_REQUIRED=1`)는 이 환경에 Docker가 없어 실행하지 못했다.
+- Koyeb 운영 배포, GitHub 실제 승격, 실제 유료 모델 호출은 이번 통합에서 수행하지 않았다. `yeno-koyeb-pilot`과 운영 데이터는 변경하지 않았다.
+
 # 2026-09-12 — 목표 실행 운영 배포와 실제 Gemini 결과
 
 기존 Koyeb 서비스에 f98cfa4c 배포568d3cc3의 Healthy/Active를 확인했다. Gemini 목표1개·모델호출1회로 5,142바이트 대본 결과를 실제 생성했다. 기존 데이터 보존·동일 요청 동일 작업·공개 HTTPS 다운로드200·SHA-256 일치를 검증했다. 하루4회 상한과 자동 검토off 유지. 호출 상한 도달·두 번째 모델과 폰 실기기 미검증을 상태 기록에 명시했다. 새 결제·호출 상한 확대·APK 재설치·실제 게시 없음.

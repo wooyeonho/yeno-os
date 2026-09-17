@@ -1,3 +1,4 @@
+import {validateRepositoryJob,validateJobEvidence} from './repository-patch.mjs';
 import {initialCodeWorkshop,validateCodeWorkshop,disableCodeForRestore} from './code-workshop.mjs';
 import {validateCodeJob} from './code-jobs.mjs';
 import {initialCapabilities,validateCapabilities,validateCapabilityRequest,capabilityInputSha256,disableAllCapabilitiesForRestore} from './capabilities.mjs';
@@ -27,7 +28,7 @@ const MAGIC = Buffer.from('YENOBK1\n');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const HASH = /^[a-f0-9]{64}$/;
 const STATE_KEYS = ['revision', 'emergencyStop', 'concurrency', 'modules', 'jobs', 'memories', 'snapshots', 'events', 'requests', 'artifacts', 'devices', 'projects', 'sources'];
-const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt', 'productionEvidence', 'studioSeriesId', 'studioChapterId', 'researchRequest', 'researchEvidenceId', 'autopilot', 'capabilityRequest', 'codeTask', 'codeCheckpoint', 'codeOutput', 'voiceConversation'];
+const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt', 'productionEvidence', 'studioSeriesId', 'studioChapterId', 'researchRequest', 'researchEvidenceId', 'autopilot', 'capabilityRequest', 'codeTask', 'codeCheckpoint', 'codeOutput', 'voiceConversation', 'repositoryTask', 'developerEvidence'];
 const fail = message => { throw new Error(`Backup: ${message}`); };
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = (value, min, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value) && value >= min && value <= max;
@@ -58,7 +59,7 @@ function validateState(state) {
   validateCapabilities(state.capabilities);
  if(!Object.hasOwn(state,'codeWorkshop'))state.codeWorkshop=initialCodeWorkshop();
  validateCodeWorkshop(state.codeWorkshop);
- for(const job of state.jobs)validateCodeJob(job,state.codeWorkshop);
+ for(const job of state.jobs){validateCodeJob(job,state.codeWorkshop);validateRepositoryJob(job);validateJobEvidence(job);}
   validateAutopilot(state.autopilot);
   if (!Object.hasOwn(state, 'quests')) state.quests = [];
   if (!Object.hasOwn(state, 'outcomes')) state.outcomes = [];

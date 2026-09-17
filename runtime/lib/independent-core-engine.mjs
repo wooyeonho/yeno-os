@@ -44,6 +44,9 @@ export function executionBoundary(job) {
     }
     return result('unclassified', null, 'blocked', 'code mode must be explicitly classified');
   }
+  if (job.type === 'agent' && job.repositoryTask) {
+    return result('development-model-call', true, 'development-request', 'agent:repository-patch');
+  }
   if (MODEL_JOB_TYPES.includes(job.type)) {
     const trigger = job.voiceConversation === true ? 'voice-request'
       : job.researchRequest ? 'research-request'

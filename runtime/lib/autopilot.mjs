@@ -157,7 +157,7 @@ function rankedCandidates(state,ctx){
     add({kind,taskKey:`${kind}:${parent.id}`,parentJobId:parent.id},kind==='forai'?'저장된 연구를 다시 읽을 수 있는 개인 페이지와 점검 결과로 만든다.':'저장된 연구의 출처·한계를 확인할 수 있는 영상으로 만든다.',{assetGap:1,reuseArtifacts:1,deliveryGap:kind==='video'?2:1,verificationGap:kind==='forai'?2:0,estimatedCalls:0});
   }
   if(state.modules?.documents===true&&!derivativeToday(ctx,'capability'))for(const candidate of ctx.capabilities){
-    if(candidate.kind!=='capability'||!['failure-triage','evidence-gap-brief'].includes(candidate.capabilityId)||!HASH.test(candidate.manifestHash??'')||!candidate.input||typeof candidate.taskKey!=='string'||ctx.jobs.some(job=>job.autopilot.taskKey===candidate.taskKey))continue;
+    if(candidate.kind!=='capability'||!['failure-triage','evidence-gap-brief','ledger-digest'].includes(candidate.capabilityId)||!HASH.test(candidate.manifestHash??'')||!candidate.input||typeof candidate.taskKey!=='string'||ctx.jobs.some(job=>job.autopilot.taskKey===candidate.taskKey))continue;
     add(candidate,candidate.goal,{repairNeed:candidate.focus==='wrath'?Math.min(4,candidate.input.records?.length??0):0,verificationGap:candidate.focus==='pride'?3:0,assetGap:1,reuseArtifacts:1,estimatedCalls:0},candidate.successCriterion);
   }
   return rankMotivatedCandidates(state,candidates,ctx.at);

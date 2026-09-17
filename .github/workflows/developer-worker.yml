@@ -1,0 +1,62 @@
+name: BLACKHOLE developer worker verification
+on:
+  push:
+    branches: [codex, 'blackhole/**']
+    paths-ignore: ['docs/**', 'CHANGELOG.md', '**/*.patch.gz.b64']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: developer-worker-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install locked dependencies without lifecycle scripts
+        run: |
+          npm ci --prefix runtime --ignore-scripts --no-audit --no-fund
+          npm ci --prefix apps/controller --ignore-scripts --no-audit --no-fund
+      - name: Build test image without private source or credentials
+        run: |
+          docker build -f workers/developer/Verification.Dockerfile -t blackhole-worker-check .
+          echo "BLACKHOLE_WORKER_IMAGE_ID=$(docker image inspect blackhole-worker-check --format '{{.Id}}')" >> "$GITHUB_ENV"
+      - name: Prepare tracked source without Git credentials
+        run: |
+          mkdir -p "$RUNNER_TEMP/blackhole-candidate" "$RUNNER_TEMP/worker-logs"
+          git archive HEAD | tar -xf - -C "$RUNNER_TEMP/blackhole-candidate"
+          cp -a runtime/node_modules "$RUNNER_TEMP/blackhole-candidate/runtime/node_modules"
+          cp -a apps/controller/node_modules "$RUNNER_TEMP/blackhole-candidate/apps/controller/node_modules"
+          chmod -R a+rX "$RUNNER_TEMP/blackhole-candidate"
+          printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/worker-logs/source-commit.txt"
+          printf '%s\n' "$BLACKHOLE_WORKER_IMAGE_ID" > "$RUNNER_TEMP/worker-logs/test-image.txt"
+      - name: Full core and browser regression in networkless read-only container
+        run: |
+          set -o pipefail
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges=true \
+            --user 1000:1000 --memory 1g --memory-swap 1g --cpus 2 --pids-limit 256 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=536870912,mode=1777 \
+            --mount "type=bind,src=$RUNNER_TEMP/blackhole-candidate,dst=/workspace,readonly" \
+            --workdir /workspace --env HOME=/tmp --env NODE_ENV=test --env YENO_VIDEO_TEST_REQUIRED=1 \
+            "$BLACKHOLE_WORKER_IMAGE_ID" node workers/developer/verify-runtime.mjs \
+            2>&1 | tee "$RUNNER_TEMP/worker-logs/runtime.txt"
+      - name: Worker controller and real Docker failure-repair/isolation tests
+        env:
+          DEVELOPER_DOCKER_REQUIRED: '1'
+        run: |
+          set -o pipefail
+          node --test workers/developer/*.test.mjs 2>&1 | tee "$RUNNER_TEMP/worker-logs/developer.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: blackhole-developer-verification
+          path: ${{ runner.temp }}/worker-logs/
+          retention-days: 7
+          if-no-files-found: warn
