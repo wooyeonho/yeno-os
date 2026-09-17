@@ -3,7 +3,7 @@ run-name: Android APK · ${{ github.event_name }} · ${{ github.event_name == 'w
 
 on:
   push:
-    branches: [codex]
+    branches: [codex, blackhole/device-smoke-20260917]
     paths:
       - 'apps/controller/**'
       - 'runtime/public/studio-view.mjs'
