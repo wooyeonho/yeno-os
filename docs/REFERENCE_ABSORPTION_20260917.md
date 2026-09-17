@@ -62,3 +62,14 @@ BLACKHOLE은 여러 참고 시스템의 아이디어를 하나의 안전한 운�
 - 콘텐츠 조회수·팔로워·수익을 보장하는 것
 
 다음 실측 순서는 정적 테스트 → 격리된 AndroidWorld/ARTEMIS 시험 → 키 없는 웹 수집 fixture → 로컬 영상 결과 해시 → owner 승인 후 단일 staging provider다. 각 단계는 성공률·비용·실패·복구 방법을 남긴 뒤에만 다음 단계로 올라간다.
+
+
+## Reddit 교차 확인
+
+Reddit은 공식 증거가 아니므로 낮은 신뢰도의 운영 신호로만 사용했다.
+
+- [r/AIDeveloperNews — ARTEMIS 소개](https://www.reddit.com/r/AIDeveloperNews/comments/1wdh8ar/google_has_opensourced_artemis_an_ai_android/)는 MCP 연결과 로그·스크린샷 중심의 사용 관점을 재확인하지만, 99%+ 수치는 원 저장소/독립 시험으로 다시 확인해야 한다.
+- [r/mcp — 에이전트 권한을 어떻게 시험하는가](https://www.reddit.com/r/mcp/comments/1wbzkpb/how_do_you_test_that_an_ai_agents_permissions/)의 제안인 “초안은 허용, 승인된 수신자에게 보내기는 사람 승인, 차단 대상은 거부, 대량 export는 거부”를 Guardian의 승인·거부 규칙으로 흡수했다.
+- [r/AI_Agents — 코드와 오케스트레이션의 경계](https://www.reddit.com/r/AI_Agents/comments/1w9vymt/did_claudecodex_actually_replace_no_code_tools_or/)는 코드의 로직과 워크플로 계층의 트리거·재시도·자격증명·관찰성·인계를 분리하자는 실무 신호를 제공한다. 이 때문에 이번 구현에서 루틴을 실행 코드가 아니라 선언형 원장으로 두었다.
+
+이 교차 확인으로 추가한 것은 권한 경계와 감사 항목뿐이며, Reddit 게시물의 제품·성공률·수익 주장을 사실로 승격하지 않았다.
