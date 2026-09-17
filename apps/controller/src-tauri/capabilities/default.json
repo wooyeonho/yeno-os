@@ -22,6 +22,7 @@
       ]
     },
     "stronghold:default",
+    "websocket:default",
     "dialog:allow-save",
     "fs:allow-write-file",
     "fs:allow-read-file",

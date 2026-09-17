@@ -11,6 +11,7 @@ import { createWorldView } from '../../../runtime/public/world-view.mjs';
 import worldLand from '../../../runtime/public/world-land.svg?url';
 import { CommandSession, HttpFailure, isDefinitiveRejection, type CommandReceipt } from './command-session.ts';
 import { normalizeOrigin, versionedUrl, createStudioApi, studioStorageKey, SecureRequestStorage, readVerifiedFile, saveVerifiedFile, type Connection, type VerifiedFile } from './native-studio.ts';
+import { createNativeLiveVoiceView } from './native-live-voice-view.ts';
 
 type Job = { id: string; title: string; status: string; version: number; updatedAt: string; artifacts: { id: string; name: string }[] };
 type State = { name: string; apiVersion: string; revision: number; emergencyStop: boolean; jobs: Job[]; world?: Record<string, unknown>; modules?: {documents?: boolean} };
@@ -30,6 +31,11 @@ let studio: ReturnType<typeof createStudioView> | null = null;
 let studioStorage: SecureRequestStorage | null = null;
 let activeView: 'studio' | 'world' | 'jobs' = 'studio';
 let artifactFile: VerifiedFile | null = null, artifactUrl: string | null = null, artifactEpoch = 0, savingFile = false;
+// Native Gemini Live: an additive path owned entirely by native-live-voice-view.ts,
+// built on the exact same reused runtime/public/live-voice-client.mjs state
+// machine the browser uses. It never touches typed-command submission/
+// pairing/Stronghold storage above.
+const liveVoiceView = createNativeLiveVoiceView($('live-voice'));
 
 async function openVault(password: string) {
   if (nativeVault && vaultPassword === password) return nativeVault;
@@ -92,6 +98,7 @@ async function activate(value: Connection) {
   studio?.reset(); world.reset(); clearArtifact();
   const root = $('native-studio').cloneNode(false) as HTMLElement;
   $('native-studio').replaceWith(root);
+  liveVoiceView.setConnection(value);
   connection = value;
   state = null;
   lastSeen = null;
@@ -129,6 +136,7 @@ function renderConnection() {
   $('stop').textContent = state?.emergencyStop ? '전체 멈춤 해제' : '전체 멈춤';
   studio?.setState(state ? {...state, online: connectionStatus === 'online' && !disconnecting} : null);
   void world.update(state?.world, connected && connectionStatus === 'online' && !state?.emergencyStop && state?.modules?.documents !== false && !commands?.pending && !submitting && !disconnecting);
+  liveVoiceView.update({online: connectionStatus === 'online', emergencyStop: state?.emergencyStop === true, busy: disconnecting});
 }
 function renderPending() {
   const pending = commands?.pending;
@@ -313,6 +321,7 @@ async function forgetConnection() {
   await saveConnection(null);
   commands?.clearLocal();
   localStorage.removeItem(vaultMarker);
+  liveVoiceView.setConnection(null);
   connection = null; commands = null; state = null; lastSeen = null;
   studio?.reset(); studio = null; studioStorage = null; world.reset(); clearArtifact();
   if (nativeVault) { await nativeVault.stronghold.unload(); nativeVault = null; }

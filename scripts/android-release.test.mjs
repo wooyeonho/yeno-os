@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   readVersioning, validateVersioning, validateLedger, appendLedger, signingEnvStatus, patchGradle, configureSigning,
+  patchManifestPermissions, configurePermissions,
   keystorePropertiesText, signerSha256, SIGNING_ENV, APP_IDENTIFIER, ReleaseError, TAURI_CONF
 } from './android-release.mjs';
 
@@ -28,6 +29,14 @@ android {
         }
     }
 }
+`;
+const MANIFEST = `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application android:name=".MainApplication" android:label="YENO controller">
+        <activity android:name=".MainActivity" android:exported="true" />
+    </application>
+</manifest>
 `;
 const ENV = {
   [SIGNING_ENV.keystoreBase64]: Buffer.from('fake-keystore-bytes').toString('base64'),
@@ -93,6 +102,31 @@ test('configure: keystore decoded outside the repo, keystore.properties written 
   if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(gen, 'keystore.properties')).mode & 0o777, 0o600);
   assert.equal(configureSigning({genDir: gen, env: ENV, keystoreDir: ks}).gradlePatched, false, 'idempotent');
   assert.throws(() => configureSigning({genDir: gen, env: ENV, keystoreDir: path.join(path.resolve(import.meta.dirname, '..'), 'tmp-ks')}), e => e.code === 'KEYSTORE_IN_REPO');
+});
+
+test('manifest permission patch: RECORD_AUDIO added once, idempotent, existing permissions/attributes untouched, unexpected shape fails closed', () => {
+  const once = patchManifestPermissions(MANIFEST);
+  assert.equal(once.changed, true);
+  assert.match(once.source, /<uses-permission android:name="android\.permission\.RECORD_AUDIO" \/>/);
+  assert.match(once.source, /<uses-permission android:name="android\.permission\.INTERNET" \/>/, 'the existing unrelated permission must survive untouched');
+  assert.match(once.source, /xmlns:android="http:\/\/schemas\.android\.com\/apk\/res\/android"/, 'the manifest root attribute must survive untouched');
+  const twice = patchManifestPermissions(once.source);
+  assert.equal(twice.changed, false);
+  assert.equal(twice.source, once.source);
+  assert.throws(() => patchManifestPermissions('<not-a-manifest/>'), e => e.code === 'MANIFEST_SHAPE');
+});
+
+test('configurePermissions: writes RECORD_AUDIO into the generated AndroidManifest.xml, idempotently, no secrets required', () => {
+  const gen = fs.mkdtempSync(path.join(os.tmpdir(), 'yeno-gen-manifest-'));
+  fs.mkdirSync(path.join(gen, 'app', 'src', 'main'), {recursive: true});
+  const manifestPath = path.join(gen, 'app', 'src', 'main', 'AndroidManifest.xml');
+  fs.writeFileSync(manifestPath, MANIFEST);
+  const first = configurePermissions({genDir: gen});
+  assert.equal(first.manifestPatched, true);
+  assert.match(fs.readFileSync(manifestPath, 'utf8'), /RECORD_AUDIO/);
+  const second = configurePermissions({genDir: gen});
+  assert.equal(second.manifestPatched, false, 'idempotent - a second run must not duplicate the permission');
+  assert.throws(() => configurePermissions({genDir: fs.mkdtempSync(path.join(os.tmpdir(), 'yeno-gen-empty-'))}), e => e.code === 'GEN_MISSING');
 });
 
 test('signer digest: read from apksigner; debug certificate is never a release', () => {

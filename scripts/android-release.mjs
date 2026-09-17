@@ -4,6 +4,7 @@
 //
 //   node scripts/android-release.mjs check                       versioning + signing readiness (no secret values printed)
 //   node scripts/android-release.mjs configure --gen <gen/android> write keystore.properties + patch build.gradle.kts (after `tauri android init`)
+//   node scripts/android-release.mjs permissions --gen <gen/android> add RECORD_AUDIO to AndroidManifest.xml (after `tauri android init`; safe for debug and release builds, no secrets needed)
 //   node scripts/android-release.mjs ledger --apk <p> --aab <p>  append the built release to docs/builds/android-release-ledger.json
 //
 // Signing material is supplied ONLY through environment variables (GitHub
@@ -147,6 +148,34 @@ export function patchGradle(source) {
   return {changed: true, source: out};
 }
 
+// --- Android manifest permissions ----------------------------------------------
+
+// Native Live Voice (issue #21) needs RECORD_AUDIO for getUserMedia() inside
+// the WebView; nothing else. gen/android is regenerated fresh by `tauri
+// android init` and gitignored, so the permission is injected here as a
+// POST-init patch rather than hand-edited in the repo. Idempotent and
+// tolerant of any attribute order/whitespace on the <manifest> tag; fails
+// closed if no <manifest> tag is found at all, so a template shape change
+// can never silently ship without the permission.
+const RECORD_AUDIO_PERMISSION = 'android.permission.RECORD_AUDIO';
+
+export function patchManifestPermissions(source) {
+  if (source.includes(RECORD_AUDIO_PERMISSION)) return {changed: false, source};
+  const manifestOpen = source.match(/<manifest\b[^>]*>/);
+  if (!manifestOpen) throw new ReleaseError('AndroidManifest.xml에서 <manifest> 태그를 찾지 못했습니다.', 'MANIFEST_SHAPE');
+  const insertAt = manifestOpen.index + manifestOpen[0].length;
+  const line = `\n    <uses-permission android:name="${RECORD_AUDIO_PERMISSION}" />`;
+  return {changed: true, source: source.slice(0, insertAt) + line + source.slice(insertAt)};
+}
+
+export function configurePermissions({genDir}) {
+  const manifestPath = path.join(genDir, 'app', 'src', 'main', 'AndroidManifest.xml');
+  if (!fs.existsSync(manifestPath)) throw new ReleaseError(`${manifestPath} 없음 — 먼저 tauri android init을 실행하세요.`, 'GEN_MISSING');
+  const patched = patchManifestPermissions(fs.readFileSync(manifestPath, 'utf8'));
+  if (patched.changed) fs.writeFileSync(manifestPath, patched.source);
+  return {manifestPatched: patched.changed};
+}
+
 export function configureSigning({genDir, env, keystoreDir}) {
   const status = signingEnvStatus(env);
   if (!status.ready) throw new ReleaseError(`BLOCKED: ANDROID_SIGNING_SECRET (missing: ${status.missing.join(', ') || 'keystore undecodable'})`, 'SIGNING_MISSING', 2);
@@ -208,6 +237,11 @@ export function main(argv, env = process.env) {
     if (env.RUNNER_TEMP) fs.mkdirSync(path.dirname(result.storeFile), {recursive: true});
     return `SIGNING CONFIGURED: gradle ${result.gradlePatched ? 'patched' : 'already patched'}; keystore outside repo`;
   }
+  if (cmd === 'permissions') {
+    const genDir = arg(argv, '--gen') ?? path.join(REPO_ROOT, 'apps/controller/src-tauri/gen/android');
+    const result = configurePermissions({genDir});
+    return `PERMISSIONS: AndroidManifest.xml ${result.manifestPatched ? 'patched (RECORD_AUDIO added)' : 'already has RECORD_AUDIO'}`;
+  }
   if (cmd === 'ledger') {
     const apk = arg(argv, '--apk'), aab = arg(argv, '--aab');
     if (!apk || !aab) throw new ReleaseError('--apk와 --aab가 필요합니다.');
@@ -224,7 +258,7 @@ export function main(argv, env = process.env) {
     fs.writeFileSync(LEDGER_PATH, JSON.stringify(next, null, 2) + '\n');
     return `LEDGER: ${record.versionName}/${record.versionCode} apk ${record.apkSha256.slice(0, 12)} aab ${record.aabSha256.slice(0, 12)} signer ${record.signerSha256.slice(0, 12)}`;
   }
-  throw new ReleaseError('usage: android-release.mjs check|configure|ledger');
+  throw new ReleaseError('usage: android-release.mjs check|configure|permissions|ledger');
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
