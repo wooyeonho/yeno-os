@@ -92,6 +92,8 @@ jobs:
           cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
       - name: Initialize Android project
         run: npm run tauri -- android init --ci --skip-targets-install
+      - name: Apply post-init mobile safety patches (RECORD_AUDIO permission for native Live Voice)
+        run: node ../../scripts/android-release.mjs permissions
       - name: Build ARM64 debug APK
         run: npm run tauri -- android build --debug --apk --target aarch64 --ci
       - name: Collect APK and build evidence
