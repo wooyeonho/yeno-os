@@ -38,50 +38,59 @@ function gradeC(runs) {
   return { met: true, reason: null };
 }
 
-// B: "조합과 복구". Recovery is checkable - a rollback followed by at least
-// one further successful run proves the skill kept working after recovery.
-// Composition (this skill's output feeding, or being fed by, another skill's
-// run) has no tracked field anywhere in capabilities.mjs/code-workshop.mjs
-// today, so it can never be verified from current evidence and stays blocked
-// until that tracking exists - this function says so explicitly rather than
-// inferring it from unrelated signals.
-function gradeB(runs, rollbacks) {
+// B: real composition evidence - this skill's verified input hash equals
+// another skill's own earlier verified output hash, i.e. it structurally
+// consumed real prior output, not merely "a rollback happened and a later
+// run succeeded". `leveling` (a runtime/lib/solo-leveling.mjs history,
+// derived from real job/quest state by leveling-evidence.mjs) is the only
+// thing that can see across skills to prove that; a bare registry alone
+// cannot, so without it this stays honestly blocked on the same reason as
+// before rather than inferring composition from unrelated signals such as a
+// rollback-then-run pattern within a single skill.
+function gradeB(runs, rollbacks, leveling) {
+  if (leveling) return leveling.checks.B.met ? { met: true, reason: null } : { met: false, reason: leveling.checks.B.reason };
   const recovered = rollbacks.some(rollback => runs.some(run => Date.parse(run.at) > Date.parse(rollback.at)));
   if (!recovered) return { met: false, reason: '복구(롤백 이후 실제 실행 재개) 기록이 없습니다.' };
   return { met: false, reason: '다른 기능과의 조합 사용을 기록하는 구조가 아직 없습니다 — 복구는 확인됐지만 조합 증거가 없어 판정할 수 없습니다.' };
 }
 
 // A: "낮은 개입으로 반복 운영" needs a per-run intervention measure (how
-// often the owner had to step in between runs) that this data model does not
-// record. Always blocked, honestly, rather than inferring intervention from
-// run count or rollback count alone.
-function gradeA() {
-  return { met: false, reason: '실행마다 필요했던 소유자 개입 횟수를 기록하는 구조가 아직 없습니다.' };
+// often the owner had to step in between runs). `leveling` supplies real
+// autopilot-authorized, zero-intervention successes when the caller has it;
+// without it, this stays honestly blocked rather than inferring intervention
+// from run count or rollback count alone.
+function gradeA(leveling) {
+  if (!leveling) return { met: false, reason: '실행마다 필요했던 소유자 개입 횟수를 기록하는 구조가 아직 없습니다.' };
+  return leveling.checks.A.met ? { met: true, reason: null } : { met: false, reason: leveling.checks.A.reason };
 }
 
 // S: "강한 비교 대안보다 실제 지표 우세와 고객 가치 확인" needs an
-// externally-verified outcome. The wealth/honor/fame ledger
-// (runtime/lib/quests.mjs) only ever records verification:'self_reported' -
-// there is currently no path to an externally-verified outcome for any
-// skill, so S is unreachable by design until that verification path exists.
-function gradeS(outcomes) {
-  const verified = outcomes.some(outcome => outcome.verification && outcome.verification !== 'self_reported');
-  if (!verified) return { met: false, reason: '외부에서 검증된 성과 기록이 없습니다(현재 장부는 self_reported만 지원합니다).' };
+// externally-verified outcome.
+// Only an outcome-verification verdict (runtime/lib/outcome-verification.mjs)
+// with outcomeVerified && highGradeCandidate (external_verified) counts. A
+// ledger record's own `verification` string is a claim and is never consulted.
+function gradeS(verdicts) {
+  const verified = verdicts.some(v => v && v.outcomeVerified === true && v.highGradeCandidate === true && v.authorizesAction === false);
+  if (!verified) return { met: false, reason: '외부에서 검증된 성과 판정(outcomeVerified·external_verified)이 없습니다 — 장부의 self_reported 기록은 근거가 아닙니다.' };
   return { met: true, reason: null };
 }
 
-// outcomes: optional array of ledger outcomes (runtime/lib/quests.mjs
-// recordQuestOutcome results) that the caller believes relate to this skill.
-// Not required - omit it and S simply stays blocked, which is always true today.
-export function gradeSkill(registry, id, { outcomes = [] } = {}) {
+// outcomes: optional array of outcome-verification verdicts linked to this
+// skill's executions. Omit it and S simply stays blocked.
+// leveling: optional runtime/lib/solo-leveling.mjs history for this exact
+// skill id (build it with leveling-evidence.mjs's levelingHistoriesFromState
+// against the full runtime state - this module alone only ever sees the
+// registry, never jobs/quests/artifacts). Omit it and B/A stay honestly
+// blocked exactly as before, unchanged for every existing caller.
+export function gradeSkill(registry, id, { outcomes = [], leveling = null } = {}) {
   if (!object(registry) || !Array.isArray(registry.entries) || !Array.isArray(registry.history)) throw new TypeError('Invalid registry');
   const entry = registry.entries.find(item => item.id === id);
   if (!entry) throw new Error(`Unknown skill id: ${id}`);
   const runs = runsFor(registry.history, id), rollbacks = rollbacksFor(registry.history, id);
   const checks = { D: gradeD(entry, runs), C: null, B: null, A: null, S: null };
   checks.C = checks.D.met ? gradeC(runs) : { met: false, reason: 'D 단계를 먼저 통과해야 합니다.' };
-  checks.B = checks.C.met ? gradeB(runs, rollbacks) : { met: false, reason: 'C 단계를 먼저 통과해야 합니다.' };
-  checks.A = checks.B.met ? gradeA() : { met: false, reason: 'B 단계를 먼저 통과해야 합니다.' };
+  checks.B = checks.C.met ? gradeB(runs, rollbacks, leveling) : { met: false, reason: 'C 단계를 먼저 통과해야 합니다.' };
+  checks.A = checks.B.met ? gradeA(leveling) : { met: false, reason: 'B 단계를 먼저 통과해야 합니다.' };
   checks.S = checks.A.met ? gradeS(outcomes) : { met: false, reason: 'A 단계를 먼저 통과해야 합니다.' };
   let grade = 'E';
   for (const step of ['D', 'C', 'B', 'A', 'S']) { if (checks[step].met) grade = step; else break; }
@@ -93,9 +102,9 @@ export function gradeSkill(registry, id, { outcomes = [] } = {}) {
   };
 }
 
-export function growthOverview(registry, kind, { outcomesById = {} } = {}) {
+export function growthOverview(registry, kind, { outcomesById = {}, levelingById = {} } = {}) {
   if (!object(registry) || !Array.isArray(registry.entries)) throw new TypeError('Invalid registry');
-  const skills = registry.entries.map(entry => gradeSkill(registry, entry.id, { outcomes: outcomesById[entry.id] ?? [] }));
+  const skills = registry.entries.map(entry => gradeSkill(registry, entry.id, { outcomes: outcomesById[entry.id] ?? [], leveling: levelingById[entry.id] ?? null }));
   const counts = Object.fromEntries(GRADES.map(grade => [grade, skills.filter(skill => skill.grade === grade).length]));
   return { kind, total: skills.length, counts, skills };
 }

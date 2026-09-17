@@ -1,6 +1,11 @@
+import {validateBootRecords} from './https-evidence.mjs';
+import {validateDeviceAcceptances} from './device-evidence.mjs';
+import {validateConnectors,validateReadings} from './outcome-connector.mjs';
+import {validateOutcomeEvidences} from './outcome-verification.mjs';
 import {validateRepositoryJob,validateJobEvidence} from './repository-patch.mjs';
 import {initialCodeWorkshop,validateCodeWorkshop,disableCodeForRestore} from './code-workshop.mjs';
 import {validateCodeJob} from './code-jobs.mjs';
+import {validateRouting} from './brain-routing.mjs';
 import {initialCapabilities,validateCapabilities,validateCapabilityRequest,capabilityInputSha256,disableAllCapabilitiesForRestore} from './capabilities.mjs';
 import {validateWorldSnapshot} from './world.mjs';
 import fs from 'node:fs';
@@ -28,7 +33,7 @@ const MAGIC = Buffer.from('YENOBK1\n');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const HASH = /^[a-f0-9]{64}$/;
 const STATE_KEYS = ['revision', 'emergencyStop', 'concurrency', 'modules', 'jobs', 'memories', 'snapshots', 'events', 'requests', 'artifacts', 'devices', 'projects', 'sources'];
-const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt', 'productionEvidence', 'studioSeriesId', 'studioChapterId', 'researchRequest', 'researchEvidenceId', 'autopilot', 'capabilityRequest', 'codeTask', 'codeCheckpoint', 'codeOutput', 'voiceConversation', 'repositoryTask', 'developerEvidence'];
+const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt', 'productionEvidence', 'studioSeriesId', 'studioChapterId', 'researchRequest', 'researchEvidenceId', 'autopilot', 'capabilityRequest', 'codeTask', 'codeCheckpoint', 'codeOutput', 'voiceConversation', 'repositoryTask', 'developerEvidence', 'routing', 'selfTestId'];
 const fail = message => { throw new Error(`Backup: ${message}`); };
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = (value, min, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value) && value >= min && value <= max;
@@ -53,7 +58,12 @@ function memories(value) {
   }
 }
 function validateState(state) {
-  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop'], STATE_KEYS);
+  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop', 'selfTests', 'runtimeBoots', 'deviceAcceptances', 'outcomeConnectors', 'outcomeReadings', 'outcomeEvidence'], STATE_KEYS);
+  if (Object.hasOwn(state, 'runtimeBoots')) validateBootRecords(state.runtimeBoots);
+  if (Object.hasOwn(state, 'deviceAcceptances')) validateDeviceAcceptances(state.deviceAcceptances);
+  if (Object.hasOwn(state, 'outcomeConnectors')) validateConnectors(state.outcomeConnectors);
+  if (Object.hasOwn(state, 'outcomeReadings')) validateReadings(state.outcomeReadings);
+  if (Object.hasOwn(state, 'outcomeEvidence')) validateOutcomeEvidences(state.outcomeEvidence);
   if(!Object.hasOwn(state,'autopilot'))state.autopilot=initialAutopilot();
   if(!Object.hasOwn(state,'capabilities'))state.capabilities=initialCapabilities();
   validateCapabilities(state.capabilities);
@@ -94,6 +104,7 @@ function validateState(state) {
       if(!job.researchRequest||!UUID.test(job.researchEvidenceId)||!evidence||evidence.jobId!==job.id||evidence.mimeType!=='application/json'||evidence.name!==`research-evidence-${job.id.slice(0,8)}.json`||!job.artifacts.some(a=>a.id===evidence.id))fail('invalid research evidence reference');
     }
     if (job.agentJournal) validateAgentJournal(job.agentJournal);
+    if (job.routing !== undefined) validateRouting(job.routing);
     if (Object.hasOwn(job, 'selectedProvider') && !['openai', 'gemini', 'moonshot', 'xai', 'anthropic', 'nvidia'].includes(job.selectedProvider)) fail('invalid selected provider');
     if (Object.hasOwn(job, 'questId') && (typeof job.questId !== 'string' || !UUID.test(job.questId))) fail('invalid job quest reference');
     if (Object.hasOwn(job, 'callLimit') && !integer(job.callLimit, 1, 4)) fail('invalid job call limit');

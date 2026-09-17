@@ -51,6 +51,20 @@ export function synthesisQuestId(fingerprint){
   if(!hash(fingerprint))throw new Error('Invalid synthesis fingerprint');
   return `${fingerprint.slice(0,8)}-${fingerprint.slice(8,12)}-${fingerprint.slice(12,16)}-${fingerprint.slice(16,20)}-${fingerprint.slice(20,32)}`;
 }
+// Closed-loop execution link: the quest's `jobId` is a capability job whose
+// request names the same reviewed capability, the grade snapshot is a real
+// grade, and the authority that started it is one of two known values.
+const LOOP_KEYS='authorizedBy,capabilityId,discoveryFingerprint,engine,gradeBefore,jobId,kirbyAction,startedAt,version';
+const LOOP_KIRBY_ACTIONS=['reuse'];
+const LOOP_ENGINES=['declarative-v1','quickjs-v1'];
+const loopJobRequest=(job,engine)=>engine==='quickjs-v1'?(job?.type==='code'&&job.codeTask?.mode==='run'?job.codeTask.request:null):(job?.type==='capability'?job.capabilityRequest:null);
+function validateLoop(q,job){
+  const l=q.loop;
+  if(!q.synthesis)throw new Error('Loop execution requires an autonomous quest');
+  if(!object(l)||Object.keys(l).sort().join()!==LOOP_KEYS||l.version!==3||!LOOP_ENGINES.includes(l.engine)||!['owner','autopilot'].includes(l.authorizedBy)||!LOOP_KIRBY_ACTIONS.includes(l.kirbyAction)||!/^[a-f0-9]{64}$/.test(l.discoveryFingerprint??'')||!['E','D','C','B','A','S'].includes(l.gradeBefore)||!iso(l.startedAt))throw new Error('Invalid quest loop record');
+  const request=loopJobRequest(job,l.engine);
+  if(l.jobId!==q.jobId||!job||!request||request.id!==l.capabilityId||job.questId!==q.id)throw new Error('Invalid quest loop execution');
+}
 function validateSynthesis(q){
   const p=q.synthesis;
   if(!object(p)||Object.keys(p).sort().join()!==SYNTHESIS_KEYS||p.version!==SYNTHESIS_VERSION||!SYNTHESIS_ARCHETYPES.includes(p.archetype)||!validText(p.reason,2000)||p.riskClass!==SYNTHESIS_ARCHETYPE_RISK[p.archetype]||p.approvalRequired!==synthesisApprovalRequired(p.riskClass)||!iso(p.createdAt)||p.createdAt!==q.createdAt)throw new Error('Invalid quest synthesis provenance');
@@ -190,9 +204,10 @@ export function validateQuestState(state){
     if(q.projectId!==null&&(!uuid(q.projectId)||!projects.some(p=>p.id===q.projectId)))throw new Error('Invalid quest project reference');
     if(q.jobId!==null){
       const job=jobs.find(j=>j.id===q.jobId);
-      if(!uuid(q.jobId)||linkedJobs.has(q.jobId)||!job||job.type!=='agent'||(job.questId!==undefined&&job.questId!==q.id))throw new Error('Invalid quest job reference');
+      if(!uuid(q.jobId)||linkedJobs.has(q.jobId)||!job||!(job.type==='agent'||(['capability','code'].includes(job.type)&&q.loop!==undefined))||(job.questId!==undefined&&job.questId!==q.id))throw new Error('Invalid quest job reference');
       linkedJobs.add(q.jobId);
-    }else if(q.status!=='proposed')throw new Error('Unassigned quest cannot claim execution');
+      if(q.loop!==undefined)validateLoop(q,job);
+    }else if(q.status!=='proposed'||q.loop!==undefined)throw new Error('Unassigned quest cannot claim execution');
     for(const key of ['startedAt','deadlineAt','finishedAt'])if(q[key]!==undefined&&q[key]!==null&&!iso(q[key]))throw new Error('Invalid quest timestamp');
     if(q.projectVersion!==undefined&&!integer(q.projectVersion,1,Number.MAX_SAFE_INTEGER))throw new Error('Invalid quest project version');
     if(q.projectContext!==undefined){
@@ -202,7 +217,7 @@ export function validateQuestState(state){
     if(q.reviewOf!==undefined&&(!uuid(q.reviewOf)||q.reviewOf===q.id||!quests.some(item=>item.id===q.reviewOf)))throw new Error('Invalid quest review reference');
     if(q.sourceArtifactSha256!==undefined&&!hash(q.sourceArtifactSha256))throw new Error('Invalid quest review artifact');
     if(q.synthesis!==undefined)validateSynthesis(q);
-    if(Object.keys(q).some(key=>!['id','version','goal','driveId','drive','provider','projectId','successCriterion','baseline','maxCalls','durationMinutes','costUsd','status','jobId','createdAt','updatedAt','projectVersion','projectContext','reviewOf','sourceArtifactSha256','startedAt','deadlineAt','finishedAt','synthesis'].includes(key)))throw new Error('Untrusted quest field');
+    if(Object.keys(q).some(key=>!['id','version','goal','driveId','drive','provider','projectId','successCriterion','baseline','maxCalls','durationMinutes','costUsd','status','jobId','createdAt','updatedAt','projectVersion','projectContext','reviewOf','sourceArtifactSha256','startedAt','deadlineAt','finishedAt','synthesis','loop'].includes(key)))throw new Error('Untrusted quest field');
   }
   const outcomeIds=new Set();
   for(const o of outcomes){
