@@ -22,6 +22,7 @@ import {deviceVerification} from './device-evidence.mjs';
 import {connectorReadiness} from './outcome-connector.mjs';
 import {outcomeRealities} from './outcome-reality.mjs';
 import {levelingHistoriesFromState} from './leveling-evidence.mjs';
+import {liveVoiceReadiness} from './gemini-live.mjs';
 
 export const READINESS_VERSION = 1;
 export const STATES = Object.freeze(['NOT_WIRED', 'WIRED_UNVERIFIED', 'SYNTHETIC_VERIFIED', 'LIVE_VERIFIED', 'DEVICE_VERIFIED', 'BLOCKED']);
@@ -111,7 +112,7 @@ const evidenceState = (records, blocked = null) => blocked ? 'BLOCKED' : !record
 
 // facts: everything the server knows; this function only classifies.
 export function buildReadiness(facts) {
-  const {state, sourceCommit, runtimeVersion, apiVersion, store, request, principal, providers, brainPool, liveTransport, manifests = [], boots = [], currentBootId = null, deviceAcceptances = [], currentRelease = null, androidLedger = null, at} = facts;
+  const {state, sourceCommit, runtimeVersion, apiVersion, store, request, principal, providers, brainPool, liveTransport, manifests = [], boots = [], currentBootId = null, deviceAcceptances = [], currentRelease = null, androidLedger = null, liveVoiceSessions = [], at} = facts;
   const blockers = [];
   const jobs = state.jobs ?? [];
   const selfTests = state.selfTests ?? [];
@@ -173,8 +174,13 @@ export function buildReadiness(facts) {
   const grades = active.map(entry => gradeSkill(registry, entry.id, {leveling: levelingById[entry.id] ?? null}));
   const soloLeveling = {state: !active.length ? 'BLOCKED' : grades.some(g => g.grade !== 'E') ? evidenceState(runJobs.map(tag)) : 'WIRED_UNVERIFIED', grades: Object.fromEntries(grades.map(g => [g.id, g.grade])), blockedGrades: {B: 'composition_evidence_required', A: 'autonomous_verified_success_low_intervention_required', S: 'external_verified_outcome_required'}};
 
-  const voice = {state: 'WIRED_UNVERIFIED', browserFallback: 'speechRecognition/speechSynthesis', liveVoice: 'NOT_WIRED', toolCallsGrantApproval: false};
-  blockers.push('live_voice_not_wired');
+  // Live sessions are ephemeral (real-time transport, not durable business
+  // state) - the server keeps a bounded in-memory snapshot of recent session
+  // objects and passes them in here; liveVoiceReadiness only ever certifies a
+  // session that actually reached `open` over the real network transport.
+  const live = liveVoiceReadiness(liveVoiceSessions);
+  const voice = {state: live.status, browserFallback: 'speechRecognition/speechSynthesis', liveVoice: live.status, toolCallsGrantApproval: false};
+  if (live.status === 'NOT_WIRED' || live.status === 'BLOCKED') blockers.push(live.status === 'BLOCKED' ? `live_voice_${live.reason}` : 'live_voice_not_wired');
 
   const android = deviceVerification(deviceAcceptances, {platform: 'android', current: currentRelease ? {sourceCommit: currentRelease.sourceCommit, client: currentRelease.client} : null, devices: state.devices ?? {}, at});
   // The signed-release ledger (docs/builds/android-release-ledger.json) is a
