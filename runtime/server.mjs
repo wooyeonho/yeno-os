@@ -420,9 +420,13 @@ export function createYenoServer(options={}) {
  // stays SYNTHETIC_VERIFIED (connectorReadiness never grants LIVE_VERIFIED to
  // this transport). The locator was already validated to be a repository-
  // relative path with no '..' segment; this still re-confirms the resolved
- // path never leaves the repository root before reading it.
+ // path never leaves the export root before reading it. The root itself is
+ // injectable (defaults to the real repository root) purely so tests never
+ // have to write into the actual checkout, which a read-only CI checkout
+ // cannot support.
+ const OWNER_EXPORT_ROOT=options.ownerExportRoot??path.resolve(ROOT,'..');
  function ownerExportRead(locator){
-   const root=path.resolve(ROOT,'..');
+   const root=OWNER_EXPORT_ROOT;
    const file=path.resolve(root,locator);
    if(file!==root&&!file.startsWith(root+path.sep))throw new Error('저장소 범위를 벗어난 경로입니다.');
    return fs.readFileSync(file,'utf8');
