@@ -20,6 +20,7 @@ import {initialDiscovery,validateDiscovery} from './discovery.mjs';
 import {initialEcosystem,validateEcosystem} from './ecosystem.mjs';
 import {validateAgentJournal} from './agent.mjs';
 import {validateBotAssignment} from './project-bots.mjs';
+import {initialPersistentBots,validatePersistentBots} from './persistent-bots.mjs';
 import {validateQuestState} from './quests.mjs';
 import {emptyStudio,validateStudio} from './studio.mjs';
 import {initialAutopilot,validateAutopilot,validateAutopilotJob} from './autopilot.mjs';
@@ -38,7 +39,7 @@ export function atomicWrite(file, content) {
 export function initialState() {
  return {revision:0, emergencyStop:false, concurrency:1,
  modules:{memory:true,documents:true,diagnostics:true,ai:false},
- jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), capabilities:initialCapabilities(), codeWorkshop:initialCodeWorkshop(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem()};
+ jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), capabilities:initialCapabilities(), codeWorkshop:initialCodeWorkshop(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem(), persistentBots:initialPersistentBots()};
 }
 function initializeQuestCollections(state) {
  // Missing collections identify older stores. Present malformed data must fail
@@ -57,6 +58,8 @@ function initializeQuestCollections(state) {
  for(const job of state.jobs)validateAutopilotJob(job,state);
  validateStudio(state.studio);
  validateQuestState(state);
+ if(!Object.hasOwn(state,'persistentBots'))state.persistentBots=initialPersistentBots();
+ validatePersistentBots(state.persistentBots);
  validateSelfTests(state.selfTests);
  if(Object.hasOwn(state,'runtimeBoots'))validateBootRecords(state.runtimeBoots);
  if(Object.hasOwn(state,'deviceAcceptances'))validateDeviceAcceptances(state.deviceAcceptances);
