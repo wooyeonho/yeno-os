@@ -68,6 +68,7 @@ class HttpError extends Error {constructor(status,message,extra={}){super(messag
 function requiredText(value,maximum=80000){if(typeof value!=='string'||!value.trim())throw new HttpError(400,'text must be a non-empty string');if(value.length>maximum)throw new HttpError(400,`text is limited to ${maximum} characters`);return value.trim();}
 import {publicJob} from './lib/job-view.mjs';
 import {BotError,planProjectBots,botBlockReason,botCanStart,botStatus,botDocument} from './lib/project-bots.mjs';
+import {PersistentBotError,appendPersistentMemory,putPersistentRoutine,recordPersistentHandoff,persistentBotOverview,publicPersistentBots,persistentBotDocument} from './lib/persistent-bots.mjs';
 function publicSnapshot(snapshot){const {data,...out}=snapshot;return out;}
 const examples=['세계 현황','흡수 현황','자율 점검','자율 임무: 공식 자료를 읽고 다음 개선 초안을 만들어줘','운영 브리핑','운영 현황','기억해: 이번 주에는 YENO 한 프로젝트에 집중한다','찾아줘: YENO','문서 만들어: YENO의 첫 목표는 기억과 실행이다','프로젝트 목록','프로젝트 브리핑: 프로젝트 이름','프로젝트 작업: 프로젝트 이름 | 준비할 작업','자료 목록','자료 브리핑: 자료 ID','개선 후보: 자료 ID','진단해','개선점 찾아줘'];
 
@@ -127,7 +128,7 @@ export function createYenoServer(options={}) {
    }catch(error){releaseLock();throw error;}
  }
  event('YENO runtime started.');store.save();
- function state(){return {repositoryDevelopment:{patchDrafting:true,runnerConnected:false,automaticDeployment:false,modelCallsPerPlan:1},growth:growthState(),codeWorkshop:codeState(),autopilot:autopilotState(),bots:botStatus(s,profiles),name:'YENO OS',version:VERSION,apiVersion:API_VERSION,requestTracking:{retained:Object.keys(s.requestLedger).length,capacity:REQUEST_LEDGER_MAX_ENTRIES,cached:Object.keys(s.requests).length,cacheMaxBytes:REQUEST_CACHE_MAX_BYTES},revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,draftConfigured:!!aiEndpoint,model:agentSettings.ready?agentSettings.model:aiEndpoint?aiModel:null},agent:{providers:providerStatus(),configured:agentSettings.ready,provider:agentSettings.provider,model:agentSettings.model||null,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs),automaticReviews:agentSettings.ready&&agentSettings.auto&&s.modules.ai&&(s.discovery.enabled||s.ecosystem.enabled)&&!s.emergencyStop,tools:AGENT_TOOLS.map(tool=>tool.name),developmentExecution:false,assignedJavaScriptCoding:true},discovery:{...s.discovery,repositories:DISCOVERY_REPOS},ecosystem:publicEcosystem(s.ecosystem),jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,world:worldOverview(s.jobs),capabilities:{worldEarthquakes:true,projectBots:true,localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,scheduledSourceDiscovery:true,boundedAgentLoop:true,ecosystemDiscovery:true,skillEvidenceIntake:true,developerWorker:false,javascriptWorker:true,externalCodeExecution:true,voiceConversation:true,autonomousProduction:true,diagnostics:true,evolution:'tested-javascript-versions',ai:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
+ function state(){return {repositoryDevelopment:{patchDrafting:true,runnerConnected:false,automaticDeployment:false,modelCallsPerPlan:1},growth:growthState(),codeWorkshop:codeState(),autopilot:autopilotState(),bots:{...botStatus(s,profiles),persistent:persistentBotOverview(s.persistentBots)},persistentBots:persistentBotOverview(s.persistentBots),name:'YENO OS',version:VERSION,apiVersion:API_VERSION,requestTracking:{retained:Object.keys(s.requestLedger).length,capacity:REQUEST_LEDGER_MAX_ENTRIES,cached:Object.keys(s.requests).length,cacheMaxBytes:REQUEST_CACHE_MAX_BYTES},revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,draftConfigured:!!aiEndpoint,model:agentSettings.ready?agentSettings.model:aiEndpoint?aiModel:null},agent:{providers:providerStatus(),configured:agentSettings.ready,provider:agentSettings.provider,model:agentSettings.model||null,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs),automaticReviews:agentSettings.ready&&agentSettings.auto&&s.modules.ai&&(s.discovery.enabled||s.ecosystem.enabled)&&!s.emergencyStop,tools:AGENT_TOOLS.map(tool=>tool.name),developmentExecution:false,assignedJavaScriptCoding:true},discovery:{...s.discovery,repositories:DISCOVERY_REPOS},ecosystem:publicEcosystem(s.ecosystem),jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,world:worldOverview(s.jobs),capabilities:{worldEarthquakes:true,projectBots:true,persistentBots:true,externalBotProduct:false,androidControl:false,webIntake:false,paidVideoProvider:false,externalPublishing:false,localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,scheduledSourceDiscovery:true,boundedAgentLoop:true,ecosystemDiscovery:true,skillEvidenceIntake:true,developerWorker:false,javascriptWorker:true,externalCodeExecution:true,voiceConversation:true,autonomousProduction:true,diagnostics:true,evolution:'tested-javascript-versions',ai:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
  // A failed filesystem write leaves its outcome uncertain. Retain its request
  // identity in memory, but never acknowledge a cached receipt or expose that
  // state through the API until the complete state has been persisted again.
@@ -681,6 +682,21 @@ export function createYenoServer(options={}) {
    event(`Project bots ${action}; no unattended shell, publish, payment or deployment.`);
    return {status:200,payload:{kind:'bots',bots:botStatus(s,profiles),stoppingJobIds:[...controllers.keys()].filter(id=>s.jobs.some(j=>j.id===id&&j.botAssignment))}};
  }
+ function persistentBotsMutation(body,{principal,versioned}={}){
+  if(versioned||principal?.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required for persistent bot administration');
+  if(!body.requestId)throw new PersistentBotError(400,'request_id_required','Persistent requestId required');
+  const action=body.action;
+  const allowed=action==='memory'?['requestId','action','botId','memory']:action==='routine'?['requestId','action','botId','routine']:action==='handoff'?['requestId','action','handoff']:null;
+  if(!allowed)throw new PersistentBotError(400,'unsupported_action','Unsupported persistent bot action');
+  if(Object.keys(body).some(key=>!allowed.includes(key)))throw new PersistentBotError(400,'unknown_field','Unknown persistent bot field');
+  let result;
+  if(action==='memory')result=appendPersistentMemory(s.persistentBots,body.botId,body.memory);
+  else if(action==='routine')result=putPersistentRoutine(s.persistentBots,body.botId,body.routine);
+  else result=recordPersistentHandoff(s.persistentBots,body.handoff);
+  s.persistentBots=result.registry;
+  event('Persistent bot '+action+' recorded; no external execution.');
+  return {status:201,payload:{kind:'persistentBot',action,...(action==='memory'?{memory:result.memory}:action==='routine'?{routine:result.routine}:{handoff:result.handoff}),overview:persistentBotOverview(s.persistentBots)}};
+ }
  function addMemory(body){requireModule('memory');const memory={id:uid(),text:requiredText(body.text,20000),createdAt:now()};s.memories.unshift(memory);event('Memory saved.');return memory;}
  function ensureUniqueProject(name,exceptId){if(s.projects.some(project=>project.id!==exceptId&&projectNameKey(project.name)===projectNameKey(name)))throw new ProjectError(409,'A project with this name already exists.');}
  function addProject(body){const fields=validateProjectFields(body,{creating:true});ensureUniqueProject(fields.name);const at=now(),project={id:uid(),...fields,version:1,createdAt:at,updatedAt:at};s.projects.push(project);event(`Project registered: ${project.name}`);return project;}
@@ -1224,7 +1240,8 @@ export function createYenoServer(options={}) {
      if(req.method==='GET'&&url.pathname==='/api/self-test'){const payload=selfTestState();if(payload.history.some((item,i)=>item.durableReload?.matched&&!s.selfTests[i].durableReload))save();return respond(res,200,payload);}
      if(req.method==='GET'&&url.pathname==='/api/autopilot')return respond(res,200,autopilotState());
      if(req.method==='GET'&&url.pathname==='/api/research')return respond(res,200,researchState());
-     if(req.method==='GET'&&url.pathname==='/api/bots')return respond(res,200,botStatus(s,profiles));
+     if(req.method==='GET'&&url.pathname==='/api/persistent-bots')return respond(res,200,publicPersistentBots(s.persistentBots));
+     if(req.method==='GET'&&url.pathname==='/api/bots')return respond(res,200,{...botStatus(s,profiles),persistent:persistentBotOverview(s.persistentBots)});
      if(req.method==='GET'&&url.pathname==='/api/projects')return respond(res,200,{projects:s.projects});
      if(req.method==='GET'&&url.pathname==='/api/sources')return respond(res,200,{sources:s.sources});
      if(req.method==='GET'&&url.pathname==='/api/memory'){requireModule('memory');const q=(url.searchParams.get('q')??'').toLocaleLowerCase();return respond(res,200,{memories:s.memories.filter(m=>m.text.toLocaleLowerCase().includes(q))});}
@@ -1319,6 +1336,7 @@ export function createYenoServer(options={}) {
        const questAction=url.pathname.match(/^\/api\/quests\/([a-f0-9-]+)\/(run|review)$/);
        if(questAction){if(!b.requestId)throw new HttpError(400,'Persistent requestId required');if(Object.keys(b).some(k=>!(questAction[2]==='run'?['requestId']:['requestId','provider','maxCalls']).includes(k)))throw new HttpError(400,'Unknown goal action field');return questAction[2]==='run'?runQuest(questAction[1]):reviewQuest(questAction[1],b);}
        if(url.pathname==='/api/outcomes'){if(!b.requestId)throw new HttpError(400,'Persistent requestId required');verifiedQuestArtifact(findQuest(b.questId),b.artifactId);const outcome=recordQuestOutcome(b,s);s.outcomes.unshift(outcome);event('Owner-reported outcome recorded with an actual output reference.');const reality=outcomeRealities(s).find(r=>r.outcomeId===outcome.id);const kirbyAcquisition=kirbyAutoAcquire();return {status:201,payload:{outcome,reality,...(kirbyAcquisition?{kirbyAcquisition}:{})}};}
+       if(url.pathname==='/api/persistent-bots')return persistentBotsMutation(b,{principal,versioned});
        if(url.pathname==='/api/bots'){if(!b.requestId)throw new BotError(400,'Persistent requestId required');if(b.action==='start')return startBots(b);if(Object.keys(b).some(k=>!['action','requestId'].includes(k)))throw new BotError(400,'Unknown bot control field');return controlBots(b.action);}
        if(url.pathname==='/api/ecosystem'){
          if(typeof b.enabled!=='boolean'||Object.keys(b).some(key=>!['enabled','requestId'].includes(key))||!b.requestId)throw new HttpError(400,'Provide enabled:boolean and persistent requestId');
@@ -1361,7 +1379,7 @@ export function createYenoServer(options={}) {
            const quest=addQuest({goal:match[1],drive:'sloth',provider:'auto'});return runQuest(quest.id);
          }
          if((match=text.match(/^연구\s*[:：]\s*(E0[1-9])\s*\|\s*(.+)$/is))){const track=RESEARCH_TRACKS.find(item=>item.code===match[1].toUpperCase());return startResearch({requestId:b.requestId,projectId:track.projectId,question:match[2],provider:'auto'});}
-         if(/^봇\s*현황$/.test(text))return {status:201,payload:{kind:'job',job:sourceDocumentJob(null,botDocument(s,profiles),'YENO 봇 현황')}};
+         if(/^봇\s*현황$/.test(text))return {status:201,payload:{kind:'job',job:sourceDocumentJob(null,botDocument(s,profiles)+'\n\n'+persistentBotDocument(s.persistentBots),'YENO 봇 현황')}};
          if(/^모든\s*프로젝트\s*봇\s*시작$/.test(text))return startBots({profile:'primary',includePaused:true});
          if(/^프로젝트\s*봇\s*시작$/.test(text))return startBots({profile:'primary'});
          if(/^그록\s*봇\s*시작$/.test(text))return startBots({profile:'grok'});
@@ -1413,7 +1431,7 @@ export function createYenoServer(options={}) {
        throw new HttpError(404,'Not found');
      },{required:versioned||!!principal.web,safetyAction:url.pathname==='/api/code/disable'||url.pathname==='/api/capabilities/disable'||(url.pathname==='/api/studio'&&isStudioSafetyAction(s.studio,b))||(url.pathname==='/api/bots'&&b.action==='stop')||(url.pathname==='/api/commands'&&/^(?:봇|자동)\s*운영\s*중지$/.test(b.text??''))||(url.pathname==='/api/control'&&b.action==='stop')||(['/api/discovery','/api/ecosystem','/api/autopilot'].includes(url.pathname)&&b.enabled===false)});
      respond(res,result.status,result.payload);
-   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof RepositoryPatchError||error instanceof CodeWorkshopError||error instanceof CodeSandboxError||error instanceof CapabilityError||error instanceof ResearchError||error instanceof WebSessionError||error instanceof ProductionCapacityError||error instanceof StudioError||error instanceof VideoError||error instanceof ForAiError||error instanceof QuestError||error instanceof BotError||error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError||error instanceof RequestLedgerError;if(!known&&process.env.YENO_DEBUG_ERRORS)console.error(error);respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
+   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof RepositoryPatchError||error instanceof CodeWorkshopError||error instanceof CodeSandboxError||error instanceof CapabilityError||error instanceof ResearchError||error instanceof WebSessionError||error instanceof ProductionCapacityError||error instanceof StudioError||error instanceof VideoError||error instanceof ForAiError||error instanceof QuestError||error instanceof BotError||error instanceof PersistentBotError||error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError||error instanceof RequestLedgerError;if(!known&&process.env.YENO_DEBUG_ERRORS)console.error(error);respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
  });
  server.requestTimeout=15000;server.headersTimeout=10000;
  server.on('upgrade',(req,socket,head)=>{
