@@ -64,9 +64,9 @@ jobs:
         run: npm ci --prefix runtime --ignore-scripts --no-audit --no-fund
       - name: Install locked frontend dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Verify core and controller logic
+      - name: Verify core and controller logic for isolated smoke variant
         working-directory: .
-        run: npm --offline test
+        run: node --test runtime/test/*.test.mjs apps/controller/test/*.test.mjs scripts/native-config.test.mjs
       - name: Build frontend
         run: npm run build
       - name: Verify shipped UI against a temporary core
