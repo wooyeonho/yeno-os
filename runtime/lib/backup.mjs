@@ -27,6 +27,7 @@ import {validateResearchRequest,validateResearchBundle} from './research.mjs';
 import {initialAutopilot,validateAutopilot,validateAutopilotJob} from './autopilot.mjs';
 import {initialCoreState,validateCoreState,evaluateHeartbeat,createCoreIdentity} from './blackhole-core.mjs';
 import {validateMemoryEvents} from './memory-events.mjs';
+import {validateOutbox} from './memory-sync-outbox.mjs';
 
 export const BACKUP_MAX_PLAINTEXT_BYTES = 16 * 1024 * 1024;
 export const BACKUP_MAX_ARCHIVE_BYTES = BACKUP_MAX_PLAINTEXT_BYTES + 36;
@@ -60,7 +61,7 @@ function memories(value) {
   }
 }
 function validateState(state) {
-  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop', 'selfTests', 'runtimeBoots', 'deviceAcceptances', 'outcomeConnectors', 'outcomeReadings', 'outcomeEvidence', 'blackholeCore', 'memoryEvents'], STATE_KEYS);
+  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop', 'selfTests', 'runtimeBoots', 'deviceAcceptances', 'outcomeConnectors', 'outcomeReadings', 'outcomeEvidence', 'blackholeCore', 'memoryEvents', 'memorySyncOutbox'], STATE_KEYS);
   if (Object.hasOwn(state, 'runtimeBoots')) validateBootRecords(state.runtimeBoots);
   if (Object.hasOwn(state, 'deviceAcceptances')) validateDeviceAcceptances(state.deviceAcceptances);
   if (Object.hasOwn(state, 'outcomeConnectors')) validateConnectors(state.outcomeConnectors);
@@ -91,6 +92,8 @@ function validateState(state) {
   // backup archive whose blackholeCore predates the stable-identity fix.
   else if (!Object.hasOwn(state.blackholeCore, 'identity')) state.blackholeCore.identity = createCoreIdentity(new Date().toISOString());
   validateCoreState(state.blackholeCore, state);
+  if (!Object.hasOwn(state, 'memorySyncOutbox')) state.memorySyncOutbox = [];
+  validateOutbox(state.memorySyncOutbox, state);
   if (!Array.isArray(state.jobs) || !Array.isArray(state.snapshots) || !Array.isArray(state.events) || !record(state.requests) || !record(state.devices) || !record(state.artifacts)) fail('invalid state collections');
   const jobs = new Map(), references = new Set();
   for (const job of state.jobs) {

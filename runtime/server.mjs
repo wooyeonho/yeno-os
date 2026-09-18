@@ -39,7 +39,7 @@ import {growthOverview} from './lib/growth.mjs';
 import {levelingHistoriesFromState} from './lib/leveling-evidence.mjs';
 import {outcomeRealities,verifiedOutcomesByCapability} from './lib/outcome-reality.mjs';
 import {createConnector,addConnector,removeConnector,readConnector,addReading} from './lib/outcome-connector.mjs';
-import {createOutcomeEvidence,addOutcomeEvidence,OutcomeVerificationError} from './lib/outcome-verification.mjs';
+import {createOutcomeEvidence,addOutcomeEvidence,OutcomeVerificationError,sha256} from './lib/outcome-verification.mjs';
 import {buildReadiness,detectSourceCommit,selfTestDiscovery,selfTestInput,selfTestProgress,PROVIDER_BLOCKER,MAX_SELF_TESTS,READINESS_VERSION} from './lib/readiness.mjs';
 import {decideQuest,isDecideRequest} from './lib/decide.mjs';
 import {synthesizeAutonomousGoal,previewAutonomousGoals} from './lib/goal-synthesis.mjs';
@@ -54,6 +54,9 @@ import {createLiveSession,setupMessage,audioChunkMessage,audioStreamEndMessage,t
 import {isWebSocketUpgrade,acceptUpgrade} from './lib/live-ws.mjs';
 import {coreSummary,coreHomeSummary} from './lib/blackhole-core.mjs';
 import {createMemoryEvent,addMemoryEvent,MemoryEventError} from './lib/memory-events.mjs';
+import {enqueue,applyOutcome,pendingItems,outboxSummary,MemorySyncError} from './lib/memory-sync-outbox.mjs';
+import {loadSupabaseMemoryConfig,createSupabaseAdapter} from './lib/memory-supabase-adapter.mjs';
+import {loadObsidianConfig,exportEvent as exportObsidianEvent,renderIdentityMarkdown,renderCurrentStateMarkdown,renderMemoryIndexMarkdown,renderSyncStatusMarkdown,memoryIndexCounts,exportGenerated as exportObsidianGenerated} from './lib/obsidian-exporter.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 // Kirby's only auto-acquisition candidate: a manifest already reviewed and
@@ -76,6 +79,15 @@ const examples=['세계 현황','흡수 현황','자율 점검','자율 임무: 
 export function createYenoServer(options={}) {
  const env=options.env??process.env;
  const profiles=agentProfiles(env), agentSettings=profiles.primary;
+ // BLACKHOLE Durable Memory Fabric (Phase B): both destinations are disabled
+ // by default and only ever configured from explicit YENO_MEMORY_*/
+ // YENO_OBSIDIAN_* env vars - never inferred, never reusing an unrelated
+ // YENO AI/provider key. `options.memorySupabaseTransport` exists only so
+ // tests can inject a fake transport; production always uses the real
+ // pinned-HTTPS transport (see memory-supabase-adapter.mjs).
+ const supabaseMemoryConfig=loadSupabaseMemoryConfig(env);
+ const supabaseMemoryAdapter=createSupabaseAdapter(supabaseMemoryConfig,{transport:options.memorySupabaseTransport});
+ const obsidianMemoryConfig=loadObsidianConfig(env);
  const configFor=job=>job.botAssignment?profiles[job.botAssignment.profile]:job.selectedProvider?agentConfigForProvider(env,job.selectedProvider):agentSettings;
  // Owner-declared Brain Pool (YENO_BRAIN_POOL). Invalid declarations refuse to start.
  const DECLARED_BRAIN_POOL=declaredBrainPool(env);
@@ -104,7 +116,7 @@ export function createYenoServer(options={}) {
  if(aiBase&&aiModel&&aiKey){try{const base=new URL(aiBase);if(!['https:','http:'].includes(base.protocol)||base.username||base.password||base.search||base.hash)throw new Error();if(base.protocol==='http:'&&!['localhost','127.0.0.1','[::1]'].includes(base.hostname))throw new Error();base.pathname=base.pathname.replace(/\/+$/,'')+'/chat/completions';aiEndpoint=base.href;}catch{releaseLock();throw new Error('YENO_AI_BASE_URL must use HTTPS (HTTP is allowed only on loopback) and contain no credentials, query, or fragment.');}}
  const controllers=new Map(), generations=new Map();
  const invalidate=job=>{generations.set(job.id,(generations.get(job.id)??0)+1);controllers.get(job.id)?.abort();};
- let closed=false, schedulerTimer=null;
+ let closed=false, schedulerTimer=null, lastObsidianDigests=null;
  const allowedHosts=new Set(['127.0.0.1','localhost','[::1]',...(env.YENO_ALLOWED_HOSTS??'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean)]);
  function event(text){s.events.unshift({id:uid(),at:now(),text});s.events=s.events.slice(0,300);}
  let restarted=0;
@@ -475,6 +487,12 @@ export function createYenoServer(options={}) {
    let memoryEvent;
    try{memoryEvent=createMemoryEvent(claim,s,{at:now()});}catch(error){memoryEventError(error);}
    try{s.memoryEvents=addMemoryEvent(s.memoryEvents,memoryEvent,s);}catch(error){memoryEventError(error);}
+   // Durable Memory Fabric (Phase B): queue delivery to whichever external
+   // destinations are actually configured. Enqueueing is pure bookkeeping -
+   // no network/filesystem call happens here; a bounded scheduler tick (see
+   // processMemorySyncBatch) does the actual bounded work later.
+   const destinations=[...(supabaseMemoryConfig.enabled?['supabase']:[]),...(obsidianMemoryConfig.enabled?['obsidian']:[])];
+   if(destinations.length)s.memorySyncOutbox=enqueue(s.memorySyncOutbox,memoryEvent,destinations,now());
    event(`기억 이벤트 기록: ${memoryEvent.type}`);
    return {status:201,payload:{memoryEvent},trigger:'memory_recorded'};
  }
@@ -720,12 +738,98 @@ export function createYenoServer(options={}) {
  function sourceDocumentJob(source,content,title){const job=newJob({type:'document',text:content,title:title.slice(0,160),...(source?.projectId?{projectId:source.projectId}:{})});job.sourceReport=true;if(source)job.sourceId=source.id;return publicJob(job);}
  function takeSnapshot(label){const snapshot={id:uid(),label:label?requiredText(label,160):'수동 저장',createdAt:now(),data:structuredClone({memories:s.memories,settings:{concurrency:s.concurrency,modules:s.modules}})};s.snapshots.unshift(snapshot);event(`Snapshot created: ${snapshot.label}`);return snapshot;}
  function active(){return new Set([...s.jobs.filter(j=>j.status==='running').map(j=>j.id),...controllers.keys()]).size;}
+ // BLACKHOLE Durable Memory Fabric (Phase B): a small, bounded batch per tick
+ // per destination - never the whole queue, never a continuous poll, and
+ // only when the adapter is actually enabled. Emergency stop blocks this
+ // exactly like every other execution path (checked by the caller below).
+ // Each destination's own outcome is applied and persisted independently so
+ // one destination's failure never blocks or loses the other's progress.
+ async function processMemorySyncBatch(){
+   if(supabaseMemoryConfig.enabled){
+     for(const item of pendingItems(s.memorySyncOutbox,{destination:'supabase',now:now(),limit:5})){
+       const memoryEvent=s.memoryEvents.find(e=>e.id===item.eventId);
+       if(!memoryEvent)continue;
+       let outcome;
+       try{outcome=await supabaseMemoryAdapter.syncEvent(memoryEvent,{identity:s.blackholeCore.identity});}
+       catch{outcome={result:'retryable',errorCode:'unavailable'};}
+       try{s.memorySyncOutbox=applyOutcome(s.memorySyncOutbox,item.eventId,'supabase',outcome,now());save('memory_recorded');}
+       catch(error){event(`Supabase 기억 동기화 결과 반영 실패(저장 없음): ${error.message}`);}
+     }
+   }
+   if(obsidianMemoryConfig.enabled){
+     for(const item of pendingItems(s.memorySyncOutbox,{destination:'obsidian',now:now(),limit:5})){
+       const memoryEvent=s.memoryEvents.find(e=>e.id===item.eventId);
+       if(!memoryEvent)continue;
+       const project=memoryEvent.projectId?s.projects.find(p=>p.id===memoryEvent.projectId)??null:null;
+       const quest=memoryEvent.questId?s.quests.find(q=>q.id===memoryEvent.questId)??null:null;
+       let exported;
+       try{exported=exportObsidianEvent(obsidianMemoryConfig,memoryEvent,{core:{identity:s.blackholeCore.identity},project,quest},now());}
+       catch{exported={result:'failed',errorCode:'vault_unavailable'};}
+       const outcome=exported.result==='synced'?{result:'synced',remoteRef:exported.relativePath}:{result:exported.result==='blocked'?'blocked':'failed',errorCode:exported.errorCode};
+       try{s.memorySyncOutbox=applyOutcome(s.memorySyncOutbox,item.eventId,'obsidian',outcome,now());save('memory_recorded');}
+       catch(error){event(`Obsidian 기억 동기화 결과 반영 실패(저장 없음): ${error.message}`);}
+     }
+     refreshObsidianIndexes();
+   }
+ }
+ // Safe aggregate for the Core API's memory section: readiness enum, counts
+ // and a timestamp only - never a URL, vault path, service key or raw error.
+ // LIVE_VERIFIED for Supabase requires this adapter's own health/syncEvent
+ // call to have actually round-tripped successfully at least once (never
+ // inferred from configuration or outbox counts alone); Obsidian's export is
+ // a direct local filesystem write, so a real synced item is itself the
+ // live evidence.
+ function destinationSyncStatus(destination,configured){
+   const summary=outboxSummary(s.memorySyncOutbox,destination);
+   if(!configured)return {readiness:'NOT_CONFIGURED',pendingCount:0,lastSyncedAt:null};
+   if(summary.counts.synced===0)return {readiness:summary.counts.blocked>0?'BLOCKED':'CONFIGURED_UNVERIFIED',pendingCount:summary.counts.pending,lastSyncedAt:null};
+   if(summary.counts.failed>0||summary.counts.blocked>0)return {readiness:'DEGRADED',pendingCount:summary.counts.pending,lastSyncedAt:summary.lastSyncedAt};
+   const live=destination==='supabase'?supabaseMemoryAdapter.lastLiveSuccess:true;
+   return {readiness:live?'LIVE_VERIFIED':'CONFIGURED_UNVERIFIED',pendingCount:summary.counts.pending,lastSyncedAt:summary.lastSyncedAt};
+ }
+ function memoryFabricSummary(){
+   return {localCount:s.memoryEvents.length,supabase:destinationSyncStatus('supabase',supabaseMemoryConfig.enabled),obsidian:destinationSyncStatus('obsidian',obsidianMemoryConfig.enabled)};
+ }
+ // Index/identity/state files are regenerations of already-durable local
+ // state. The embedded frontmatter fingerprint MUST come from the underlying
+ // stable data, never from the rendered text itself: the rendered text
+ // always embeds a live `at`/`updated_at` timestamp for human readability,
+ // and hashing that would make every regeneration look like a "change" even
+ // when nothing meaningful moved. Comparing these stable digests against the
+ // last batch we actually wrote means a tick with no real change never
+ // touches the filesystem at all (not even a read), honoring "no vault
+ // rescans every heartbeat"; a genuine data change regenerates exactly once.
+ // exportObsidianGenerated (writeManaged) freely overwrites these paths as
+ // long as they still carry `generated:true` - unlike a per-event export,
+ // this content is meant to track current state, not stay fixed, so only a
+ // truly foreign file at the same path is treated as a conflict.
+ function refreshObsidianIndexes(){
+   const core=coreSummary(s);
+   const digests={
+     identity:sha256(s.blackholeCore.identity),
+     currentState:sha256({activity:core.activity,missionGoal:core.mission?.goal??null,dominantDriveName:core.dominantDriveName??null,activeShadowCount:core.activeShadowCount}),
+     memoryIndex:sha256(memoryIndexCounts(s.memoryEvents)),
+     syncStatus:sha256({supabase:outboxSummary(s.memorySyncOutbox,'supabase').counts,obsidian:outboxSummary(s.memorySyncOutbox,'obsidian').counts}),
+   };
+   if(lastObsidianDigests&&Object.keys(digests).every(key=>digests[key]===lastObsidianDigests[key]))return;
+   const at=now();
+   for(const [segments,content] of [
+     [['00_Core','Identity.md'],renderIdentityMarkdown({identity:s.blackholeCore.identity},digests.identity)],
+     [['00_Core','Current_State.md'],renderCurrentStateMarkdown(core,at,digests.currentState)],
+     [['_Index','Memory_Index.md'],renderMemoryIndexMarkdown(s.memoryEvents,at,digests.memoryIndex)],
+     [['_Index','Sync_Status.md'],renderSyncStatusMarkdown(outboxSummary(s.memorySyncOutbox,'supabase'),outboxSummary(s.memorySyncOutbox,'obsidian'),at,digests.syncStatus)],
+   ]){
+     try{exportObsidianGenerated(obsidianMemoryConfig,segments,content,at);}catch(error){event(`Obsidian 색인 갱신 실패: ${error.message}`);}
+   }
+   lastObsidianDigests=digests;
+ }
  function schedule(){if(closed||schedulerTimer)return;schedulerTimer=setTimeout(tick,150);schedulerTimer.unref();}
  function tick(){schedulerTimer=null;if(closed)return;
    try{ensureDurable();}catch{schedule();return;}
    for(const job of s.jobs)if(job.deadlineAt&&['queued','running'].includes(job.status)&&Date.now()>=Date.parse(job.deadlineAt)){job.status='paused';job.pauseReason='deadline';touch(job);invalidate(job);save();}
    void discovery.tick();
    void ecosystem.tick();
+   if(!s.emergencyStop)void processMemorySyncBatch();
    try{runAutopilot();}catch(error){
      if(persistencePending){schedule();return;}
      s.autopilot.lastError=error instanceof ProductionCapacityError?error.message:'자동 작업 접수 또는 이전 결과 확인에 실패했습니다. 보관된 결과·연결 상태를 점검해야 합니다.';
@@ -1259,7 +1363,7 @@ export function createYenoServer(options={}) {
      // same handler after the /api/v1 prefix strip a few lines above, but
      // arrived through authenticate(req,true) - device-bearer only, exactly
      // like every other /api/v1/* route. No separate v1 route is needed.
-     if(req.method==='GET'&&url.pathname==='/api/core')return respond(res,200,coreSummary(s));
+     if(req.method==='GET'&&url.pathname==='/api/core')return respond(res,200,{...coreSummary(s),memory:memoryFabricSummary()});
      if(req.method==='GET'&&url.pathname==='/api/readiness')return respond(res,200,readinessState(req,principal,versioned));
      if(req.method==='GET'&&url.pathname==='/api/self-test'){const payload=selfTestState();if(payload.history.some((item,i)=>item.durableReload?.matched&&!s.selfTests[i].durableReload))save();return respond(res,200,payload);}
      if(req.method==='GET'&&url.pathname==='/api/autopilot')return respond(res,200,autopilotState());

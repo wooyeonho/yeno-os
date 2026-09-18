@@ -25,6 +25,7 @@ import {emptyStudio,validateStudio} from './studio.mjs';
 import {initialAutopilot,validateAutopilot,validateAutopilotJob} from './autopilot.mjs';
 import {initialCoreState,validateCoreState,evaluateHeartbeat,createCoreIdentity} from './blackhole-core.mjs';
 import {validateMemoryEvents} from './memory-events.mjs';
+import {validateOutbox} from './memory-sync-outbox.mjs';
 
 export const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 export const uid = () => crypto.randomUUID();
@@ -40,7 +41,7 @@ export function atomicWrite(file, content) {
 export function initialState() {
  return {revision:0, emergencyStop:false, concurrency:1,
  modules:{memory:true,documents:true,diagnostics:true,ai:false},
- jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), capabilities:initialCapabilities(), codeWorkshop:initialCodeWorkshop(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem(), blackholeCore:initialCoreState(), memoryEvents:[]};
+ jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), capabilities:initialCapabilities(), codeWorkshop:initialCodeWorkshop(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem(), blackholeCore:initialCoreState(), memoryEvents:[], memorySyncOutbox:[]};
 }
 function initializeQuestCollections(state) {
  // Missing collections identify older stores. Present malformed data must fail
@@ -78,6 +79,11 @@ function initializeQuestCollections(state) {
  // present in the persisted state, so no later call ever regenerates it.
  else if(!Object.hasOwn(state.blackholeCore,'identity'))state.blackholeCore.identity=createCoreIdentity(now());
  validateCoreState(state.blackholeCore,state);
+ // BLACKHOLE Durable Memory Fabric (Phase B): the sync outbox is pure
+ // bookkeeping around the already-canonical memoryEvents ledger above, so it
+ // validates last, once memoryEvents is guaranteed present and correct.
+ if(!Object.hasOwn(state,'memorySyncOutbox'))state.memorySyncOutbox=[];
+ validateOutbox(state.memorySyncOutbox,state);
  return state;
 }
 function sanitizeEnrollmentReceipts(state) {
