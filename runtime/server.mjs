@@ -52,6 +52,8 @@ import {createDeviceAcceptance,recordDeviceAcceptance} from './lib/device-eviden
 import {validateLedger as validateAndroidLedger} from '../scripts/android-release.mjs';
 import {createLiveSession,setupMessage,audioChunkMessage,audioStreamEndMessage,textTurnMessage,applyServerMessage,settleToolCall,toolResponseMessage,openTransition,setupSentTransition,closeTransition,LIVE_ENDPOINT} from './lib/gemini-live.mjs';
 import {isWebSocketUpgrade,acceptUpgrade} from './lib/live-ws.mjs';
+import {coreSummary,coreHomeSummary} from './lib/blackhole-core.mjs';
+import {createMemoryEvent,addMemoryEvent,MemoryEventError} from './lib/memory-events.mjs';
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 // Kirby's only auto-acquisition candidate: a manifest already reviewed and
@@ -127,7 +129,7 @@ export function createYenoServer(options={}) {
    }catch(error){releaseLock();throw error;}
  }
  event('YENO runtime started.');store.save();
- function state(){return {repositoryDevelopment:{patchDrafting:true,runnerConnected:false,automaticDeployment:false,modelCallsPerPlan:1},growth:growthState(),codeWorkshop:codeState(),autopilot:autopilotState(),bots:botStatus(s,profiles),name:'YENO OS',version:VERSION,apiVersion:API_VERSION,requestTracking:{retained:Object.keys(s.requestLedger).length,capacity:REQUEST_LEDGER_MAX_ENTRIES,cached:Object.keys(s.requests).length,cacheMaxBytes:REQUEST_CACHE_MAX_BYTES},revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,draftConfigured:!!aiEndpoint,model:agentSettings.ready?agentSettings.model:aiEndpoint?aiModel:null},agent:{providers:providerStatus(),configured:agentSettings.ready,provider:agentSettings.provider,model:agentSettings.model||null,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs),automaticReviews:agentSettings.ready&&agentSettings.auto&&s.modules.ai&&(s.discovery.enabled||s.ecosystem.enabled)&&!s.emergencyStop,tools:AGENT_TOOLS.map(tool=>tool.name),developmentExecution:false,assignedJavaScriptCoding:true},discovery:{...s.discovery,repositories:DISCOVERY_REPOS},ecosystem:publicEcosystem(s.ecosystem),jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,world:worldOverview(s.jobs),capabilities:{worldEarthquakes:true,projectBots:true,localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,scheduledSourceDiscovery:true,boundedAgentLoop:true,ecosystemDiscovery:true,skillEvidenceIntake:true,developerWorker:false,javascriptWorker:true,externalCodeExecution:true,voiceConversation:true,autonomousProduction:true,diagnostics:true,evolution:'tested-javascript-versions',ai:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
+ function state(){return {repositoryDevelopment:{patchDrafting:true,runnerConnected:false,automaticDeployment:false,modelCallsPerPlan:1},growth:growthState(),codeWorkshop:codeState(),autopilot:autopilotState(),bots:botStatus(s,profiles),core:coreHomeSummary(s),name:'YENO OS',version:VERSION,apiVersion:API_VERSION,requestTracking:{retained:Object.keys(s.requestLedger).length,capacity:REQUEST_LEDGER_MAX_ENTRIES,cached:Object.keys(s.requests).length,cacheMaxBytes:REQUEST_CACHE_MAX_BYTES},revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,draftConfigured:!!aiEndpoint,model:agentSettings.ready?agentSettings.model:aiEndpoint?aiModel:null},agent:{providers:providerStatus(),configured:agentSettings.ready,provider:agentSettings.provider,model:agentSettings.model||null,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs),automaticReviews:agentSettings.ready&&agentSettings.auto&&s.modules.ai&&(s.discovery.enabled||s.ecosystem.enabled)&&!s.emergencyStop,tools:AGENT_TOOLS.map(tool=>tool.name),developmentExecution:false,assignedJavaScriptCoding:true},discovery:{...s.discovery,repositories:DISCOVERY_REPOS},ecosystem:publicEcosystem(s.ecosystem),jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,world:worldOverview(s.jobs),capabilities:{worldEarthquakes:true,projectBots:true,localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,scheduledSourceDiscovery:true,boundedAgentLoop:true,ecosystemDiscovery:true,skillEvidenceIntake:true,developerWorker:false,javascriptWorker:true,externalCodeExecution:true,voiceConversation:true,autonomousProduction:true,diagnostics:true,evolution:'tested-javascript-versions',ai:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
  // A failed filesystem write leaves its outcome uncertain. Retain its request
  // identity in memory, but never acknowledge a cached receipt or expose that
  // state through the API until the complete state has been persisted again.
@@ -450,6 +452,31 @@ export function createYenoServer(options={}) {
    try{s.outcomeEvidence=addOutcomeEvidence(s.outcomeEvidence,evidence);}catch(error){outcomeError(error);}
    event(`성과 근거 등록: ${evidence.metric} · quest ${evidence.questId.slice(0,8)}`);
    return {status:201,payload:{evidence}};
+ }
+ function memoryEventError(error){
+   if(error instanceof MemoryEventError){
+     throw new HttpError(error.code==='MEMORY_EVENT_CAPACITY'?409:400,error.message,{code:error.code});
+   }
+   // Redaction is the exact reused assertNoSecrets from outcome-verification.mjs
+   // (never reimplemented here), so a rejected secret surfaces as its own
+   // OutcomeVerificationError rather than a MemoryEventError.
+   if(error instanceof OutcomeVerificationError){
+     throw new HttpError(400,error.message,{code:error.code});
+   }
+   throw error;
+ }
+ // BLACKHOLE Living Core (Phase A): the one write path for the canonical
+ // Memory Event primitive, mirroring declareOutcomeEvidence exactly - a pure
+ // constructor validated against the current state, appended to a bounded
+ // list, never a second parallel memory system.
+ function declareMemoryEvent(b){
+   if(!b.requestId)throw new HttpError(400,'Persistent requestId required');
+   const {requestId,...claim}=b;
+   let memoryEvent;
+   try{memoryEvent=createMemoryEvent(claim,s,{at:now()});}catch(error){memoryEventError(error);}
+   try{s.memoryEvents=addMemoryEvent(s.memoryEvents,memoryEvent,s);}catch(error){memoryEventError(error);}
+   event(`기억 이벤트 기록: ${memoryEvent.type}`);
+   return {status:201,payload:{memoryEvent}};
  }
  function readinessState(req,principal,versioned){
    return buildReadiness({state:s,sourceCommit:SOURCE_COMMIT,runtimeVersion:VERSION,apiVersion:API_VERSION,store:{directory:path.basename(dataDir),durable:!persistencePending&&fs.existsSync(path.join(dataDir,'state.json')),recovered:store.recovered},
@@ -1220,6 +1247,7 @@ export function createYenoServer(options={}) {
        res.writeHead(200,{'Content-Type':file.mimeType,'Content-Disposition':`attachment; filename="${file.name}"`,'Content-Length':Buffer.byteLength(file.content),'X-Content-SHA256':digest(file.content)});return res.end(file.content);
      }
      if(req.method==='GET'&&url.pathname==='/api/quests')return respond(res,200,questState());
+     if(req.method==='GET'&&url.pathname==='/api/core')return respond(res,200,coreSummary(s));
      if(req.method==='GET'&&url.pathname==='/api/readiness')return respond(res,200,readinessState(req,principal,versioned));
      if(req.method==='GET'&&url.pathname==='/api/self-test'){const payload=selfTestState();if(payload.history.some((item,i)=>item.durableReload?.matched&&!s.selfTests[i].durableReload))save();return respond(res,200,payload);}
      if(req.method==='GET'&&url.pathname==='/api/autopilot')return respond(res,200,autopilotState());
@@ -1304,6 +1332,7 @@ export function createYenoServer(options={}) {
        const connectorReadMatch=url.pathname.match(/^\/api\/outcome-connectors\/([a-z0-9][a-z0-9-]{0,63})\/read$/);
        if(connectorReadMatch){if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required to trigger an outcome connector read');if(!b.requestId)throw new HttpError(400,'Persistent requestId required');return readOutcomeConnector(connectorReadMatch[1],b);}
        if(url.pathname==='/api/outcome-evidence'){if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required to declare outcome evidence');return declareOutcomeEvidence(b);}
+       if(url.pathname==='/api/memory-events'){if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required to declare a memory event');return declareMemoryEvent(b);}
        if(url.pathname==='/api/quests/loop'){
         if(!b.requestId||Object.keys(b).some(k=>!['requestId'].includes(k)))throw new HttpError(400,'Persistent requestId required');
         if(s.emergencyStop)throw new HttpError(409,'전체 멈춤을 먼저 해제하세요.');

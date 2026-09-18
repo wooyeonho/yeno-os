@@ -14,7 +14,18 @@ import { normalizeOrigin, versionedUrl, createStudioApi, studioStorageKey, Secur
 import { createNativeLiveVoiceView } from './native-live-voice-view.ts';
 
 type Job = { id: string; title: string; status: string; version: number; updatedAt: string; artifacts: { id: string; name: string }[] };
-type State = { name: string; apiVersion: string; revision: number; emergencyStop: boolean; jobs: Job[]; world?: Record<string, unknown>; modules?: {documents?: boolean} };
+// BLACKHOLE Living Core (Phase A): a trimmed, already-derived projection of
+// the real Persistent Core record, embedded directly in GET /api/state so
+// this binding needs no second network round trip. Every field here is real
+// evidence-derived state from server.mjs's coreHomeSummary(), never a client
+// guess - dominantDriveId/dominantDriveName are null whenever there is no
+// live mission to attribute a drive to, and the UI must say so plainly.
+type CoreHomeSummary = {
+  activity: string; missionGoal: string | null; focusProjectName: string | null;
+  dominantDriveId: string | null; dominantDriveName: string | null;
+  activeShadowCount: number; recentResult: { questId: string } | null; lastHeartbeatAt: string | null;
+};
+type State = { name: string; apiVersion: string; revision: number; emergencyStop: boolean; jobs: Job[]; world?: Record<string, unknown>; modules?: {documents?: boolean}; core?: CoreHomeSummary };
 type Memory = { id?: string; text: string; createdAt?: string };
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const encoder = new TextEncoder(), decoder = new TextDecoder();
@@ -134,9 +145,26 @@ function renderConnection() {
   $('seen').textContent = lastSeen ? `마지막 상태 확인 · ${lastSeen.toLocaleString()} · revision ${state?.revision ?? '?'}` : '서버 상태를 아직 확인하지 못했습니다.';
   $('headline').textContent = connectionStatus !== 'online' ? (state ? '마지막으로 확인한 상태입니다' : '코어 응답을 기다리고 있습니다') : state?.emergencyStop ? '전체 멈춤' : state?.jobs.some(job => ['queued', 'running'].includes(job.status)) ? '코어가 작업을 처리하고 있습니다' : '맡길 일을 기다리고 있습니다';
   $('stop').textContent = state?.emergencyStop ? '전체 멈춤 해제' : '전체 멈춤';
+  renderCoreStatus();
   studio?.setState(state ? {...state, online: connectionStatus === 'online' && !disconnecting} : null);
   void world.update(state?.world, connected && connectionStatus === 'online' && !state?.emergencyStop && state?.modules?.documents !== false && !commands?.pending && !submitting && !disconnecting);
   liveVoiceView.update({online: connectionStatus === 'online', emergencyStop: state?.emergencyStop === true, busy: disconnecting});
+}
+// BLACKHOLE Living Core (Phase A) Home binding: one compact line, never a new
+// big card. Every part is omitted rather than guessed when the real evidence
+// for it does not exist - most visibly the drive, which must say "아직 평가
+// 전" instead of ever naming an unearned drive.
+function renderCoreStatus() {
+  const core = connectionStatus === 'online' ? state?.core : undefined;
+  if (!core) { $('core-status').textContent = ''; return; }
+  const goal = core.missionGoal ? (core.missionGoal.length > 40 ? `${core.missionGoal.slice(0, 40)}…` : core.missionGoal) : null;
+  const parts = [
+    goal ? `미션: ${goal}` : '미션: 진행 중인 목표 없음',
+    `성향: ${core.dominantDriveName ?? '아직 평가 전'}`,
+    ...(core.activeShadowCount > 0 ? [`그림자 ${core.activeShadowCount}개 활동 중`] : []),
+    ...(core.recentResult ? ['최근 확인된 결과 있음'] : []),
+  ];
+  $('core-status').textContent = parts.join(' · ');
 }
 function renderPending() {
   const pending = commands?.pending;

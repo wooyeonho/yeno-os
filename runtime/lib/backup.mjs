@@ -25,6 +25,8 @@ import {validateVideoInput} from './video.mjs';
 import {validateForAiInput} from './forai.mjs';
 import {validateResearchRequest,validateResearchBundle} from './research.mjs';
 import {initialAutopilot,validateAutopilot,validateAutopilotJob} from './autopilot.mjs';
+import {initialCoreState,validateCoreState,evaluateHeartbeat} from './blackhole-core.mjs';
+import {validateMemoryEvents} from './memory-events.mjs';
 
 export const BACKUP_MAX_PLAINTEXT_BYTES = 16 * 1024 * 1024;
 export const BACKUP_MAX_ARCHIVE_BYTES = BACKUP_MAX_PLAINTEXT_BYTES + 36;
@@ -58,7 +60,7 @@ function memories(value) {
   }
 }
 function validateState(state) {
-  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop', 'selfTests', 'runtimeBoots', 'deviceAcceptances', 'outcomeConnectors', 'outcomeReadings', 'outcomeEvidence'], STATE_KEYS);
+  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop', 'selfTests', 'runtimeBoots', 'deviceAcceptances', 'outcomeConnectors', 'outcomeReadings', 'outcomeEvidence', 'blackholeCore', 'memoryEvents'], STATE_KEYS);
   if (Object.hasOwn(state, 'runtimeBoots')) validateBootRecords(state.runtimeBoots);
   if (Object.hasOwn(state, 'deviceAcceptances')) validateDeviceAcceptances(state.deviceAcceptances);
   if (Object.hasOwn(state, 'outcomeConnectors')) validateConnectors(state.outcomeConnectors);
@@ -82,6 +84,10 @@ function validateState(state) {
   if (!integer(state.revision, 0, Number.MAX_SAFE_INTEGER - 1) || typeof state.emergencyStop !== 'boolean' || !integer(state.concurrency, 1, 3)) fail('invalid runtime settings');
   modules(state.modules); memories(state.memories);
   validateProjectRegistry(state.projects); validateSourceRegistry(state.sources, state.projects);
+  if (!Object.hasOwn(state, 'memoryEvents')) state.memoryEvents = [];
+  validateMemoryEvents(state.memoryEvents, state);
+  if (!Object.hasOwn(state, 'blackholeCore')) state.blackholeCore = initialCoreState();
+  validateCoreState(state.blackholeCore, state);
   if (!Array.isArray(state.jobs) || !Array.isArray(state.snapshots) || !Array.isArray(state.events) || !record(state.requests) || !record(state.devices) || !record(state.artifacts)) fail('invalid state collections');
   const jobs = new Map(), references = new Set();
   for (const job of state.jobs) {
@@ -301,6 +307,10 @@ export function restoreBackup({ archive, key, targetDir }) {
     job.status = 'paused'; job.pauseReason = 'backupRestore'; job.updatedAt = restoredAt; job.version++; pausedJobCount++;
   }
   for (const device of Object.values(state.devices)) if (device.revokedAt === null) { device.revokedAt = restoredAt; revokedDeviceCount++; }
+  // Re-derive the Core immediately so the restored file never shows stale
+  // pre-restore activity (e.g. "executing" a job this same restore just
+  // paused): the same pure projection store.mjs runs on every save.
+  state.blackholeCore = evaluateHeartbeat(state.blackholeCore, state, {at: restoredAt}).core;
   state.events.unshift({ id: crypto.randomUUID(), at: restoredAt, text: `Encrypted backup restored (${payload.createdAt}); emergency stop enabled, AI disabled, ${pausedJobCount} unfinished job(s) paused, ${revokedDeviceCount} active device credential(s) revoked. Fresh owner key/device enrollment required; no server started.` });
   const serialized = JSON.stringify(state), envelope = JSON.stringify({ format: 1, sha256: digest(serialized), payload: serialized });
   const createdFiles = [], artifactDir = path.join(target, 'artifacts'), marker = path.join(target, 'restore-in-progress');

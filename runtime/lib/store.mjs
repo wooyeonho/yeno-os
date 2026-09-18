@@ -23,6 +23,8 @@ import {validateBotAssignment} from './project-bots.mjs';
 import {validateQuestState} from './quests.mjs';
 import {emptyStudio,validateStudio} from './studio.mjs';
 import {initialAutopilot,validateAutopilot,validateAutopilotJob} from './autopilot.mjs';
+import {initialCoreState,validateCoreState,evaluateHeartbeat} from './blackhole-core.mjs';
+import {validateMemoryEvents} from './memory-events.mjs';
 
 export const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 export const uid = () => crypto.randomUUID();
@@ -38,7 +40,7 @@ export function atomicWrite(file, content) {
 export function initialState() {
  return {revision:0, emergencyStop:false, concurrency:1,
  modules:{memory:true,documents:true,diagnostics:true,ai:false},
- jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), capabilities:initialCapabilities(), codeWorkshop:initialCodeWorkshop(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem()};
+ jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), capabilities:initialCapabilities(), codeWorkshop:initialCodeWorkshop(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem(), blackholeCore:initialCoreState(), memoryEvents:[]};
 }
 function initializeQuestCollections(state) {
  // Missing collections identify older stores. Present malformed data must fail
@@ -65,6 +67,13 @@ function initializeQuestCollections(state) {
  if(Object.hasOwn(state,'outcomeEvidence'))validateOutcomeEvidences(state.outcomeEvidence);
  if((state.outcomeReadings??[]).some(r=>!(state.outcomeConnectors??[]).some(c=>c.id===r.connectorId)))throw new Error('Reading references an unknown connector');
  for(const job of state.jobs)if(job.selfTestId!==undefined&&!(state.selfTests??[]).some(item=>item.id===job.selfTestId))throw new Error('Invalid self-test job link');
+ // BLACKHOLE Living Core (Phase A): missing collections identify older stores,
+ // exactly like every other additive migration above. Memory events validate
+ // first because the Core record's relationshipMemoryPointer references them.
+ if(!Object.hasOwn(state,'memoryEvents'))state.memoryEvents=[];
+ validateMemoryEvents(state.memoryEvents,state);
+ if(!Object.hasOwn(state,'blackholeCore'))state.blackholeCore=initialCoreState();
+ validateCoreState(state.blackholeCore,state);
  return state;
 }
 function sanitizeEnrollmentReceipts(state) {
@@ -111,6 +120,12 @@ export function openStore(directory) {
  // be reconstructed from a job alone and are not claimed as recovered.
  initializeRequestLedger(state);
  function save(){
+   // Event-driven heartbeat: every real persist re-derives the Core's
+   // activity/mission/shadows/result/relationship pointer from the state
+   // being saved - never a timer, never a provider call, never a side effect
+   // beyond this record itself.
+   state.blackholeCore=evaluateHeartbeat(state.blackholeCore,state,{at:now()}).core;
+   validateCoreState(state.blackholeCore,state);
    state.revision++;
    sanitizeEnrollmentReceipts(state);
    // Re-encode the verified previous state so legacy secrets are not copied

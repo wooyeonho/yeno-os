@@ -160,7 +160,10 @@ test('project migration adds only an absent registry and preserves existing stat
   opened.state.projects.push(registered);
   opened.save();
   const again = openStore(dir);
-  assert.deepEqual(again.state, { ...legacy, requestLedger, revision: 25, projects: [registered] });
+  // save() runs the event-driven Living Core heartbeat, so blackholeCore
+  // advances (heartbeatCount/lastHeartbeatAt/heartbeatLog) independently of
+  // this migration; compare against the real post-heartbeat value.
+  assert.deepEqual(again.state, { ...legacy, requestLedger, revision: 25, projects: [registered], blackholeCore: opened.state.blackholeCore });
   assert.equal(JSON.parse(await readFile(filename, 'utf8')).sha256, digest(JSON.parse(await readFile(filename, 'utf8')).payload));
 
   for (const projects of [
