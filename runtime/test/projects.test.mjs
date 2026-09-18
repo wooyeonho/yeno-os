@@ -156,7 +156,7 @@ test('project migration adds only an absent registry and preserves existing stat
   const opened = openStore(dir);
   const requestLedger = { retained: { hash: digest('request-hash'), status: 201 } };
   assert.deepEqual(opened.state, { ...legacy, requestLedger, projects: [] });
-  const registered = { id: randomUUID(), name: '기존 프로젝트', summary: '설명', repositoryUrl: '', nextAction: '', status: 'paused', version: 3, createdAt: '2026-09-09T00:00:00Z', updatedAt: '2026-09-09T01:00:00Z' };
+  const registered = { id: randomUUID(), name: '기존 프로젝트', summary: '설명', repositoryUrl: '', nextAction: '', status: 'paused', version: 3, createdAt: '2026-09-09T00:00:00Z', updatedAt: '2026-09-09T01:00:00Z', milestones: [] };
   opened.state.projects.push(registered);
   opened.save();
   const again = openStore(dir);

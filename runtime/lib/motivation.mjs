@@ -1,5 +1,10 @@
+import {driveWorldName,driveWorldNameEn} from './seven-drives.mjs';
+
 // Seven bounded motives rank only already-authorized, executable candidates.
 // They cannot grant tools, create budgets, retry uncertain calls or prove quality.
+// id/name stay byte-for-byte identical to every existing call site;
+// worldName/worldNameEn are additive fields from the single canonical
+// mapping in seven-drives.mjs (Phase C reconciliation, issue #25).
 export const DRIVE_DEFINITIONS=Object.freeze([
   {id:'greed',name:'강욕',description:'저장된 결과를 재사용 가능한 자산으로 축적'},
   {id:'gluttony',name:'폭식',description:'비어 있거나 오래된 공개 근거를 보충'},
@@ -8,7 +13,7 @@ export const DRIVE_DEFINITIONS=Object.freeze([
   {id:'lust',name:'색욕',description:'소유자가 바로 읽고 볼 수 있는 결과를 완성'},
   {id:'wrath',name:'분노',description:'실제 실패를 분석하고 불확실한 실행을 회피'},
   {id:'sloth',name:'나태',description:'추가 모델 호출 없이 기존 결과와 체크포인트를 재사용'}
-]);
+].map(drive=>Object.freeze({...drive,worldName:driveWorldName(drive.id),worldNameEn:driveWorldNameEn(drive.id)})));
 export const DRIVE_IDS=Object.freeze(DRIVE_DEFINITIONS.map(item=>item.id));
 export const MISSING_MEASUREMENTS=Object.freeze(['revenue','audience','independent_research_validation','owner_result_rating']);
 export const SIGNAL_IDS=Object.freeze(['assetGap','knowledgeGap','coverageGap','verificationGap','deliveryGap','repairNeed','reuseArtifacts','estimatedCalls','ownFailures','unknownCalls','missingArtifacts']);

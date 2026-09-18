@@ -13,7 +13,7 @@ import {publicJob} from '../lib/job-view.mjs';
 import {exportBackup,restoreBackup} from '../lib/backup.mjs';
 const KEY='synthetic-bot-model-key';
 const env={YENO_AGENT_PROVIDER:'nvidia',YENO_AGENT_MODEL:'synthetic-model',YENO_AGENT_API_KEY:KEY,YENO_AGENT_DAILY_CALL_LIMIT:'8'};
-const project=(i,status='active')=>({id:randomUUID(),name:`Project ${i}`,repositoryUrl:'',summary:`PRIVATE_PROJECT_${i}`,nextAction:'작은 검증 초안',status,version:1,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
+const project=(i,status='active')=>({id:randomUUID(),name:`Project ${i}`,repositoryUrl:'',summary:`PRIVATE_PROJECT_${i}`,nextAction:'작은 검증 초안',status,version:1,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),milestones:[]});
 const json=data=>new Response(JSON.stringify(data),{headers:{'content-type':'application/json'}});
 const model=(content='검증용 산출물',tools=[])=>json({choices:[{finish_reason:tools.length?'tool_calls':'stop',message:{content,tool_calls:tools.map(t=>({id:t.id,type:'function',function:{name:t.name,arguments:JSON.stringify(t.args??{})}}))}}],usage:{prompt_tokens:12,completion_tokens:8}});
 const delay=ms=>new Promise(r=>setTimeout(r,ms));

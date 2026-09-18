@@ -279,6 +279,7 @@ test('coreSummary and coreHomeSummary never fabricate a field: every value trace
   assert.equal(summary.focusProject.name, '실제 프로젝트');
   assert.equal(summary.dominantDriveId, 'gluttony');
   assert.equal(typeof summary.dominantDriveName, 'string');
+  assert.equal(summary.dominantDriveWorldName, '지식');
   assert.equal(summary.verifiedResult, null, 'verifiedResult must never be fabricated from an artifact');
 
   const home = coreHomeSummary(state);
@@ -286,6 +287,7 @@ test('coreSummary and coreHomeSummary never fabricate a field: every value trace
   assert.equal(home.missionGoal, '실제 목표');
   assert.equal(home.focusProjectName, '실제 프로젝트');
   assert.equal(home.dominantDriveId, 'gluttony');
+  assert.equal(home.dominantDriveWorldName, '지식');
   assert.equal(home.verifiedResult, null);
 
   // No live mission: placeholders are null, never a fabricated drive/goal.
@@ -295,6 +297,7 @@ test('coreSummary and coreHomeSummary never fabricate a field: every value trace
   assert.equal(emptyHome.missionGoal, null);
   assert.equal(emptyHome.dominantDriveId, null);
   assert.equal(emptyHome.dominantDriveName, null);
+  assert.equal(emptyHome.dominantDriveWorldName, null);
   assert.equal(emptyHome.recentArtifactResult, null);
 });
 

@@ -9,7 +9,8 @@ import crypto from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {atomicWrite,openStore,acquireRuntimeLock,digest,uid,now} from './lib/store.mjs';
 import {acquireContainerLease} from './lib/container-lease.mjs';
-import {ProjectError,projectNameKey,planProjectImport,validateProjectFields,resolveProject,projectRegistryDocument,projectBriefDocument} from './lib/projects.mjs';
+import {ProjectError,projectNameKey,planProjectImport,validateProjectFields,resolveProject,projectRegistryDocument,projectBriefDocument,addMilestone,setMilestoneCompletion,removeMilestone} from './lib/projects.mjs';
+import {projectUniverseSummary} from './lib/project-universe.mjs';
 import {SourceError,validateSourceFields,planSourceImport,resolveSource,sourceRegistryDocument,sourceBriefDocument} from './lib/sources.mjs';
 import {operatingBriefDocument} from './lib/operations.mjs';
 import {exportBackup} from './lib/backup.mjs';
@@ -728,8 +729,14 @@ export function createYenoServer(options={}) {
  }
  function addMemory(body){requireModule('memory');const memory={id:uid(),text:requiredText(body.text,20000),createdAt:now()};s.memories.unshift(memory);event('Memory saved.');return memory;}
  function ensureUniqueProject(name,exceptId){if(s.projects.some(project=>project.id!==exceptId&&projectNameKey(project.name)===projectNameKey(name)))throw new ProjectError(409,'A project with this name already exists.');}
- function addProject(body){const fields=validateProjectFields(body,{creating:true});ensureUniqueProject(fields.name);const at=now(),project={id:uid(),...fields,version:1,createdAt:at,updatedAt:at};s.projects.push(project);event(`Project registered: ${project.name}`);return project;}
+ function addProject(body){const fields=validateProjectFields(body,{creating:true});ensureUniqueProject(fields.name);const at=now(),project={id:uid(),...fields,version:1,createdAt:at,updatedAt:at,milestones:[]};s.projects.push(project);event(`Project registered: ${project.name}`);return project;}
  function updateProject(id,body){const fields=validateProjectFields(body);const index=s.projects.findIndex(project=>project.id===id);if(index<0)throw new ProjectError(404,'Project not found.');const current=s.projects[index];if(body.revision!==current.version)throw new ProjectError(409,'Project changed; refresh before updating.',{project:current});if(fields.name)ensureUniqueProject(fields.name,id);const project={...current,...fields,version:current.version+1,updatedAt:now()};s.projects[index]=project;for(const job of s.jobs)if(job.botAssignment&&job.projectId===id&&['queued','running'].includes(job.status)){job.status='paused';job.pauseReason='projectChanged';touch(job);invalidate(job);}event(`Project updated: ${project.name} (${project.status})`);return project;}
+ function findProjectOrThrow(id,revision){const index=s.projects.findIndex(project=>project.id===id);if(index<0)throw new ProjectError(404,'Project not found.');const current=s.projects[index];if(revision!==current.version)throw new ProjectError(409,'Project changed; refresh before updating.',{project:current});return {index,current};}
+ function addProjectMilestone(id,body){if(Object.keys(body).some(k=>!['requestId','revision','text'].includes(k)))throw new ProjectError(400,'Unknown milestone field.');const {index,current}=findProjectOrThrow(id,body.revision);const {project,milestone}=addMilestone(current,body.text,now());s.projects[index]=project;event(`Milestone added to ${project.name}`);return {project,milestone};}
+ function setProjectMilestone(id,milestoneId,body){const {index,current}=findProjectOrThrow(id,body.revision);
+  if(body.action==='remove'){if(Object.keys(body).some(k=>!['requestId','revision','action'].includes(k)))throw new ProjectError(400,'Unknown milestone field.');const project=removeMilestone(current,milestoneId,now());s.projects[index]=project;event(`Milestone removed from ${project.name}`);return {project};}
+  if(body.action==='toggle'){if(Object.keys(body).some(k=>!['requestId','revision','action','completed'].includes(k)))throw new ProjectError(400,'Unknown milestone field.');const project=setMilestoneCompletion(current,milestoneId,body.completed,now());s.projects[index]=project;event(`Milestone ${body.completed?'completed':'reopened'} in ${project.name}`);return {project};}
+  throw new ProjectError(400,'Unknown milestone action.');}
  function projectDocumentJob(project,content,title,report){const job=newJob({type:'document',text:content,title,...(project?{projectId:project.id}:{})});job.projectReport=report;return publicJob(job);}
  function sourceRecord(fields){const at=now();return {id:uid(),...fields,version:1,createdAt:at,updatedAt:at};}
  function addSource(body){const fields=validateSourceFields(body,{creating:true,projects:s.projects});const existing=s.sources.find(source=>source.canonicalUrl===fields.canonicalUrl);if(existing)throw new SourceError(409,'This canonical source URL is already registered.',{source:existing});const source=sourceRecord(fields);s.sources.push(source);event(`Source registered: ${source.title}`);return source;}
@@ -1371,6 +1378,8 @@ export function createYenoServer(options={}) {
      if(req.method==='GET'&&url.pathname==='/api/research')return respond(res,200,researchState());
      if(req.method==='GET'&&url.pathname==='/api/bots')return respond(res,200,botStatus(s,profiles));
      if(req.method==='GET'&&url.pathname==='/api/projects')return respond(res,200,{projects:s.projects});
+     const universeMatch=url.pathname.match(/^\/api\/projects\/([a-f0-9-]+)\/universe$/);
+     if(req.method==='GET'&&universeMatch){const summary=projectUniverseSummary(s,universeMatch[1]);if(!summary)throw new HttpError(404,'Project not found');return respond(res,200,summary);}
      if(req.method==='GET'&&url.pathname==='/api/sources')return respond(res,200,{sources:s.sources});
      if(req.method==='GET'&&url.pathname==='/api/memory'){requireModule('memory');const q=(url.searchParams.get('q')??'').toLocaleLowerCase();return respond(res,200,{memories:s.memories.filter(m=>m.text.toLocaleLowerCase().includes(q))});}
      const artifactMatch=url.pathname.match(/^\/api\/artifacts\/([a-f0-9-]+)$/);
@@ -1496,6 +1505,10 @@ export function createYenoServer(options={}) {
        if(url.pathname==='/api/projects')return {status:201,payload:{project:addProject(b)}};
        const projectUpdate=url.pathname.match(/^\/api\/projects\/([a-f0-9-]+)\/update$/);
        if(projectUpdate)return {status:200,payload:{project:updateProject(projectUpdate[1],b)}};
+       const milestoneAdd=url.pathname.match(/^\/api\/projects\/([a-f0-9-]+)\/milestones$/);
+       if(milestoneAdd)return {status:201,payload:addProjectMilestone(milestoneAdd[1],b)};
+       const milestoneUpdate=url.pathname.match(/^\/api\/projects\/([a-f0-9-]+)\/milestones\/([a-f0-9-]+)$/);
+       if(milestoneUpdate)return {status:200,payload:setProjectMilestone(milestoneUpdate[1],milestoneUpdate[2],b)};
        if(url.pathname==='/api/sources')return {status:201,payload:{source:addSource(b)}};
        if(url.pathname==='/api/sources/import')return {status:201,payload:importSources(b)};
        const sourceUpdate=url.pathname.match(/^\/api\/sources\/([a-f0-9-]+)\/update$/);

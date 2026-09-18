@@ -118,6 +118,12 @@ export function openStore(directory) {
  // Add the registry only to older stores; never replace an existing registry.
  // Project data is deliberately outside memory/settings snapshot restoration.
  if(!Object.hasOwn(state,'projects'))state.projects=[];
+ // BLACKHOLE Project Universe (Phase C): a store predating durable
+ // milestones gets an empty array per project, exactly once - every other
+ // field is preserved untouched, and validateProjectRegistry above already
+ // tolerated the field's absence, so this is purely normalization, never a
+ // reason validation could have failed.
+ for(const project of state.projects)if(!Object.hasOwn(project,'milestones'))project.milestones=[];
  // Only legacy stores without a source registry receive an empty one. A malformed
  // existing registry is a recovery error, never a reason to discard source reviews.
  if(!Object.hasOwn(state,'sources'))state.sources=[];

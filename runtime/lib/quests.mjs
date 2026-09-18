@@ -1,8 +1,14 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {validateMotivation} from './motivation.mjs';
+import {driveWorldName,driveWorldNameEn} from './seven-drives.mjs';
 
 // Drives generate bounded goals, not fabricated performance scores or seven
 // continuously running model calls. Execution belongs to the durable job loop.
+// id/label stay byte-for-byte identical to every persisted quest.driveId and
+// every existing display string; worldName/worldNameEn are additive fields
+// from the single canonical mapping in seven-drives.mjs (Phase C
+// reconciliation, issue #25) - see that file for the id->world-name
+// rationale. Nothing here breaks a persisted quest record.
 export const SEVEN_DRIVES=Object.freeze([
   {id:'greed',name:'강욕',goal:'남는 돈·소유 자산·기회 늘리기',evidence:['환불·원가 반영 수익','재구매','확인된 소유권']},
   {id:'gluttony',name:'폭식',goal:'현재 목표에 부족한 능력 찾기',evidence:['이전에는 못 하던 실제 업무 완료']},
@@ -11,7 +17,7 @@ export const SEVEN_DRIVES=Object.freeze([
   {id:'lust',name:'색욕',goal:'자발적으로 선택하고 다시 찾는 제품 만들기',evidence:['만족','재방문','동의한 구독·추천']},
   {id:'wrath',name:'분노',goal:'고객 불편과 반복 오류 줄이기',evidence:['오류 감소','복구 시간 감소','재발 방지']},
   {id:'sloth',name:'나태',goal:'같은 품질에서 소유자의 개입 줄이기',evidence:['실제로 줄어든 개입 시간·수작업']}
-].map(drive=>Object.freeze({...drive,label:({pride:'긍지',lust:'매혹'})[drive.id]??drive.name,description:drive.goal,evidence:Object.freeze(drive.evidence)})));
+].map(drive=>Object.freeze({...drive,label:({pride:'긍지',lust:'매혹'})[drive.id]??drive.name,description:drive.goal,evidence:Object.freeze(drive.evidence),worldName:driveWorldName(drive.id),worldNameEn:driveWorldNameEn(drive.id)})));
 
 export class QuestError extends Error {
   constructor(status,code,message=code){super(message);this.name='QuestError';this.status=status;this.code=code;}

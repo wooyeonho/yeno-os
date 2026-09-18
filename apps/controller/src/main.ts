@@ -25,7 +25,7 @@ type Job = { id: string; title: string; status: string; version: number; updated
 // live mission to attribute a drive to, and the UI must say so plainly.
 type CoreHomeSummary = {
   activity: string; missionGoal: string | null; focusProjectName: string | null;
-  dominantDriveId: string | null; dominantDriveName: string | null;
+  dominantDriveId: string | null; dominantDriveName: string | null; dominantDriveWorldName: string | null;
   activeShadowCount: number;
   // recentArtifactResult: a completed job's attached file - real, but only
   // integrity evidence, never called "verified" (see verifiedResult).

@@ -280,6 +280,10 @@ export function coreSummary(state) {
     focusProject: focusProject ? {id: focusProject.id, name: focusProject.name, status: focusProject.status} : null,
     dominantDriveId: core.dominantDriveId,
     dominantDriveName: drive?.name ?? null,
+    // Owner-facing semantic name from the Phase C Seven Drives
+    // reconciliation (seven-drives.mjs) - additive, never replaces
+    // dominantDriveName so existing callers keep working unchanged.
+    dominantDriveWorldName: drive?.worldName ?? null,
     activeShadowCount: core.activeShadowIds.length,
     activeShadowIds: core.activeShadowIds,
     // recentArtifactResult: a completed quest job's attached artifact - real,
@@ -307,6 +311,7 @@ export function coreHomeSummary(state) {
     focusProjectName: full.focusProject?.name ?? null,
     dominantDriveId: full.dominantDriveId,
     dominantDriveName: full.dominantDriveName,
+    dominantDriveWorldName: full.dominantDriveWorldName,
     activeShadowCount: full.activeShadowCount,
     recentArtifactResult: full.recentArtifactResult ? {questId: full.recentArtifactResult.questId} : null,
     verifiedResult: full.verifiedResult,
