@@ -41,9 +41,16 @@ test('GET /api/core returns the real idle Core state on a fresh runtime, with no
   assert.equal(res.body.dominantDriveId, null);
   assert.equal(res.body.dominantDriveName, null);
   assert.equal(res.body.activeShadowCount, 0);
-  assert.equal(res.body.recentResult, null);
+  assert.equal(res.body.recentArtifactResult, null);
+  assert.equal(res.body.verifiedResult, null);
   assert.equal(res.body.heartbeatCount > 0, true, 'runtime startup already persisted at least one heartbeat');
   assert.equal(res.body.schemaVersion, 1);
+  assert.match(res.body.identity.id, /^[0-9a-f-]{36}$/);
+  assert.equal(res.body.identity.name, 'BLACKHOLE');
+  // The very first heartbeat is always the boot save; anything after it may
+  // legitimately be the scheduler's own honest 'state_changed' bookkeeping,
+  // which is why this checks the first entry rather than the latest one.
+  assert.equal(res.body.heartbeatLog[0].trigger, 'runtime_started', 'the boot save must record why it woke, not just what it observed');
 });
 
 test('GET /api/state embeds a trimmed real Core summary so the Android Home binding needs no second network round trip', async t => {
@@ -55,6 +62,40 @@ test('GET /api/state embeds a trimmed real Core summary so the Android Home bind
   assert.equal(res.body.core.missionGoal, null);
   assert.equal(res.body.core.dominantDriveId, null);
   assert.equal(res.body.core.activeShadowCount, 0);
+  assert.equal(res.body.core.recentArtifactResult, null);
+  assert.equal(res.body.core.verifiedResult, null);
+});
+
+test('GET /api/v1/core works with a device bearer token and rejects the owner pairing credential, exactly like every other /api/v1/* route', async t => {
+  const app = await setup(t);
+  const enrolled = (await app.post('/api/v1/devices/enroll', {name: 'Pixel', platform: 'android'})).body.device;
+  const deviceAuth = {Authorization: `Bearer ${enrolled.deviceToken}`};
+
+  const withDevice = await app.get('/api/v1/core', deviceAuth);
+  assert.equal(withDevice.status, 200, JSON.stringify(withDevice.body));
+  assert.equal(withDevice.body.activity, 'idle');
+
+  const withOwner = await app.get('/api/v1/core');
+  assert.equal(withOwner.status, 401, 'the owner pairing credential must never authenticate a /api/v1/* route');
+});
+
+test('POST /api/v1/memory-events is rejected for both a device and the owner credential: memory declaration is intentionally legacy-pairing-only', async t => {
+  const app = await setup(t);
+  const enrolled = (await app.post('/api/v1/devices/enroll', {name: 'Pixel', platform: 'android'})).body.device;
+  const claim = {type: 'episode', text: '버전 계약 확인', confidence: 0.5, projectId: null, questId: null, sourceRefs: []};
+
+  // A real device credential authenticates fine on /api/v1/* in general, but
+  // this specific route requires owner authority, which versioned=true
+  // guarantees a device principal can never carry.
+  const withDevice = await app.post('/api/v1/memory-events', claim, {Authorization: `Bearer ${enrolled.deviceToken}`});
+  assert.equal(withDevice.status, 403);
+
+  // The owner pairing credential is rejected even earlier: /api/v1/* only
+  // ever authenticates a device bearer token in the first place.
+  const withOwner = await app.post('/api/v1/memory-events', claim);
+  assert.equal(withOwner.status, 401);
+
+  assert.equal(app.disk().memoryEvents.length, 0, 'no memory event must have been declared by either attempt');
 });
 
 test('a device credential cannot declare a memory event; the owner pairing credential can, and it is durably persisted', async t => {
@@ -107,6 +148,12 @@ test('emergency stop flips Core activity to emergency on the very next heartbeat
   const duringStop = await app.get('/api/core');
   assert.equal(duringStop.body.activity, 'emergency');
   assert.equal(duringStop.body.emergencyStop, true);
+  // The scheduler may have already ticked (an honest state_changed) by the
+  // time this reads the log, so this looks for the specific entry that
+  // actually flipped activity to emergency rather than assuming it is last.
+  const stopEntry = [...duringStop.body.heartbeatLog].reverse().find(e => e.nextActivity === 'emergency');
+  assert.ok(stopEntry, 'a heartbeat entry recording the transition into emergency must exist');
+  assert.equal(stopEntry.trigger, 'owner_command', 'the stop command itself is the recorded wake trigger, not a generic state_changed');
 
   const resumed = await app.post('/api/control', {action: 'resume'});
   assert.ok([200, 201].includes(resumed.status), JSON.stringify(resumed.body));
@@ -145,6 +192,7 @@ test('restart persistence: Core identity, mission-derived fields and heartbeat c
   const reopened = openStore(dir);
   assert.equal(reopened.state.blackholeCore.heartbeatCount, before.heartbeatCount);
   assert.equal(reopened.state.blackholeCore.lastHeartbeatAt, before.lastHeartbeatAt);
+  assert.deepEqual(reopened.state.blackholeCore.identity, before.identity, 'the Persistent Self identity must survive a restart completely unchanged');
   assert.equal(reopened.state.blackholeCore.relationshipMemoryPointer, declared.body.memoryEvent.id);
   assert.deepEqual(reopened.state.memoryEvents.map(e => e.id), [declared.body.memoryEvent.id]);
 });

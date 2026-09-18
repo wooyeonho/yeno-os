@@ -128,14 +128,14 @@ export function createYenoServer(options={}) {
      s.capabilities=registry;event('커비: 기본 기능2종의 원본·시험·활성화를 기록했습니다.');
    }catch(error){releaseLock();throw error;}
  }
- event('YENO runtime started.');store.save();
+ event('YENO runtime started.');store.save('runtime_started');
  function state(){return {repositoryDevelopment:{patchDrafting:true,runnerConnected:false,automaticDeployment:false,modelCallsPerPlan:1},growth:growthState(),codeWorkshop:codeState(),autopilot:autopilotState(),bots:botStatus(s,profiles),core:coreHomeSummary(s),name:'YENO OS',version:VERSION,apiVersion:API_VERSION,requestTracking:{retained:Object.keys(s.requestLedger).length,capacity:REQUEST_LEDGER_MAX_ENTRIES,cached:Object.keys(s.requests).length,cacheMaxBytes:REQUEST_CACHE_MAX_BYTES},revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,draftConfigured:!!aiEndpoint,model:agentSettings.ready?agentSettings.model:aiEndpoint?aiModel:null},agent:{providers:providerStatus(),configured:agentSettings.ready,provider:agentSettings.provider,model:agentSettings.model||null,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs),automaticReviews:agentSettings.ready&&agentSettings.auto&&s.modules.ai&&(s.discovery.enabled||s.ecosystem.enabled)&&!s.emergencyStop,tools:AGENT_TOOLS.map(tool=>tool.name),developmentExecution:false,assignedJavaScriptCoding:true},discovery:{...s.discovery,repositories:DISCOVERY_REPOS},ecosystem:publicEcosystem(s.ecosystem),jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,world:worldOverview(s.jobs),capabilities:{worldEarthquakes:true,projectBots:true,localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,scheduledSourceDiscovery:true,boundedAgentLoop:true,ecosystemDiscovery:true,skillEvidenceIntake:true,developerWorker:false,javascriptWorker:true,externalCodeExecution:true,voiceConversation:true,autonomousProduction:true,diagnostics:true,evolution:'tested-javascript-versions',ai:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
  // A failed filesystem write leaves its outcome uncertain. Retain its request
  // identity in memory, but never acknowledge a cached receipt or expose that
  // state through the API until the complete state has been persisted again.
  // Rolling back here would be unsafe if a rename committed before the failure.
  let persistencePending=false;
- const save=()=>{persistencePending=true;store.save();persistencePending=false;};
+ const save=(trigger)=>{persistencePending=true;store.save(trigger);persistencePending=false;};
  const ensureDurable=()=>{if(persistencePending)save();};
  const ecosystem=createEcosystem({state:s,save,event,ensureDurable,fetchImpl:options.ecosystemFetch});
  const discovery=createDiscovery({state:s,save,event,ensureDurable,fetchImpl:options.discoveryFetch});
@@ -476,7 +476,7 @@ export function createYenoServer(options={}) {
    try{memoryEvent=createMemoryEvent(claim,s,{at:now()});}catch(error){memoryEventError(error);}
    try{s.memoryEvents=addMemoryEvent(s.memoryEvents,memoryEvent,s);}catch(error){memoryEventError(error);}
    event(`기억 이벤트 기록: ${memoryEvent.type}`);
-   return {status:201,payload:{memoryEvent}};
+   return {status:201,payload:{memoryEvent},trigger:'memory_recorded'};
  }
  function readinessState(req,principal,versioned){
    return buildReadiness({state:s,sourceCommit:SOURCE_COMMIT,runtimeVersion:VERSION,apiVersion:API_VERSION,store:{directory:path.basename(dataDir),durable:!persistencePending&&fs.existsSync(path.join(dataDir,'state.json')),recovered:store.recovered},
@@ -944,7 +944,7 @@ export function createYenoServer(options={}) {
  }
  async function body(req,limit=MAX_BODY){let total=0,parts=[];for await(const part of req){total+=part.length;if(total>limit)throw new HttpError(413,'Request body exceeds allowed size');parts.push(part);}if(!total)return {};let result;try{result=JSON.parse(Buffer.concat(parts).toString('utf8'));}catch{throw new HttpError(400,'Invalid JSON body');}if(!result||typeof result!=='object'||Array.isArray(result))throw new HttpError(400,'JSON object required');return result;}
  function respond(res,status,payload){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(payload));}
- async function mutation(req,url,b,operation,{required=false,safetyAction=false,fingerprintPath=url.pathname}={}){
+ async function mutation(req,url,b,operation,{required=false,safetyAction=false,fingerprintPath=url.pathname,trigger}={}){
    ensureDurable();
    const requestId=validateRequestId(b.requestId,{required});
    const hash=fingerprintRequest(req.method,fingerprintPath,b);
@@ -966,7 +966,13 @@ export function createYenoServer(options={}) {
    if(result.payload?.state?.name==='YENO OS')result.payload.state.revision=s.revision+1;
    if(persistReceipt)rememberReceipt(s,requestId,hash,result);
    else if(requestId)result.payload.receiptPersisted=false;
-   save();schedule();return result;
+   // A single shared mutation() call fans out to many different routes
+   // through one big operation() if-chain (see the POST dispatch below), so
+   // a route that knows a more precise heartbeat trigger than the call's own
+   // default names it on its own return value instead - never serialized
+   // into the response or the request-ledger receipt, both of which only
+   // ever read status/payload from this same object.
+   save(result.trigger??trigger);schedule();return result;
  }
 
  // --- Gemini Live voice path -------------------------------------------------
@@ -1247,6 +1253,12 @@ export function createYenoServer(options={}) {
        res.writeHead(200,{'Content-Type':file.mimeType,'Content-Disposition':`attachment; filename="${file.name}"`,'Content-Length':Buffer.byteLength(file.content),'X-Content-SHA256':digest(file.content)});return res.end(file.content);
      }
      if(req.method==='GET'&&url.pathname==='/api/quests')return respond(res,200,questState());
+     // Already served on both surfaces the repository convention expects:
+     // legacy GET /api/core accepts either credential kind (authenticate()
+     // above already ran with versioned=false); GET /api/v1/core reaches the
+     // same handler after the /api/v1 prefix strip a few lines above, but
+     // arrived through authenticate(req,true) - device-bearer only, exactly
+     // like every other /api/v1/* route. No separate v1 route is needed.
      if(req.method==='GET'&&url.pathname==='/api/core')return respond(res,200,coreSummary(s));
      if(req.method==='GET'&&url.pathname==='/api/readiness')return respond(res,200,readinessState(req,principal,versioned));
      if(req.method==='GET'&&url.pathname==='/api/self-test'){const payload=selfTestState();if(payload.history.some((item,i)=>item.durableReload?.matched&&!s.selfTests[i].durableReload))save();return respond(res,200,payload);}
@@ -1332,6 +1344,14 @@ export function createYenoServer(options={}) {
        const connectorReadMatch=url.pathname.match(/^\/api\/outcome-connectors\/([a-z0-9][a-z0-9-]{0,63})\/read$/);
        if(connectorReadMatch){if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required to trigger an outcome connector read');if(!b.requestId)throw new HttpError(400,'Persistent requestId required');return readOutcomeConnector(connectorReadMatch[1],b);}
        if(url.pathname==='/api/outcome-evidence'){if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required to declare outcome evidence');return declareOutcomeEvidence(b);}
+       // Intentionally legacy-pairing-only, exactly like every other
+       // owner-only mutation in this file (/api/outcome-connectors,
+       // /api/outcome-evidence, /api/device-acceptance, /api/backups/export):
+       // /api/v1/* is a device-bearer-only surface by construction
+       // (authenticate(req,true) never accepts the owner pairing credential),
+       // so an "owner-only and versioned" route is not a stricter contract to
+       // add here - it is a contradiction the existing convention already
+       // avoids. A device can never declare a memory event on either surface.
        if(url.pathname==='/api/memory-events'){if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required to declare a memory event');return declareMemoryEvent(b);}
        if(url.pathname==='/api/quests/loop'){
         if(!b.requestId||Object.keys(b).some(k=>!['requestId'].includes(k)))throw new HttpError(400,'Persistent requestId required');
@@ -1427,7 +1447,7 @@ export function createYenoServer(options={}) {
          if(b.action==='resume'&&b.revision!==undefined&&b.revision!==s.revision)throw new HttpError(409,'Runtime changed; refresh before resuming',{revision:s.revision});
          if(!['stop','resume'].includes(b.action))throw new HttpError(400,'Unsupported control action');s.emergencyStop=b.action==='stop';
          if(s.emergencyStop){s.autopilot.enabled=false;controlBots('stop');discovery.stop();ecosystem.stop();for(const job of s.jobs)if(['running','queued'].includes(job.status)){job.status='paused';job.pauseReason='emergency';touch(job);invalidate(job);}}
-         event(s.emergencyStop?'Emergency stop activated.':'Emergency stop released by owner; paused jobs require individual resume.');return {status:200,payload:state()};
+         event(s.emergencyStop?'Emergency stop activated.':'Emergency stop released by owner; paused jobs require individual resume.');return {status:200,payload:state(),trigger:'owner_command'};
        }
        if(url.pathname==='/api/settings'){
          if(b.concurrency!==undefined&&(!Number.isInteger(b.concurrency)||b.concurrency<1||b.concurrency>3))throw new HttpError(400,'concurrency must be 1, 2, or 3');

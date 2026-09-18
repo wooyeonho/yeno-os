@@ -28,11 +28,21 @@ export const ACTIVITY_STATES = Object.freeze([
 ]);
 
 const CORE_FIELDS = Object.freeze([
-  'schemaVersion', 'activity', 'missionQuestId', 'focusProjectId', 'dominantDriveId',
-  'activeShadowIds', 'recentResultRef', 'relationshipMemoryPointer',
+  'schemaVersion', 'identity', 'activity', 'missionQuestId', 'focusProjectId', 'dominantDriveId',
+  'activeShadowIds', 'recentArtifactRef', 'verifiedResultRef', 'relationshipMemoryPointer',
   'lastHeartbeatAt', 'heartbeatCount', 'heartbeatLog', 'updatedAt',
 ]);
-const HEARTBEAT_ENTRY_FIELDS = Object.freeze(['id', 'at', 'reason', 'previousActivity', 'nextActivity', 'changedFields']);
+const IDENTITY_FIELDS = Object.freeze(['id', 'name', 'createdAt']);
+// "Why it woke" (an external fact about the caller) is always recorded
+// separately from "what changed" (reason/changedFields, derived from the
+// projection itself) - see evaluateHeartbeat(). state_changed is the honest
+// default for the many call sites that have no more specific provenance to
+// give; it is never upgraded to imply autonomous initiative it didn't have.
+export const HEARTBEAT_TRIGGERS = Object.freeze([
+  'runtime_started', 'owner_command', 'job_completed', 'job_failed',
+  'memory_recorded', 'source_received', 'backup_restored', 'state_changed',
+]);
+const HEARTBEAT_ENTRY_FIELDS = Object.freeze(['id', 'at', 'trigger', 'reason', 'previousActivity', 'nextActivity', 'changedFields']);
 const RESULT_REF_FIELDS = Object.freeze(['type', 'questId', 'jobId', 'artifactId']);
 const MAX_ACTIVE_SHADOWS = 50;
 const MAX_HEARTBEAT_LOG = 20;
@@ -48,15 +58,35 @@ export class BlackholeCoreError extends Error {
   constructor(message) { super(message); this.name = 'BlackholeCoreError'; }
 }
 
-export function initialCoreState() {
+// The smallest durable identity for the Persistent Self: generated exactly
+// once (here, or by the store.mjs migration for a store whose blackholeCore
+// predates this field) and then carried forward unchanged by every save() -
+// never regenerated on restart. No existing installation/runtime identity
+// was reusable: BOOT_ID and runtimeBoots (server.mjs/https-evidence.mjs) are
+// deliberately a fresh id *per process boot*, not a stable instance identity,
+// and device/pairing credentials identify a connecting client, not the Core
+// itself. This is a plain identity record, not a second device/account
+// system - it grants no authority and is never used for authentication.
+export function createCoreIdentity(at) {
+  return {id: randomUUID(), name: 'BLACKHOLE', createdAt: at};
+}
+
+export function initialCoreState(at = null) {
   return {
     schemaVersion: CORE_SCHEMA_VERSION,
+    identity: createCoreIdentity(at ?? new Date().toISOString()),
     activity: 'idle',
     missionQuestId: null,
     focusProjectId: null,
     dominantDriveId: null,
     activeShadowIds: [],
-    recentResultRef: null,
+    recentArtifactRef: null,
+    // No durable outcome-verification verdict store exists anywhere in this
+    // codebase yet (outcome-verification.mjs's verifyOutcome() output is
+    // never persisted) - so this stays null until such real, checkable
+    // evidence exists. It must never be filled from a completed job's
+    // artifact alone; that is recentArtifactRef, and is not verification.
+    verifiedResultRef: null,
     relationshipMemoryPointer: null,
     lastHeartbeatAt: null,
     heartbeatCount: 0,
@@ -65,18 +95,29 @@ export function initialCoreState() {
   };
 }
 
-function validateResultRef(ref, state) {
+// This is an artifact reference, deliberately not called "verified": it only
+// proves a quest job completed and attached a file, exactly quests.mjs's own
+// "artifact_recorded" status - not outcome-verification.mjs's much stronger
+// outcomeVerified verdict (which nothing in this codebase persists yet).
+function validateArtifactRef(ref, state) {
   if (ref === null) return;
-  if (!exactKeys(ref, RESULT_REF_FIELDS) || ref.type !== 'quest') throw new BlackholeCoreError('Invalid Core recentResultRef shape');
-  if (!uuid(ref.questId) || !uuid(ref.jobId) || typeof ref.artifactId !== 'string' || !ref.artifactId) throw new BlackholeCoreError('Invalid Core recentResultRef identifiers');
+  if (!exactKeys(ref, RESULT_REF_FIELDS) || ref.type !== 'quest') throw new BlackholeCoreError('Invalid Core recentArtifactRef shape');
+  if (!uuid(ref.questId) || !uuid(ref.jobId) || typeof ref.artifactId !== 'string' || !ref.artifactId) throw new BlackholeCoreError('Invalid Core recentArtifactRef identifiers');
   const quest = (state.quests ?? []).find(q => q.id === ref.questId);
   const job = (state.jobs ?? []).find(j => j.id === ref.jobId);
-  if (!quest || quest.jobId !== ref.jobId || !job || job.status !== 'completed') throw new BlackholeCoreError('Core recentResultRef does not match a real completed quest job');
-  if (!(job.artifacts ?? []).some(a => a.id === ref.artifactId)) throw new BlackholeCoreError('Core recentResultRef artifact is not attached to its job');
+  if (!quest || quest.jobId !== ref.jobId || !job || job.status !== 'completed') throw new BlackholeCoreError('Core recentArtifactRef does not match a real completed quest job');
+  if (!(job.artifacts ?? []).some(a => a.id === ref.artifactId)) throw new BlackholeCoreError('Core recentArtifactRef artifact is not attached to its job');
+}
+
+function validateIdentity(identity, at) {
+  if (!exactKeys(identity, IDENTITY_FIELDS) || !uuid(identity.id)) throw new BlackholeCoreError('Invalid Core identity shape');
+  if (typeof identity.name !== 'string' || !identity.name || identity.name.length > 80) throw new BlackholeCoreError('Invalid Core identity name');
+  if (!iso(identity.createdAt) || (at !== undefined && identity.createdAt > at)) throw new BlackholeCoreError('Invalid Core identity createdAt');
 }
 
 function validateHeartbeatEntry(entry) {
   if (!exactKeys(entry, HEARTBEAT_ENTRY_FIELDS) || !uuid(entry.id) || !iso(entry.at)) throw new BlackholeCoreError('Invalid heartbeat log entry');
+  if (!HEARTBEAT_TRIGGERS.includes(entry.trigger)) throw new BlackholeCoreError('Invalid heartbeat log trigger');
   if (!ACTIVITY_STATES.includes(entry.previousActivity) || !ACTIVITY_STATES.includes(entry.nextActivity)) throw new BlackholeCoreError('Invalid heartbeat log activity value');
   if (typeof entry.reason !== 'string' || !entry.reason || entry.reason.length > 400) throw new BlackholeCoreError('Invalid heartbeat log reason');
   if (!Array.isArray(entry.changedFields) || entry.changedFields.length > CORE_FIELDS.length || entry.changedFields.some(f => typeof f !== 'string')) throw new BlackholeCoreError('Invalid heartbeat log changedFields');
@@ -90,6 +131,7 @@ function validateHeartbeatEntry(entry) {
 export function validateCoreState(core, state) {
   if (!exactKeys(core, CORE_FIELDS)) throw new BlackholeCoreError('Invalid BlackholeCoreState shape');
   if (core.schemaVersion !== CORE_SCHEMA_VERSION) throw new BlackholeCoreError('Unsupported BlackholeCoreState schemaVersion');
+  validateIdentity(core.identity, core.updatedAt ?? undefined);
   if (!ACTIVITY_STATES.includes(core.activity)) throw new BlackholeCoreError('Invalid Core activity value');
   const mission = core.missionQuestId !== null ? (state.quests ?? []).find(q => q.id === core.missionQuestId) : null;
   if (core.missionQuestId !== null && (!uuid(core.missionQuestId) || !mission)) throw new BlackholeCoreError('Core missionQuestId does not reference a real quest');
@@ -106,7 +148,13 @@ export function validateCoreState(core, state) {
   if (!Array.isArray(core.activeShadowIds) || core.activeShadowIds.length > MAX_ACTIVE_SHADOWS) throw new BlackholeCoreError('Invalid Core activeShadowIds');
   for (const id of core.activeShadowIds) if (!(state.jobs ?? []).some(j => j.id === id && j.botAssignment)) throw new BlackholeCoreError('Core activeShadowIds references a non-shadow job');
   if (new Set(core.activeShadowIds).size !== core.activeShadowIds.length) throw new BlackholeCoreError('Core activeShadowIds contains a duplicate');
-  validateResultRef(core.recentResultRef, state);
+  validateArtifactRef(core.recentArtifactRef, state);
+  // No durable outcome-verification verdict store exists in this codebase
+  // yet, so a genuinely verified result can never be represented safely -
+  // this must stay null rather than ever being filled from an artifact
+  // alone. Fails closed the moment a future change tries to populate it
+  // without also adding the real verdict store this validation would need.
+  if (core.verifiedResultRef !== null) throw new BlackholeCoreError('Core verifiedResultRef must remain null until a durable outcome-verification verdict store exists');
   if (core.relationshipMemoryPointer !== null && (!uuid(core.relationshipMemoryPointer) || !(state.memoryEvents ?? []).some(e => e.id === core.relationshipMemoryPointer && e.type === 'relationship'))) throw new BlackholeCoreError('Core relationshipMemoryPointer does not reference a real relationship memory event');
   if (core.lastHeartbeatAt !== null && !iso(core.lastHeartbeatAt)) throw new BlackholeCoreError('Invalid Core lastHeartbeatAt');
   if (!Number.isSafeInteger(core.heartbeatCount) || core.heartbeatCount < 0) throw new BlackholeCoreError('Invalid Core heartbeatCount');
@@ -122,8 +170,18 @@ export function validateCoreState(core, state) {
 // never on a timer - so this never makes a provider call or any external
 // side effect merely because it ran; it only ever reads already-persisted
 // jobs/quests/projects/memoryEvents and computes a projection over them.
-export function evaluateHeartbeat(previousCore, state, {at}) {
+//
+// `trigger` is an external fact the caller supplies - why save() was called
+// right now - and is recorded separately from `reason`/`changedFields` below
+// (what the projection itself found different). Conflating the two would
+// make every heartbeat look like the same generic event regardless of
+// whether the runtime just booted, the owner issued a command, or nothing
+// meaningful changed at all; keeping them apart is what lets a reader tell
+// "why it woke" from "what it noticed" without implying autonomous
+// initiative that a routine persisted save never had.
+export function evaluateHeartbeat(previousCore, state, {at, trigger = 'state_changed'}) {
   if (!iso(at)) throw new BlackholeCoreError('evaluateHeartbeat requires an ISO timestamp');
+  if (!HEARTBEAT_TRIGGERS.includes(trigger)) throw new BlackholeCoreError('evaluateHeartbeat requires a known trigger');
   const jobs = state.jobs ?? [], quests = state.quests ?? [];
 
   const activity = state.emergencyStop ? 'emergency' : jobs.some(j => j.status === 'running') ? 'executing' : 'idle';
@@ -145,14 +203,16 @@ export function evaluateHeartbeat(previousCore, state, {at}) {
   // actually running right now.
   const activeShadowIds = jobs.filter(j => j.botAssignment && j.status === 'running').map(j => j.id).slice(0, MAX_ACTIVE_SHADOWS);
 
-  // Recent verified result: the most recently updated completed quest job
-  // that actually produced an artifact - real evidence, not a status label.
+  // Recent artifact: the most recently updated completed quest job that
+  // actually produced an artifact - quests.mjs's own "artifact_recorded",
+  // deliberately NOT called "verified" (see verifiedResultRef above: this
+  // codebase has no durable outcome-verification verdict to point at yet).
   const resultCandidates = quests
     .map(quest => ({quest, job: jobs.find(j => j.id === quest.jobId)}))
     .filter(({job}) => job && job.status === 'completed' && (job.artifacts ?? []).length > 0)
     .sort((a, b) => b.job.updatedAt.localeCompare(a.job.updatedAt));
   const top = resultCandidates[0] ?? null;
-  const recentResultRef = top ? {type: 'quest', questId: top.quest.id, jobId: top.job.id, artifactId: top.job.artifacts[0].id} : null;
+  const recentArtifactRef = top ? {type: 'quest', questId: top.quest.id, jobId: top.job.id, artifactId: top.job.artifacts[0].id} : null;
 
   // Relationship memory pointer: the most recent relationship-type memory
   // event, re-derived every time rather than held as an independently
@@ -167,12 +227,13 @@ export function evaluateHeartbeat(previousCore, state, {at}) {
   if (previousCore.focusProjectId !== focusProjectId) changedFields.push('focusProjectId');
   if (previousCore.dominantDriveId !== dominantDriveId) changedFields.push('dominantDriveId');
   if (JSON.stringify(previousCore.activeShadowIds) !== JSON.stringify(activeShadowIds)) changedFields.push('activeShadowIds');
-  if (JSON.stringify(previousCore.recentResultRef) !== JSON.stringify(recentResultRef)) changedFields.push('recentResultRef');
+  if (JSON.stringify(previousCore.recentArtifactRef) !== JSON.stringify(recentArtifactRef)) changedFields.push('recentArtifactRef');
   if (previousCore.relationshipMemoryPointer !== relationshipMemoryPointer) changedFields.push('relationshipMemoryPointer');
 
   const entry = {
     id: randomUUID(),
     at,
+    trigger,
     reason: changedFields.length ? `changed: ${changedFields.join(', ')}` : 'observed, no change',
     previousActivity: previousCore.activity,
     nextActivity: activity,
@@ -181,12 +242,14 @@ export function evaluateHeartbeat(previousCore, state, {at}) {
 
   const core = {
     schemaVersion: CORE_SCHEMA_VERSION,
+    identity: previousCore.identity,
     activity,
     missionQuestId,
     focusProjectId,
     dominantDriveId,
     activeShadowIds,
-    recentResultRef,
+    recentArtifactRef,
+    verifiedResultRef: null,
     relationshipMemoryPointer,
     lastHeartbeatAt: at,
     heartbeatCount: (previousCore.heartbeatCount ?? 0) + 1,
@@ -210,6 +273,7 @@ export function coreSummary(state) {
   const relationshipMemory = core.relationshipMemoryPointer ? (state.memoryEvents ?? []).find(e => e.id === core.relationshipMemoryPointer) ?? null : null;
   return {
     schemaVersion: core.schemaVersion,
+    identity: core.identity,
     activity: core.activity,
     emergencyStop: state.emergencyStop,
     mission: mission ? {id: mission.id, goal: mission.goal, status: mission.status, driveId: mission.driveId} : null,
@@ -218,7 +282,12 @@ export function coreSummary(state) {
     dominantDriveName: drive?.name ?? null,
     activeShadowCount: core.activeShadowIds.length,
     activeShadowIds: core.activeShadowIds,
-    recentResult: core.recentResultRef,
+    // recentArtifactResult: a completed quest job's attached artifact - real,
+    // but only integrity evidence (quests.mjs's own "artifact_recorded").
+    // verifiedResult: stays null until a durable outcome-verification verdict
+    // exists in this codebase; never backfilled from the artifact alone.
+    recentArtifactResult: core.recentArtifactRef,
+    verifiedResult: core.verifiedResultRef,
     relationshipMemory: relationshipMemory ? {id: relationshipMemory.id, type: relationshipMemory.type, text: relationshipMemory.text, createdAt: relationshipMemory.createdAt} : null,
     lastHeartbeatAt: core.lastHeartbeatAt,
     heartbeatCount: core.heartbeatCount,
@@ -239,7 +308,8 @@ export function coreHomeSummary(state) {
     dominantDriveId: full.dominantDriveId,
     dominantDriveName: full.dominantDriveName,
     activeShadowCount: full.activeShadowCount,
-    recentResult: full.recentResult ? {questId: full.recentResult.questId} : null,
+    recentArtifactResult: full.recentArtifactResult ? {questId: full.recentArtifactResult.questId} : null,
+    verifiedResult: full.verifiedResult,
     lastHeartbeatAt: full.lastHeartbeatAt,
   };
 }

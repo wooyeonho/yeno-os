@@ -23,7 +23,15 @@ type Job = { id: string; title: string; status: string; version: number; updated
 type CoreHomeSummary = {
   activity: string; missionGoal: string | null; focusProjectName: string | null;
   dominantDriveId: string | null; dominantDriveName: string | null;
-  activeShadowCount: number; recentResult: { questId: string } | null; lastHeartbeatAt: string | null;
+  activeShadowCount: number;
+  // recentArtifactResult: a completed job's attached file - real, but only
+  // integrity evidence, never called "verified" (see verifiedResult).
+  recentArtifactResult: { questId: string } | null;
+  // verifiedResult: stays null until a durable outcome-verification verdict
+  // exists in this codebase; the UI must never treat an artifact alone as
+  // verified.
+  verifiedResult: unknown | null;
+  lastHeartbeatAt: string | null;
 };
 type State = { name: string; apiVersion: string; revision: number; emergencyStop: boolean; jobs: Job[]; world?: Record<string, unknown>; modules?: {documents?: boolean}; core?: CoreHomeSummary };
 type Memory = { id?: string; text: string; createdAt?: string };
@@ -162,7 +170,10 @@ function renderCoreStatus() {
     goal ? `미션: ${goal}` : '미션: 진행 중인 목표 없음',
     `성향: ${core.dominantDriveName ?? '아직 평가 전'}`,
     ...(core.activeShadowCount > 0 ? [`그림자 ${core.activeShadowCount}개 활동 중`] : []),
-    ...(core.recentResult ? ['최근 확인된 결과 있음'] : []),
+    // "결과물" (artifact/output), never "확인된"/"검증된" (confirmed/verified) -
+    // this is only integrity evidence a job attached a file, not a verified
+    // outcome (see CoreHomeSummary.recentArtifactResult above).
+    ...(core.recentArtifactResult ? ['최근 결과물 있음'] : []),
   ];
   $('core-status').textContent = parts.join(' · ');
 }

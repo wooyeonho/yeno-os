@@ -23,7 +23,7 @@ import {validateBotAssignment} from './project-bots.mjs';
 import {validateQuestState} from './quests.mjs';
 import {emptyStudio,validateStudio} from './studio.mjs';
 import {initialAutopilot,validateAutopilot,validateAutopilotJob} from './autopilot.mjs';
-import {initialCoreState,validateCoreState,evaluateHeartbeat} from './blackhole-core.mjs';
+import {initialCoreState,validateCoreState,evaluateHeartbeat,createCoreIdentity} from './blackhole-core.mjs';
 import {validateMemoryEvents} from './memory-events.mjs';
 
 export const digest = value => crypto.createHash('sha256').update(value).digest('hex');
@@ -73,6 +73,10 @@ function initializeQuestCollections(state) {
  if(!Object.hasOwn(state,'memoryEvents'))state.memoryEvents=[];
  validateMemoryEvents(state.memoryEvents,state);
  if(!Object.hasOwn(state,'blackholeCore'))state.blackholeCore=initialCoreState();
+ // A store whose blackholeCore predates the stable-identity correction gets
+ // one generated here, exactly once - after this, the field is always
+ // present in the persisted state, so no later call ever regenerates it.
+ else if(!Object.hasOwn(state.blackholeCore,'identity'))state.blackholeCore.identity=createCoreIdentity(now());
  validateCoreState(state.blackholeCore,state);
  return state;
 }
@@ -119,12 +123,15 @@ export function openStore(directory) {
  // Existing hashes migrate unchanged; IDs evicted by older runtimes cannot
  // be reconstructed from a job alone and are not claimed as recovered.
  initializeRequestLedger(state);
- function save(){
+ function save(trigger){
    // Event-driven heartbeat: every real persist re-derives the Core's
    // activity/mission/shadows/result/relationship pointer from the state
    // being saved - never a timer, never a provider call, never a side effect
-   // beyond this record itself.
-   state.blackholeCore=evaluateHeartbeat(state.blackholeCore,state,{at:now()}).core;
+   // beyond this record itself. `trigger` is the caller's own reason for
+   // calling save() right now (see blackhole-core.mjs's evaluateHeartbeat);
+   // callers that have no more specific provenance to give may omit it and
+   // fall back to the honest 'state_changed' default.
+   state.blackholeCore=evaluateHeartbeat(state.blackholeCore,state,{at:now(),...(trigger?{trigger}:{})}).core;
    validateCoreState(state.blackholeCore,state);
    state.revision++;
    sanitizeEnrollmentReceipts(state);

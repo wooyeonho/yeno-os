@@ -25,7 +25,7 @@ import {validateVideoInput} from './video.mjs';
 import {validateForAiInput} from './forai.mjs';
 import {validateResearchRequest,validateResearchBundle} from './research.mjs';
 import {initialAutopilot,validateAutopilot,validateAutopilotJob} from './autopilot.mjs';
-import {initialCoreState,validateCoreState,evaluateHeartbeat} from './blackhole-core.mjs';
+import {initialCoreState,validateCoreState,evaluateHeartbeat,createCoreIdentity} from './blackhole-core.mjs';
 import {validateMemoryEvents} from './memory-events.mjs';
 
 export const BACKUP_MAX_PLAINTEXT_BYTES = 16 * 1024 * 1024;
@@ -87,6 +87,9 @@ function validateState(state) {
   if (!Object.hasOwn(state, 'memoryEvents')) state.memoryEvents = [];
   validateMemoryEvents(state.memoryEvents, state);
   if (!Object.hasOwn(state, 'blackholeCore')) state.blackholeCore = initialCoreState();
+  // Same one-time, migration-safe backfill store.mjs performs for an older
+  // backup archive whose blackholeCore predates the stable-identity fix.
+  else if (!Object.hasOwn(state.blackholeCore, 'identity')) state.blackholeCore.identity = createCoreIdentity(new Date().toISOString());
   validateCoreState(state.blackholeCore, state);
   if (!Array.isArray(state.jobs) || !Array.isArray(state.snapshots) || !Array.isArray(state.events) || !record(state.requests) || !record(state.devices) || !record(state.artifacts)) fail('invalid state collections');
   const jobs = new Map(), references = new Set();
@@ -310,7 +313,7 @@ export function restoreBackup({ archive, key, targetDir }) {
   // Re-derive the Core immediately so the restored file never shows stale
   // pre-restore activity (e.g. "executing" a job this same restore just
   // paused): the same pure projection store.mjs runs on every save.
-  state.blackholeCore = evaluateHeartbeat(state.blackholeCore, state, {at: restoredAt}).core;
+  state.blackholeCore = evaluateHeartbeat(state.blackholeCore, state, {at: restoredAt, trigger: 'backup_restored'}).core;
   state.events.unshift({ id: crypto.randomUUID(), at: restoredAt, text: `Encrypted backup restored (${payload.createdAt}); emergency stop enabled, AI disabled, ${pausedJobCount} unfinished job(s) paused, ${revokedDeviceCount} active device credential(s) revoked. Fresh owner key/device enrollment required; no server started.` });
   const serialized = JSON.stringify(state), envelope = JSON.stringify({ format: 1, sha256: digest(serialized), payload: serialized });
   const createdFiles = [], artifactDir = path.join(target, 'artifacts'), marker = path.join(target, 'restore-in-progress');
