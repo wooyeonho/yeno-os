@@ -14,7 +14,7 @@ const {JSDOM} = createRequire(new URL('../../apps/controller/package.json', impo
 function setup() {
   const dom = new JSDOM('<main></main>'), root = dom.window.document.querySelector('main');
   const navigated = [];
-  const view = createLivingCoreView({root, onNavigate: id => navigated.push(id)});
+  const view = createLivingCoreView({root, onNavigate: (id, projectId) => navigated.push(projectId != null ? [id, projectId] : id)});
   return {dom, root, view, navigated, close() { view.destroy(); dom.window.close(); }};
 }
 function coreFixture(overrides = {}) {
@@ -116,7 +116,7 @@ test('one recent item prefers the most recent real memory, falls back to artifac
   h.close();
 });
 
-test('never exposes a raw memory/project UUID anywhere in the rendered DOM', () => {
+test('never exposes a raw memory/project UUID as visible text - only as a data attribute needed to open that exact real project (UI Slice 2)', () => {
   const h = setup();
   const uuid = '11111111-1111-4111-8111-111111111111';
   h.view.updateState({
@@ -124,7 +124,8 @@ test('never exposes a raw memory/project UUID anywhere in the rendered DOM', () 
     projects: [{id: uuid, name: 'P', status: 'active'}],
     memories: [{id: uuid, text: '기억', createdAt: '2026-09-18T00:00:00.000Z'}],
   }, true);
-  assert.equal(h.root.innerHTML.includes(uuid), false);
+  assert.equal(h.root.textContent.includes(uuid), false);
+  assert.ok(h.root.innerHTML.includes(uuid), 'the id must still exist internally as a data attribute so the orbit node can open that exact project');
   h.close();
 });
 
@@ -139,7 +140,28 @@ test('clicking the voice CTA and each drill-down surface navigates to the correc
   h.root.querySelector('.living-mission').dispatchEvent(new h.dom.window.Event('click', {bubbles: true}));
   h.root.querySelector('.living-orbit-node').dispatchEvent(new h.dom.window.Event('click', {bubbles: true}));
   h.root.querySelector('.living-recent').dispatchEvent(new h.dom.window.Event('click', {bubbles: true}));
-  assert.deepEqual(h.navigated, ['voice', 'quests', 'projects', 'memory']);
+  assert.deepEqual(h.navigated, ['voice', 'quests', ['project-universe', '1'], 'memory']);
+  h.close();
+});
+
+test('the mission card opens the real linked project when focusProjectId exists, otherwise falls back to the quest surface', () => {
+  const h = setup();
+  h.view.updateState({core: coreFixture({missionGoal: '목표', focusProjectId: 'proj-42', focusProjectName: 'P'}), emergencyStop: false, projects: [], memories: []}, true);
+  h.root.querySelector('.living-mission').dispatchEvent(new h.dom.window.Event('click', {bubbles: true}));
+  assert.deepEqual(h.navigated, [['project-universe', 'proj-42']]);
+  h.close();
+});
+
+test('each project orbit node opens its own real project by id, not a generic list', () => {
+  const h = setup();
+  h.view.updateState({
+    core: coreFixture(), emergencyStop: false,
+    projects: [{id: 'a-1', name: 'Alpha', status: 'active'}, {id: 'b-2', name: 'Beta', status: 'active'}],
+    memories: [],
+  }, true);
+  const nodes = h.root.querySelectorAll('.living-orbit-node:not(.living-orbit-more)');
+  nodes[1].dispatchEvent(new h.dom.window.Event('click', {bubbles: true}));
+  assert.deepEqual(h.navigated, [['project-universe', 'b-2']]);
   h.close();
 });
 

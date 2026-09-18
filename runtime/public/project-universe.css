@@ -1,0 +1,91 @@
+/* BLACKHOLE Project Universe (UI Slice 2, issue #25). Shared by the web
+   cockpit and the native Android/Tauri controller, like living-core.css -
+   never a second divergent implementation. Uses only the --accent/--panel/
+   --line/--text/--muted tokens both hosts already define, so it never
+   clashes with either theme.
+
+   Organic transition (section 6 of the mission brief): opening a project
+   plays a lightweight fade+rise on the freshly-inserted detail panel via a
+   CSS animation - no particle framework, no JS-driven timers. Because the
+   host replaces innerHTML wholesale on every render (see
+   project-universe-view.mjs), the browser naturally (re)plays the
+   animation each time the panel enters the DOM; prefers-reduced-motion
+   disables it below. */
+.project-universe { display:grid; gap:14px; }
+.puv-header { display:flex; align-items:center; min-height:28px; }
+.puv-back { color:var(--accent); }
+.puv-screen { display:grid; gap:12px; }
+
+.puv-empty, .puv-loading, .puv-empty-line { color:var(--muted); }
+.puv-empty { border:1px dashed #3a4b51; border-radius:14px; padding:18px; display:grid; gap:6px; }
+.puv-empty-line { font-size:.875rem; margin:6px 0; }
+
+.puv-list { display:grid; gap:10px; }
+.puv-card { display:block; width:100%; text-align:left; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px 16px; color:inherit; cursor:pointer; min-height:44px; }
+.puv-card-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.puv-card-top strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.puv-card-meta { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:8px; font-size:.8125rem; color:var(--muted); }
+.puv-card-next { margin-top:8px; font-size:.875rem; overflow-wrap:anywhere; }
+
+.puv-status { border:1px solid var(--line); border-radius:999px; padding:3px 10px; font-size:.75rem; white-space:nowrap; flex-shrink:0; }
+.puv-status-active { border-color:#3f6a58; color:var(--accent); }
+.puv-status-paused, .puv-status-queued { color:#e2b45a; border-color:#6a5a2e; }
+.puv-status-archived, .puv-status-cancelled { color:var(--muted); }
+.puv-status-running { color:var(--accent); border-color:#3f6a58; }
+.puv-status-failed { color:#ff8b76; border-color:#6a3a2e; }
+
+.puv-badge { border-radius:999px; padding:3px 9px; font-size:.75rem; }
+.puv-badge-blocker { background:#4a3712; color:#f2c46a; }
+.puv-badge-active { background:#0d3a2c; color:#43d9a8; }
+
+.puv-detail { display:grid; gap:14px; animation:puv-enter .32s ease-out; }
+.puv-detail-header { display:grid; gap:8px; }
+.puv-detail-title { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.puv-detail-title h2 { min-width:0; overflow-wrap:anywhere; font-size:1.125rem; }
+.puv-notice { background:#4a3712; color:#f2c46a; border-radius:10px; padding:10px 14px; font-size:.875rem; }
+.puv-summary p { margin-top:6px; font-size:.875rem; color:var(--muted); overflow-wrap:anywhere; }
+.puv-next-action { font-size:.9375rem; }
+
+.puv-section { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px 16px; display:grid; gap:10px; }
+.puv-section-heading { display:flex; align-items:center; justify-content:space-between; }
+.puv-section-heading h3 { font-size:.9375rem; }
+.puv-progress { color:var(--accent); font-variant-numeric:tabular-nums; }
+.puv-reason p { font-size:.9375rem; overflow-wrap:anywhere; }
+
+.puv-blockers { border-color:#6a5a2e; }
+.puv-blocker-list { display:grid; gap:8px; }
+.puv-blocker-list li { display:grid; gap:2px; font-size:.875rem; }
+.puv-blocker-list small, .puv-blocker-list span { color:#e2b45a; font-size:.8125rem; }
+
+.puv-milestone-list { display:grid; gap:10px; list-style:none; padding:0; margin:0; }
+.puv-milestone-item { display:grid; grid-template-columns:1fr auto; align-items:start; gap:6px 10px; }
+.puv-milestone-check { display:flex; align-items:flex-start; gap:10px; min-height:24px; grid-column:1; }
+.puv-milestone-check input { width:20px; height:20px; flex-shrink:0; margin-top:1px; }
+.puv-milestone-check span { overflow-wrap:anywhere; font-size:.9375rem; }
+.puv-milestone-item.is-complete .puv-milestone-check span { color:var(--muted); text-decoration:line-through; }
+.puv-milestone-note { grid-column:1; color:var(--muted); }
+.puv-milestone-remove { grid-column:2; grid-row:1 / span 2; color:var(--muted); }
+.puv-milestone-add { display:flex; gap:8px; }
+.puv-milestone-add input { flex:1; min-width:0; }
+
+.puv-details { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:4px 16px; }
+.puv-details summary { padding:10px 0; font-size:.9375rem; cursor:pointer; }
+.puv-details[open] summary { border-bottom:1px solid var(--line); margin-bottom:8px; }
+.puv-details.puv-deferred { opacity:.7; }
+.puv-work-list, .puv-linked-list, .puv-drive-list { display:grid; gap:10px; list-style:none; padding:0 0 10px; margin:0; }
+.puv-work-list li, .puv-linked-list li { display:grid; gap:4px; font-size:.875rem; }
+.puv-work-list p, .puv-linked-list p { overflow-wrap:anywhere; }
+.puv-work-list small, .puv-linked-list small { color:var(--muted); }
+.puv-drive-list { display:flex; flex-wrap:wrap; gap:8px; }
+.puv-drive-list li { display:flex; align-items:center; gap:6px; }
+.puv-drive-chip { border:1px solid var(--line); border-radius:999px; padding:4px 12px; font-size:.8125rem; color:var(--accent); }
+
+@keyframes puv-enter { from { opacity:0; transform:translateY(10px) scale(.98); } to { opacity:1; transform:none; } }
+
+@media(max-width:480px) {
+  .puv-card { padding:12px 14px; }
+  .puv-detail-title h2 { font-size:1rem; }
+  .puv-milestone-add { flex-direction:column; }
+}
+
+@media(prefers-reduced-motion:reduce) { .puv-detail { animation:none; } }

@@ -1,5 +1,6 @@
 import '../../../runtime/public/studio.css';
 import '../../../runtime/public/living-core.css';
+import '../../../runtime/public/project-universe.css';
 import './style.css';
 import { fetch } from '@tauri-apps/plugin-http';
 import { appDataDir, join } from '@tauri-apps/api/path';
@@ -15,8 +16,9 @@ import { normalizeOrigin, versionedUrl, createStudioApi, studioStorageKey, Secur
 import { createNativeLiveVoiceView } from './native-live-voice-view.ts';
 import { createLivingCoreView } from '../../../runtime/public/living-core-view.mjs';
 import { createNativeHomeNavigation } from './native-home.ts';
+import { createNativeProjects } from './native-projects.ts';
 
-type Job = { id: string; title: string; status: string; version: number; updatedAt: string; artifacts: { id: string; name: string }[] };
+type Job = { id: string; title: string; status: string; version: number; updatedAt: string; artifacts: { id: string; name: string }[]; projectId?: string; pauseReason?: string };
 // BLACKHOLE Living Core (Phase A): a trimmed, already-derived projection of
 // the real Persistent Core record, embedded directly in GET /api/state so
 // this binding needs no second network round trip. Every field here is real
@@ -41,7 +43,11 @@ type CoreHomeSummary = {
 // which client asked) - the Living Core Home reuses them for the Project
 // Orbit preview and the one recent-memory item. No new endpoint, no new
 // per-card request.
-type Project = { id: string; name: string; status: string };
+// UI Slice 2 (issue #25): widened from {id,name,status} to the full real
+// project record - Project Universe needs version (revision-checked
+// milestone mutation), nextAction, summary and milestones, all of which
+// server.mjs's state() already embeds unchanged.
+type Project = { id: string; name: string; status: string; version: number; summary?: string; nextAction?: string; milestones?: {id: string; text: string; completed: boolean; createdAt: string; completedAt: string | null}[] };
 type State = { name: string; apiVersion: string; revision: number; emergencyStop: boolean; jobs: Job[]; world?: Record<string, unknown>; modules?: {documents?: boolean}; core?: CoreHomeSummary; projects?: Project[]; memories?: Memory[] };
 type Memory = { id?: string; text: string; createdAt?: string };
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -57,7 +63,7 @@ let nativeVault: { stronghold: Stronghold; store: Store } | null = null;
 let vaultPassword: string | null = null;
 let studio: ReturnType<typeof createStudioView> | null = null;
 let studioStorage: SecureRequestStorage | null = null;
-let activeView: 'studio' | 'world' | 'jobs' = 'studio';
+let activeView: 'studio' | 'world' | 'jobs' | 'projects' = 'studio';
 let artifactFile: VerifiedFile | null = null, artifactUrl: string | null = null, artifactEpoch = 0, savingFile = false;
 // Native Gemini Live: an additive path owned entirely by native-live-voice-view.ts,
 // built on the exact same reused runtime/public/live-voice-client.mjs state
@@ -67,8 +73,13 @@ const liveVoiceView = createNativeLiveVoiceView($('live-voice'));
 // BLACKHOLE Living Core Home (FINAL UI Slice 1 correction, issue #25): the
 // exact same shared runtime/public/living-core-view.mjs the web cockpit
 // uses, mounted natively - never a second divergent implementation.
-const nativeHomeNavigation = createNativeHomeNavigation({liveVoiceRoot: $('live-voice'), showJobsView: () => showView('jobs')});
-const livingCoreView = createLivingCoreView({root: $('living-core-root'), onNavigate: id => nativeHomeNavigation.navigate(id)});
+const nativeHomeNavigation = createNativeHomeNavigation({liveVoiceRoot: $('live-voice'), showJobsView: () => showView('jobs'), showProjectsView: projectId => { showView('projects'); if (projectId) nativeProjects.openProject(projectId); }});
+const livingCoreView = createLivingCoreView({root: $('living-core-root'), onNavigate: (id, projectId) => nativeHomeNavigation.navigate(id, projectId)});
+// UI Slice 2 (issue #25): the real native Projects destination, mounting
+// the exact same shared runtime/public/project-universe-view.mjs the web
+// cockpit uses. api() here already prefixes /api and attaches the current
+// device credential exactly like every other native call.
+const nativeProjects = createNativeProjects({root: $('project-universe-root'), api, requestId, onNavigate: target => { if (target === 'sources' || target === 'memory') showView('studio'); }});
 
 async function openVault(password: string) {
   if (nativeVault && vaultPassword === password) return nativeVault;
@@ -128,7 +139,7 @@ async function activate(value: Connection) {
     else await vault.store.insert(key, Array.from(encoder.encode(next)));
     await vault.stronghold.save();
   });
-  studio?.reset(); world.reset(); clearArtifact();
+  studio?.reset(); world.reset(); nativeProjects.reset(); clearArtifact();
   const root = $('native-studio').cloneNode(false) as HTMLElement;
   $('native-studio').replaceWith(root);
   liveVoiceView.setConnection(value);
@@ -167,6 +178,7 @@ function renderConnection() {
   $('seen').textContent = lastSeen ? `마지막 상태 확인 · ${lastSeen.toLocaleString()} · revision ${state?.revision ?? '?'}` : '서버 상태를 아직 확인하지 못했습니다.';
   $('stop').textContent = state?.emergencyStop ? '전체 멈춤 해제' : '전체 멈춤';
   livingCoreView.updateState(state, connectionStatus === 'online' && !disconnecting);
+  nativeProjects.updateProjects(state?.projects, state?.jobs);
   studio?.setState(state ? {...state, online: connectionStatus === 'online' && !disconnecting} : null);
   void world.update(state?.world, connected && connectionStatus === 'online' && !state?.emergencyStop && state?.modules?.documents !== false && !commands?.pending && !submitting && !disconnecting);
   liveVoiceView.update({online: connectionStatus === 'online', emergencyStop: state?.emergencyStop === true, busy: disconnecting});
@@ -366,7 +378,7 @@ async function forgetConnection() {
   localStorage.removeItem(vaultMarker);
   liveVoiceView.setConnection(null);
   connection = null; commands = null; state = null; lastSeen = null;
-  studio?.reset(); studio = null; studioStorage = null; world.reset(); clearArtifact();
+  studio?.reset(); studio = null; studioStorage = null; world.reset(); nativeProjects.reset(); clearArtifact();
   if (nativeVault) { await nativeVault.stronghold.unload(); nativeVault = null; }
   vaultPassword = null;
   $('receipt-body').replaceChildren(); $('artifact-body').textContent = ''; $<HTMLTextAreaElement>('text').value = '';
@@ -395,11 +407,11 @@ async function disconnect(localOnly = false) {
 function guard(task: () => Promise<void>) { void task().catch(error => showMessage(errorText(error))); }
 function showView(view: typeof activeView) {
   activeView = view;
-  $('cockpit').hidden = view !== 'jobs'; $('native-studio').hidden = view !== 'studio'; $('tab-world').hidden = view !== 'world';
+  $('cockpit').hidden = view !== 'jobs'; $('native-studio').hidden = view !== 'studio'; $('tab-world').hidden = view !== 'world'; $('tab-projects').hidden = view !== 'projects';
   // Android WebView :has() support is uncertain across older devices, so the
   // home/tools-drawer visibility for the world/jobs tabs is driven by this
   // explicit class rather than a :has() selector reading nav aria-pressed.
-  $('workspace').classList.remove('view-studio', 'view-world', 'view-jobs');
+  $('workspace').classList.remove('view-studio', 'view-world', 'view-jobs', 'view-projects');
   $('workspace').classList.add(`view-${view}`);
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-native-view]')) button.setAttribute('aria-pressed', String(button.dataset.nativeView === view));
   if (view === 'studio' && connectionStatus === 'online') guard(async () => { await studio?.refresh(); });
@@ -412,7 +424,7 @@ const world = createWorldView({load: () => api('/world'), submit: async () => {
   finally { submitting = false; render(); }
 }});
 $('world-land').setAttribute('href', worldLand);
-for (const button of document.querySelectorAll<HTMLButtonElement>('[data-native-view]')) button.onclick = () => showView(button.dataset.nativeView as typeof activeView);
+for (const button of document.querySelectorAll<HTMLButtonElement>('[data-native-view]')) button.onclick = () => { const view = button.dataset.nativeView as typeof activeView; if (view === 'projects') nativeProjects.showList(); showView(view); };
 document.addEventListener('click', event => {
   const link = (event.target as Element).closest<HTMLAnchorElement>('a[href]');
   if (!link) return; event.preventDefault();

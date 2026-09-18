@@ -286,6 +286,7 @@ test('coreSummary and coreHomeSummary never fabricate a field: every value trace
   assert.equal(home.activity, 'executing');
   assert.equal(home.missionGoal, '실제 목표');
   assert.equal(home.focusProjectName, '실제 프로젝트');
+  assert.equal(home.focusProjectId, projectId);
   assert.equal(home.dominantDriveId, 'gluttony');
   assert.equal(home.dominantDriveWorldName, '지식');
   assert.equal(home.verifiedResult, null);
@@ -295,6 +296,7 @@ test('coreSummary and coreHomeSummary never fabricate a field: every value trace
   empty.blackholeCore = initialCoreState();
   const emptyHome = coreHomeSummary(empty);
   assert.equal(emptyHome.missionGoal, null);
+  assert.equal(emptyHome.focusProjectId, null);
   assert.equal(emptyHome.dominantDriveId, null);
   assert.equal(emptyHome.dominantDriveName, null);
   assert.equal(emptyHome.dominantDriveWorldName, null);

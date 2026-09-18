@@ -25,8 +25,9 @@ function setup() {
   const scrolled = [];
   dom.window.HTMLElement.prototype.scrollIntoView = function (options) { scrolled.push({id: this.id || this.className, options}); };
   const shownViews = [];
-  const nav = createNativeHomeNavigation({liveVoiceRoot: doc.getElementById('live-voice'), doc, showJobsView: () => shownViews.push('jobs')});
-  return {dom, doc, nav, scrolled, shownViews, close: () => dom.window.close()};
+  const shownProjects = [];
+  const nav = createNativeHomeNavigation({liveVoiceRoot: doc.getElementById('live-voice'), doc, showJobsView: () => shownViews.push('jobs'), showProjectsView: projectId => shownProjects.push(projectId ?? null)});
+  return {dom, doc, nav, scrolled, shownViews, shownProjects, close: () => dom.window.close()};
 }
 
 test('voice navigation scrolls to the existing native Live Voice card and clicks its real toggle when enabled', () => {
@@ -52,8 +53,8 @@ test('voice navigation never clicks a disabled toggle, but still scrolls it into
   h.close();
 });
 
-test('quests/projects/memory navigation all open the one existing advanced-tools drawer', () => {
-  for (const id of ['quests', 'projects', 'memory']) {
+test('quests/memory navigation still open the one existing advanced-tools drawer', () => {
+  for (const id of ['quests', 'memory']) {
     const h = setup();
     const details = h.doc.querySelector('.tools-drawer');
     assert.equal(details.open, false);
@@ -62,6 +63,22 @@ test('quests/projects/memory navigation all open the one existing advanced-tools
     assert.ok(h.scrolled.some(s => s.id === 'tools-drawer'));
     h.close();
   }
+});
+
+test('project-universe navigation opens the real native Projects destination instead of the advanced-tools drawer (UI Slice 2)', () => {
+  const h = setup();
+  const details = h.doc.querySelector('.tools-drawer');
+  h.nav.navigate('project-universe', 'proj-1');
+  assert.equal(details.open, false, 'the owner must never be routed through 고급 도구 to reach Project Universe');
+  assert.deepEqual(h.shownProjects, ['proj-1']);
+  h.close();
+});
+
+test('project-universe navigation with no specific project id still opens the Projects destination, at its list', () => {
+  const h = setup();
+  h.nav.navigate('project-universe');
+  assert.deepEqual(h.shownProjects, [null]);
+  h.close();
 });
 
 test('control navigation calls the real native jobs view switch, not a fabricated one', () => {
@@ -108,9 +125,9 @@ test('the shared Living Core view actually mounts into the native #living-core-r
   h.close();
 });
 
-test('the native Home never renders a raw project/memory UUID', () => {
+test('the native Home never renders a raw project/memory UUID as visible text - only as a data attribute needed to open that exact real project (UI Slice 2)', () => {
   const h = setup();
-  const view = createLivingCoreView({root: h.doc.getElementById('living-core-root'), onNavigate: id => h.nav.navigate(id)});
+  const view = createLivingCoreView({root: h.doc.getElementById('living-core-root'), onNavigate: (id, projectId) => h.nav.navigate(id, projectId)});
   const uuid = '11111111-1111-4111-8111-111111111111';
   view.updateState({
     core: {activity: 'idle', missionGoal: null, focusProjectName: null, dominantDriveId: null, dominantDriveName: null, activeShadowCount: 0, recentArtifactResult: null, verifiedResult: null, lastHeartbeatAt: null},
@@ -119,7 +136,8 @@ test('the native Home never renders a raw project/memory UUID', () => {
     memories: [{id: uuid, text: '기억', createdAt: '2026-09-18T00:00:00.000Z'}],
   }, true);
   const root = h.doc.getElementById('living-core-root');
-  assert.equal(root.innerHTML.includes(uuid), false);
+  assert.equal(root.textContent.includes(uuid), false);
+  assert.ok(root.innerHTML.includes(uuid), 'the id must still exist internally as a data attribute so the orbit node can open that exact project');
   view.destroy();
   h.close();
 });
