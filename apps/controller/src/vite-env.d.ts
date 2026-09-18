@@ -13,6 +13,13 @@ declare module '*studio-view.mjs' {
 declare module '*world-view.mjs' {
   export function createWorldView(options: {load: () => Promise<unknown>; submit: () => Promise<void>}): {update(overview: unknown, canRun: boolean): Promise<void>; reset(): void};
 }
+declare module '*living-core-view.mjs' {
+  export function createLivingCoreView(options: {root: HTMLElement; onNavigate?: (id: string) => void}): {
+    updateState(state: unknown, online: boolean): void;
+    reset(): void;
+    destroy(): void;
+  };
+}
 declare module '*live-voice-client.mjs' {
   export type LiveVoiceEvent =
     | {type: 'state'; state: string; attempt?: number}

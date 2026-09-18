@@ -172,15 +172,19 @@ try {
   await until(()=>$('#connection').textContent==='코어 응답 확인됨','reconnect after offline clears');
   evidence.checks.push('offline is shown plainly and also disables the Live Voice toggle; clears once reachable again');
 
-  // BLACKHOLE Living Core (Phase A): the compact Home status line binds to
-  // the real embedded core summary from GET /api/state, never a fabricated
-  // drive/mission - with no live mission it must say so plainly and must
-  // never invent a drive name. Already settled by the refreshes above (every
-  // one of them already carried the real core field), so this asserts on the
-  // current DOM directly rather than triggering yet another async refresh
-  // whose completion nothing here would wait for.
-  assert.equal($('#core-status').textContent,'미션: 진행 중인 목표 없음 · 성향: 아직 평가 전','no live mission or drive evidence exists yet, so the line must say so plainly rather than fabricate one');
-  evidence.checks.push('Home core status line binds to the real embedded Core summary and states "아직 평가 전" rather than fabricating a drive');
+  // BLACKHOLE Living Core (FINAL UI Slice 1 correction, issue #25): the
+  // shared runtime/public/living-core-view.mjs mounted natively binds to the
+  // real embedded core summary from GET /api/state, never a fabricated
+  // drive/mission - with no live mission/drive it must say so plainly.
+  // Already settled by the refreshes above (every one of them already
+  // carried the real core field), so this asserts on the current DOM
+  // directly rather than triggering yet another async refresh whose
+  // completion nothing here would wait for.
+  const livingCoreText=$('#living-core-root').textContent;
+  assert.match(livingCoreText,/진행 중인 미션 없음/,'no live mission exists yet, so Home must say so plainly rather than fabricate one');
+  assert.match(livingCoreText,/아직 평가 전/,'no live drive evidence exists yet, so Home must never invent a drive name');
+  assert.match(livingCoreText,/블랙홀에게 말하기/,'the native Home must expose the Living Core voice CTA');
+  evidence.checks.push('native Home mounts the shared Living Core view, binds to the real embedded Core summary, and states "아직 평가 전"/"진행 중인 미션 없음" rather than fabricating a drive or mission');
 
   evidence.ok=true;console.log(JSON.stringify(evidence,null,2));
 } finally {dom?.window.close();core.shutdown();rmSync(dataDir,{recursive:true,force:true});}

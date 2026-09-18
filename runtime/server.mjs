@@ -1196,7 +1196,7 @@ export function createYenoServer(options={}) {
        Object.assign(allowed,{'/code-view.mjs':'code-view.mjs','/code.css':'code.css','/voice-view.mjs':'voice-view.mjs','/voice.css':'voice.css','/cockpit.css':'cockpit.css','/capability-view.mjs':'capability-view.mjs','/autopilot-view.mjs':'autopilot-view.mjs','/autopilot-view-engine.mjs':'autopilot-view-engine.mjs','/research-view.mjs':'research-view.mjs','/hankki/answer':'hankki-answer.html','/hankki-answer.mjs':'hankki-answer.mjs','/hankki-answer.css':'hankki-answer.css'});
        Object.assign(allowed,{'/icon-192.png':'icon-192.png','/icon-512.png':'icon-512.png','/device-connect.mjs':'device-connect.mjs'});
        Object.assign(allowed,{'/growth-view.mjs':'growth-view.mjs'});
-       Object.assign(allowed,{'/living-core-view.mjs':'living-core-view.mjs'});
+       Object.assign(allowed,{'/living-core-view.mjs':'living-core-view.mjs','/living-core.css':'living-core.css'});
        const filename=allowed[url.pathname];if(!filename)throw new HttpError(404,'Not found');const file=path.join(ROOT,'public',filename);if(!fs.existsSync(file))throw new HttpError(404,'UI not available');const contentTypes={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.png':'image/png'};res.writeHead(200,{'Content-Type':contentTypes[path.extname(file)]??'application/octet-stream'});if(req.method==='HEAD')return res.end();return fs.createReadStream(file).pipe(res);
      }
      const recipientMatch=url.pathname.match(/^\/api\/hankki\/checkins\/([a-f0-9-]+)$/);

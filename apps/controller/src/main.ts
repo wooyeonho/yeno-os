@@ -1,4 +1,5 @@
 import '../../../runtime/public/studio.css';
+import '../../../runtime/public/living-core.css';
 import './style.css';
 import { fetch } from '@tauri-apps/plugin-http';
 import { appDataDir, join } from '@tauri-apps/api/path';
@@ -12,6 +13,8 @@ import worldLand from '../../../runtime/public/world-land.svg?url';
 import { CommandSession, HttpFailure, isDefinitiveRejection, type CommandReceipt } from './command-session.ts';
 import { normalizeOrigin, versionedUrl, createStudioApi, studioStorageKey, SecureRequestStorage, readVerifiedFile, saveVerifiedFile, type Connection, type VerifiedFile } from './native-studio.ts';
 import { createNativeLiveVoiceView } from './native-live-voice-view.ts';
+import { createLivingCoreView } from '../../../runtime/public/living-core-view.mjs';
+import { createNativeHomeNavigation } from './native-home.ts';
 
 type Job = { id: string; title: string; status: string; version: number; updatedAt: string; artifacts: { id: string; name: string }[] };
 // BLACKHOLE Living Core (Phase A): a trimmed, already-derived projection of
@@ -33,7 +36,13 @@ type CoreHomeSummary = {
   verifiedResult: unknown | null;
   lastHeartbeatAt: string | null;
 };
-type State = { name: string; apiVersion: string; revision: number; emergencyStop: boolean; jobs: Job[]; world?: Record<string, unknown>; modules?: {documents?: boolean}; core?: CoreHomeSummary };
+// projects/memories: the same real, already-durable records the web cockpit
+// already reads (server.mjs's state() embeds the full arrays regardless of
+// which client asked) - the Living Core Home reuses them for the Project
+// Orbit preview and the one recent-memory item. No new endpoint, no new
+// per-card request.
+type Project = { id: string; name: string; status: string };
+type State = { name: string; apiVersion: string; revision: number; emergencyStop: boolean; jobs: Job[]; world?: Record<string, unknown>; modules?: {documents?: boolean}; core?: CoreHomeSummary; projects?: Project[]; memories?: Memory[] };
 type Memory = { id?: string; text: string; createdAt?: string };
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const encoder = new TextEncoder(), decoder = new TextDecoder();
@@ -55,6 +64,11 @@ let artifactFile: VerifiedFile | null = null, artifactUrl: string | null = null,
 // machine the browser uses. It never touches typed-command submission/
 // pairing/Stronghold storage above.
 const liveVoiceView = createNativeLiveVoiceView($('live-voice'));
+// BLACKHOLE Living Core Home (FINAL UI Slice 1 correction, issue #25): the
+// exact same shared runtime/public/living-core-view.mjs the web cockpit
+// uses, mounted natively - never a second divergent implementation.
+const nativeHomeNavigation = createNativeHomeNavigation({liveVoiceRoot: $('live-voice'), showJobsView: () => showView('jobs')});
+const livingCoreView = createLivingCoreView({root: $('living-core-root'), onNavigate: id => nativeHomeNavigation.navigate(id)});
 
 async function openVault(password: string) {
   if (nativeVault && vaultPassword === password) return nativeVault;
@@ -151,31 +165,11 @@ function renderConnection() {
   $('workspace').hidden = !connected;
   $('connection').textContent = !connected ? (locked ? '보관소 잠김' : '연결 안 됨') : connectionStatus === 'online' ? '코어 응답 확인됨' : connectionStatus === 'checking' ? '연결 확인 중' : '최신 상태 확인 실패';
   $('seen').textContent = lastSeen ? `마지막 상태 확인 · ${lastSeen.toLocaleString()} · revision ${state?.revision ?? '?'}` : '서버 상태를 아직 확인하지 못했습니다.';
-  $('headline').textContent = connectionStatus !== 'online' ? (state ? '마지막으로 확인한 상태입니다' : '코어 응답을 기다리고 있습니다') : state?.emergencyStop ? '전체 멈춤' : state?.jobs.some(job => ['queued', 'running'].includes(job.status)) ? '코어가 작업을 처리하고 있습니다' : '맡길 일을 기다리고 있습니다';
   $('stop').textContent = state?.emergencyStop ? '전체 멈춤 해제' : '전체 멈춤';
-  renderCoreStatus();
+  livingCoreView.updateState(state, connectionStatus === 'online' && !disconnecting);
   studio?.setState(state ? {...state, online: connectionStatus === 'online' && !disconnecting} : null);
   void world.update(state?.world, connected && connectionStatus === 'online' && !state?.emergencyStop && state?.modules?.documents !== false && !commands?.pending && !submitting && !disconnecting);
   liveVoiceView.update({online: connectionStatus === 'online', emergencyStop: state?.emergencyStop === true, busy: disconnecting});
-}
-// BLACKHOLE Living Core (Phase A) Home binding: one compact line, never a new
-// big card. Every part is omitted rather than guessed when the real evidence
-// for it does not exist - most visibly the drive, which must say "아직 평가
-// 전" instead of ever naming an unearned drive.
-function renderCoreStatus() {
-  const core = connectionStatus === 'online' ? state?.core : undefined;
-  if (!core) { $('core-status').textContent = ''; return; }
-  const goal = core.missionGoal ? (core.missionGoal.length > 40 ? `${core.missionGoal.slice(0, 40)}…` : core.missionGoal) : null;
-  const parts = [
-    goal ? `미션: ${goal}` : '미션: 진행 중인 목표 없음',
-    `성향: ${core.dominantDriveName ?? '아직 평가 전'}`,
-    ...(core.activeShadowCount > 0 ? [`그림자 ${core.activeShadowCount}개 활동 중`] : []),
-    // "결과물" (artifact/output), never "확인된"/"검증된" (confirmed/verified) -
-    // this is only integrity evidence a job attached a file, not a verified
-    // outcome (see CoreHomeSummary.recentArtifactResult above).
-    ...(core.recentArtifactResult ? ['최근 결과물 있음'] : []),
-  ];
-  $('core-status').textContent = parts.join(' · ');
 }
 function renderPending() {
   const pending = commands?.pending;
