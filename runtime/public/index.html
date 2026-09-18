@@ -43,7 +43,7 @@
       <div id="offline-banner" class="banner" hidden>본체의 최신 상태를 확인하지 못했습니다. 명령 완료 여부를 확인해 주세요. <button id="reconnect" class="text-button">다시 연결</button></div>
       <section id="tab-control" class="tab-panel">
         <section class="core-panel">
-          <div class="core-heading"><div class="core-signal" id="core-signal" aria-hidden="true"><span></span></div><div><span class="eyebrow">BLACKHOLE CORE</span><h2 id="core-title">연결을 기다리고 있어요.</h2><p id="core-subtitle">실행 본체의 개인 연결 키로 조종석을 열어주세요.</p></div></div>
+          <div id="living-core-root"></div>
           <form id="command-form"><label for="command">무엇을 할까요?</label><textarea id="command" rows="3" placeholder="기억해: BLACKHOLE는 내가 폰에서 조종하는 개인 도구다." maxlength="80000" required></textarea><div class="command-footer"><select id="command-type" aria-label="작업 종류"><option value="command">기본 명령</option><option value="document">입력 내용 문서화</option><option value="ai">AI 작성 · 연결 필요</option></select><span id="ai-label" class="muted">AI 연결 확인 전</span><button id="send-command" class="button primary" type="submit" disabled>실행 <span>↗</span></button></div></form>
           <div class="quick-actions"><button data-tab="research">문제의 답 · 인류 난제 연구</button><button data-tab="studio">영상·소설·안부 운영실 열기</button><button data-example="세계 현황">세계 현황</button><button data-example="기억해: ">기억해</button><button data-example="찾아줘: ">기억 찾기</button><button data-example="문서 만들어: ">문서 만들기</button><button data-quick="diagnostics">본체 진단</button><button data-quick="evolution">개선점 찾기</button></div>
           <div id="command-result" class="command-result" aria-live="polite" hidden></div>
