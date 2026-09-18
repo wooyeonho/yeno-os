@@ -9,6 +9,7 @@ const {createCodeView} = await import('/code-view.mjs');
 const {createVoiceView} = await import('/voice-view.mjs');
 const {createResearchView} = await import('/research-view.mjs');
 const {createGrowthView} = await import('/growth-view.mjs');
+const {createLivingCoreView} = await import('/living-core-view.mjs');
 const {connectBrowser,enableInstall} = await import('/web-client.mjs');
 const $ = (id) => document.getElementById(id);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -68,6 +69,7 @@ const requestId=()=>crypto.randomUUID();
 const autopilotView=createAutopilotView({root:$('autopilot-root'),notify,onNavigate:tab=>showTab(tab),onCapabilityAction:async(action,payload)=>{const result=await durableMutation(`/api/capabilities/${action}`,payload);await refresh(true);return result;},onControl:async enabled=>{await durableMutation('/api/autopilot',{enabled});await refresh(true);},onOpenJob:()=>{showTab('control');void refresh(true);},onOpenArtifact:id=>perform(()=>openArtifact(id))});
 const growthView=createGrowthView({root:$('growth-root'),onNavigate:tab=>showTab(tab),storage:requestStorage});
 function renderGrowth() {growthView.updateState(current,questData);}
+const livingCoreView=createLivingCoreView({root:$('living-core-root'),onNavigate:tab=>showTab(tab)});
 const codeView=createCodeView($('code-root'),{onAction:async(action,payload)=>{const result=await durableMutation(`/api/code/${action}`,payload);await refresh(true);return result;},onOpenArtifact:id=>perform(()=>openArtifact(id))});
 const voiceView=createVoiceView($('voice-root'),{onSend:async(text,{history}={})=>{if(otherRequests?.pending||otherStorageError){const e=new Error('상단의 같은 요청 확인으로 이전 접수를 먼저 확인하세요.');e.status=409;throw e;}const result=await durableMutation('/api/voice',{text,history:history??[]});await refresh(true);return result;},onReadResult:async job=>{const item=job.artifacts.find(a=>a.name.endsWith('.md'));if(!item)throw new Error('읽을 답변 파일이 아직 없습니다.');const r=await api(`/api/artifacts/${encodeURIComponent(item.id)}`,undefined,{raw:true});return (await r.text()).split('\n\n---\nBLACKHOLE AI 초안')[0];}});
 let otherRequests,otherStorageError;
@@ -158,7 +160,7 @@ function connection(ok) {
   online=ok;renderOtherRequest(); $('connection-dot').classList.toggle('online',ok);$('connection-text').textContent=ok?'실행 본체 연결됨':'연결 확인 필요';
   $('offline-banner').hidden=ok || !token; renderCommandRequest();renderProjectRequest();renderSourceRequest();renderQuestRequest(); $('global-stop').disabled=!ok;
   if(ok)$('last-seen').textContent=`마지막 확인 ${new Date().toLocaleTimeString('ko-KR')}`;
-  if(!ok && token){$('core-title').textContent='연결을 확인하고 있어요.';$('core-subtitle').textContent='마지막 상태를 표시합니다. 새 명령은 확인 후 실행하세요.';$('core-signal').className='core-signal';}
+  livingCoreView.updateState(current,ok);
 }
 async function refresh(force=false) {
   if(!token || loading)return;
@@ -182,9 +184,7 @@ function showTab(tab) {
 }
 function render(s) {
   const jobs=s.jobs || [], running=jobs.filter(j=>j.status==='running').length;
-  $('core-title').textContent=s.emergencyStop?'모든 작업을 멈췄어요.':running?`${running}개의 일을 진행하고 있어요.`:'명령을 기다리고 있어요.';
-  $('core-subtitle').textContent=s.emergencyStop?'정지를 해제한 뒤 원하는 작업을 개별 재개하세요.':'운영실에서 영상 제작·소설 집필·장소 기록·한끼안부·For-Ai를 사용하세요.';
-  $('core-signal').className=`core-signal ${s.emergencyStop?'stopped':running?'running':''}`;
+  livingCoreView.updateState(s,online);
   $('global-stop').textContent=s.emergencyStop?'전체 정지 해제':'모든 작업 멈춤';
   $('running-count').textContent=running;$('pending-count').textContent=jobs.filter(j=>['queued','paused'].includes(j.status)).length;$('done-count').textContent=jobs.filter(j=>j.status==='completed').length;$('slot-count').textContent=s.concurrency;
   $('ai-label').textContent=s.ai?.configured?'AI 설정됨 · 사용료 별도':'AI 미설정 · 기본 기능 사용';

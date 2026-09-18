@@ -20,6 +20,11 @@ const script=html.match(/<script[^>]+src="([^"]+)"/)[1];
 const code=readFileSync(new URL(`./dist${script}`,import.meta.url),'utf8');
 const vault=new Map(),savedFiles=new Map(),blobUrls=new Map(),callbacks=new Map();
 let sequence=0,saveCount=0,dom,local={},activeRequests=new Map(),responses=new Map(),copied='';
+// Toggled mid-test to exercise the offline state without actually tearing
+// down the real core (see the network status check below).
+const network={offline:false};
+class FakeMediaStreamTrack {stop(){this.stopped=true;}}
+class FakeMediaStream {getTracks(){return [new FakeMediaStreamTrack()];}}
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const until=async(check,label)=>{const deadline=Date.now()+15000;while(!check()){if(Date.now()>deadline)throw new Error(`Timed out: ${label}`);await new Promise(resolve=>setTimeout(resolve,20));}};
 const $=selector=>dom.window.document.querySelector(selector);
@@ -39,6 +44,7 @@ async function invoke(command,args={},options={}) {
   if(command==='plugin:http|fetch'){assert.equal(args.clientConfig.maxRedirections,0);const id=++sequence;activeRequests.set(id,args.clientConfig);return id;}
   if(command==='plugin:http|fetch_send') {
     const c=activeRequests.get(args.rid);assert.equal(new URL(c.url).origin,origin);assert.match(new URL(c.url).pathname,/^\/api\/v1\//);
+    if(network.offline)throw new Error('simulated offline: network unreachable');
     const response=await fetch(c.url,{method:c.method,headers:c.headers,...(c.data?{body:new Uint8Array(c.data)}:{}),redirect:'error'});
     responses.set(args.rid,new Uint8Array(await response.arrayBuffer()));
     return {status:response.status,statusText:response.statusText,url:c.url,headers:[...response.headers],rid:args.rid};
@@ -60,6 +66,11 @@ function openDom() {
   for(const [name,value] of Object.entries({TextEncoder,TextDecoder,Request,Response,Headers,ReadableStream,Blob,AbortController,structuredClone}))w[name]=value;
   Object.defineProperty(w,'crypto',{value:webcrypto});
   Object.defineProperty(w.navigator,'clipboard',{value:{writeText:async text=>{copied=text;}}});
+  // A fake getUserMedia is enough to make native-live-voice-view.ts's own
+  // `supported` check pass, so #live-voice's Home visibility can actually be
+  // exercised here - the deeper start()/socket mechanics stay covered by
+  // live-voice-native.test.mjs and native-live-voice-view.test.mjs.
+  Object.defineProperty(w.navigator,'mediaDevices',{value:{getUserMedia:async()=>new FakeMediaStream()}});
   w.HTMLMediaElement.prototype.pause=function(){};w.HTMLMediaElement.prototype.load=function(){};
   w.HTMLElement.prototype.scrollIntoView=function(){};
   w.URL.createObjectURL=blob=>{const url=`blob:synthetic-${++sequence}`;blobUrls.set(url,blob);return url;};w.URL.revokeObjectURL=url=>blobUrls.delete(url);
@@ -114,5 +125,66 @@ try {
   click('[data-native-view="jobs"]');click('#disconnect');await until(()=>$('#workspace').hidden&&!vault.has('connection'),'revoke and forget');
   assert.equal($('#artifact-result').hidden,true);assert.equal($('#artifact-body').textContent,'');
   evidence.checks.push('real server device revocation and cleared local UI');
+
+  // Mobile UX (issue #24): Home hierarchy, Live Voice visibility, Home/God
+  // Eye/Work navigation, advanced-tools open/close, emergency stop and
+  // offline - a fresh pairing so none of this disturbs the coverage above.
+  submit('#pair',{origin,pairing:owner,'vault-password':'synthetic-unlock-password'});
+  await until(()=>!$('#workspace').hidden&&$('.studio-status').textContent.includes('본체 확인'),'second pairing for mobile UX checks');
+  assert.equal($('#workspace').classList.contains('view-studio'),true);
+  assert.equal($('#live-voice').hidden,false,'Live Voice must be visible on Home once mediaDevices is available and the device is paired');
+  assert.equal($('.tools-drawer').open,false,'advanced tools must start collapsed, not competing with the Home fold');
+  click('.tools-drawer summary');
+  assert.equal($('.tools-drawer').open,true,'advanced tools must open on tap');
+  assert.ok($('.studio-tabs'),'Studio must still actually render inside the opened advanced-tools drawer');
+  click('.tools-drawer summary');
+  assert.equal($('.tools-drawer').open,false,'advanced tools must close on a second tap');
+  evidence.checks.push('mobile Home hierarchy: Live Voice visible on Home, advanced tools collapsed by default and toggling open/closed');
+
+  click('[data-native-view="world"]');
+  assert.equal($('#workspace').classList.contains('view-world'),true);assert.equal($('#tab-world').hidden,false);
+  click('[data-native-view="jobs"]');
+  assert.equal($('#workspace').classList.contains('view-jobs'),true);assert.equal($('#cockpit').hidden,false);
+  click('[data-native-view="studio"]');
+  assert.equal($('#workspace').classList.contains('view-studio'),true);
+  evidence.checks.push('Home/God Eye/Work navigation switches an explicit view-* class (no :has() dependency, so it does not depend on uncertain Android WebView support)');
+
+  // Emergency stop must also reach the Live Voice toggle, not just the
+  // typed-command safety controls. Driven through the real UI/device token
+  // (control is device-only; the owner pairing secret is not accepted here).
+  click('[data-native-view="jobs"]');click('#stop');
+  await until(()=>$('#stop').textContent==='전체 멈춤 해제','emergency stop reflected in UI');
+  click('[data-native-view="studio"]');
+  assert.equal($('[data-live-toggle]').disabled,true,'emergency stop must disable the Live Voice toggle too');
+  click('[data-native-view="jobs"]');click('#stop');
+  await until(()=>$('#stop').textContent==='전체 멈춤','emergency resume reflected in UI');
+  evidence.checks.push('emergency stop/resume propagates to both the typed-command control and the Live Voice toggle');
+
+  // Offline: a broken network must be shown plainly and must also disable
+  // Live Voice, never silently pretend the core is still reachable.
+  network.offline=true;
+  click('#refresh');
+  await until(()=>$('#connection').textContent==='최신 상태 확인 실패','offline reflected in the connection chip');
+  click('[data-native-view="studio"]');
+  assert.equal($('[data-live-toggle]').disabled,true,'offline must disable the Live Voice toggle too');
+  network.offline=false;
+  click('#refresh');
+  await until(()=>$('#connection').textContent==='코어 응답 확인됨','reconnect after offline clears');
+  evidence.checks.push('offline is shown plainly and also disables the Live Voice toggle; clears once reachable again');
+
+  // BLACKHOLE Living Core (FINAL UI Slice 1 correction, issue #25): the
+  // shared runtime/public/living-core-view.mjs mounted natively binds to the
+  // real embedded core summary from GET /api/state, never a fabricated
+  // drive/mission - with no live mission/drive it must say so plainly.
+  // Already settled by the refreshes above (every one of them already
+  // carried the real core field), so this asserts on the current DOM
+  // directly rather than triggering yet another async refresh whose
+  // completion nothing here would wait for.
+  const livingCoreText=$('#living-core-root').textContent;
+  assert.match(livingCoreText,/진행 중인 미션 없음/,'no live mission exists yet, so Home must say so plainly rather than fabricate one');
+  assert.match(livingCoreText,/아직 평가 전/,'no live drive evidence exists yet, so Home must never invent a drive name');
+  assert.match(livingCoreText,/블랙홀에게 말하기/,'the native Home must expose the Living Core voice CTA');
+  evidence.checks.push('native Home mounts the shared Living Core view, binds to the real embedded Core summary, and states "아직 평가 전"/"진행 중인 미션 없음" rather than fabricating a drive or mission');
+
   evidence.ok=true;console.log(JSON.stringify(evidence,null,2));
 } finally {dom?.window.close();core.shutdown();rmSync(dataDir,{recursive:true,force:true});}

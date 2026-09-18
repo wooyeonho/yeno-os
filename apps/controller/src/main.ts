@@ -1,4 +1,5 @@
 import '../../../runtime/public/studio.css';
+import '../../../runtime/public/living-core.css';
 import './style.css';
 import { fetch } from '@tauri-apps/plugin-http';
 import { appDataDir, join } from '@tauri-apps/api/path';
@@ -11,9 +12,37 @@ import { createWorldView } from '../../../runtime/public/world-view.mjs';
 import worldLand from '../../../runtime/public/world-land.svg?url';
 import { CommandSession, HttpFailure, isDefinitiveRejection, type CommandReceipt } from './command-session.ts';
 import { normalizeOrigin, versionedUrl, createStudioApi, studioStorageKey, SecureRequestStorage, readVerifiedFile, saveVerifiedFile, type Connection, type VerifiedFile } from './native-studio.ts';
+import { createNativeLiveVoiceView } from './native-live-voice-view.ts';
+import { createLivingCoreView } from '../../../runtime/public/living-core-view.mjs';
+import { createNativeHomeNavigation } from './native-home.ts';
 
 type Job = { id: string; title: string; status: string; version: number; updatedAt: string; artifacts: { id: string; name: string }[] };
-type State = { name: string; apiVersion: string; revision: number; emergencyStop: boolean; jobs: Job[]; world?: Record<string, unknown>; modules?: {documents?: boolean} };
+// BLACKHOLE Living Core (Phase A): a trimmed, already-derived projection of
+// the real Persistent Core record, embedded directly in GET /api/state so
+// this binding needs no second network round trip. Every field here is real
+// evidence-derived state from server.mjs's coreHomeSummary(), never a client
+// guess - dominantDriveId/dominantDriveName are null whenever there is no
+// live mission to attribute a drive to, and the UI must say so plainly.
+type CoreHomeSummary = {
+  activity: string; missionGoal: string | null; focusProjectName: string | null;
+  dominantDriveId: string | null; dominantDriveName: string | null; dominantDriveWorldName: string | null;
+  activeShadowCount: number;
+  // recentArtifactResult: a completed job's attached file - real, but only
+  // integrity evidence, never called "verified" (see verifiedResult).
+  recentArtifactResult: { questId: string } | null;
+  // verifiedResult: stays null until a durable outcome-verification verdict
+  // exists in this codebase; the UI must never treat an artifact alone as
+  // verified.
+  verifiedResult: unknown | null;
+  lastHeartbeatAt: string | null;
+};
+// projects/memories: the same real, already-durable records the web cockpit
+// already reads (server.mjs's state() embeds the full arrays regardless of
+// which client asked) - the Living Core Home reuses them for the Project
+// Orbit preview and the one recent-memory item. No new endpoint, no new
+// per-card request.
+type Project = { id: string; name: string; status: string };
+type State = { name: string; apiVersion: string; revision: number; emergencyStop: boolean; jobs: Job[]; world?: Record<string, unknown>; modules?: {documents?: boolean}; core?: CoreHomeSummary; projects?: Project[]; memories?: Memory[] };
 type Memory = { id?: string; text: string; createdAt?: string };
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const encoder = new TextEncoder(), decoder = new TextDecoder();
@@ -30,6 +59,16 @@ let studio: ReturnType<typeof createStudioView> | null = null;
 let studioStorage: SecureRequestStorage | null = null;
 let activeView: 'studio' | 'world' | 'jobs' = 'studio';
 let artifactFile: VerifiedFile | null = null, artifactUrl: string | null = null, artifactEpoch = 0, savingFile = false;
+// Native Gemini Live: an additive path owned entirely by native-live-voice-view.ts,
+// built on the exact same reused runtime/public/live-voice-client.mjs state
+// machine the browser uses. It never touches typed-command submission/
+// pairing/Stronghold storage above.
+const liveVoiceView = createNativeLiveVoiceView($('live-voice'));
+// BLACKHOLE Living Core Home (FINAL UI Slice 1 correction, issue #25): the
+// exact same shared runtime/public/living-core-view.mjs the web cockpit
+// uses, mounted natively - never a second divergent implementation.
+const nativeHomeNavigation = createNativeHomeNavigation({liveVoiceRoot: $('live-voice'), showJobsView: () => showView('jobs')});
+const livingCoreView = createLivingCoreView({root: $('living-core-root'), onNavigate: id => nativeHomeNavigation.navigate(id)});
 
 async function openVault(password: string) {
   if (nativeVault && vaultPassword === password) return nativeVault;
@@ -92,6 +131,7 @@ async function activate(value: Connection) {
   studio?.reset(); world.reset(); clearArtifact();
   const root = $('native-studio').cloneNode(false) as HTMLElement;
   $('native-studio').replaceWith(root);
+  liveVoiceView.setConnection(value);
   connection = value;
   state = null;
   lastSeen = null;
@@ -125,10 +165,11 @@ function renderConnection() {
   $('workspace').hidden = !connected;
   $('connection').textContent = !connected ? (locked ? '보관소 잠김' : '연결 안 됨') : connectionStatus === 'online' ? '코어 응답 확인됨' : connectionStatus === 'checking' ? '연결 확인 중' : '최신 상태 확인 실패';
   $('seen').textContent = lastSeen ? `마지막 상태 확인 · ${lastSeen.toLocaleString()} · revision ${state?.revision ?? '?'}` : '서버 상태를 아직 확인하지 못했습니다.';
-  $('headline').textContent = connectionStatus !== 'online' ? (state ? '마지막으로 확인한 상태입니다' : '코어 응답을 기다리고 있습니다') : state?.emergencyStop ? '전체 멈춤' : state?.jobs.some(job => ['queued', 'running'].includes(job.status)) ? '코어가 작업을 처리하고 있습니다' : '맡길 일을 기다리고 있습니다';
   $('stop').textContent = state?.emergencyStop ? '전체 멈춤 해제' : '전체 멈춤';
+  livingCoreView.updateState(state, connectionStatus === 'online' && !disconnecting);
   studio?.setState(state ? {...state, online: connectionStatus === 'online' && !disconnecting} : null);
   void world.update(state?.world, connected && connectionStatus === 'online' && !state?.emergencyStop && state?.modules?.documents !== false && !commands?.pending && !submitting && !disconnecting);
+  liveVoiceView.update({online: connectionStatus === 'online', emergencyStop: state?.emergencyStop === true, busy: disconnecting});
 }
 function renderPending() {
   const pending = commands?.pending;
@@ -137,6 +178,10 @@ function renderPending() {
   $<HTMLButtonElement>('submit-command').disabled = submitting || disconnecting;
   $<HTMLButtonElement>('retry-command').disabled = submitting || disconnecting;
 }
+const JOB_STATUS_LABEL: Record<string, string> = {
+  queued: '대기 중', running: '진행 중', paused: '일시정지됨',
+  completed: '완료', cancelled: '취소됨', failed: '실패',
+};
 function render() {
   renderConnection();
   renderPending();
@@ -145,7 +190,7 @@ function render() {
     const node = document.createElement('article');
     node.className = 'job';
     const title = document.createElement('strong'); title.textContent = job.title;
-    const meta = document.createElement('p'); meta.textContent = `${job.status} · ${new Date(job.updatedAt).toLocaleString()}`;
+    const meta = document.createElement('p'); meta.textContent = `${JOB_STATUS_LABEL[job.status] ?? job.status} · ${new Date(job.updatedAt).toLocaleString()}`;
     node.append(title, meta);
     for (const artifact of job.artifacts) {
       const button = document.createElement('button'); button.className = 'artifact'; button.textContent = `결과 열기: ${artifact.name}`;
@@ -164,7 +209,9 @@ function renderReceipt(receipt: CommandReceipt | null) {
   $('command-result').hidden = !receipt;
   $('receipt-body').replaceChildren();
   if (!receipt) return;
-  $('receipt-meta').textContent = `${receipt.text}\n접수 확인 ${new Date(receipt.receivedAt).toLocaleString()} · 요청 ${receipt.requestId}`;
+  // Request IDs are a support/debug detail, not something a nondeveloper
+  // owner needs on the primary screen - kept, but behind 상세.
+  $('receipt-meta').textContent = `${receipt.text}\n접수 확인 ${new Date(receipt.receivedAt).toLocaleString()}`;
   const payload = receipt.payload as { kind?: string; memory?: Memory; memories?: Memory[]; job?: Job };
   const paragraph = (text: string) => { const node = document.createElement('p'); node.textContent = text; $('receipt-body').append(node); };
   if (payload.kind === 'memory' && payload.memory) {
@@ -173,9 +220,13 @@ function renderReceipt(receipt: CommandReceipt | null) {
     paragraph(`찾은 기억 ${payload.memories.length}개`);
     for (const memory of payload.memories) paragraph(memory.text);
   } else if (payload.kind === 'job' && payload.job) {
-    paragraph(`작업을 접수했습니다: ${payload.job.title} · ${payload.job.id}`);
+    paragraph(`작업을 접수했습니다: ${payload.job.title}`);
     paragraph('진행 상태와 생성된 파일은 아래 작업 목록에서 확인하세요.');
   } else paragraph(JSON.stringify(receipt.payload, null, 2));
+  const details = document.createElement('details'); details.className = 'meta-details';
+  const summary = document.createElement('summary'); summary.textContent = '상세';
+  const requestLine = document.createElement('p'); requestLine.textContent = `요청 ID: ${receipt.requestId}`;
+  details.append(summary, requestLine); $('receipt-body').append(details);
 }
 async function refresh() {
   if (!connection || refreshing || disconnecting) return;
@@ -313,6 +364,7 @@ async function forgetConnection() {
   await saveConnection(null);
   commands?.clearLocal();
   localStorage.removeItem(vaultMarker);
+  liveVoiceView.setConnection(null);
   connection = null; commands = null; state = null; lastSeen = null;
   studio?.reset(); studio = null; studioStorage = null; world.reset(); clearArtifact();
   if (nativeVault) { await nativeVault.stronghold.unload(); nativeVault = null; }
@@ -344,6 +396,11 @@ function guard(task: () => Promise<void>) { void task().catch(error => showMessa
 function showView(view: typeof activeView) {
   activeView = view;
   $('cockpit').hidden = view !== 'jobs'; $('native-studio').hidden = view !== 'studio'; $('tab-world').hidden = view !== 'world';
+  // Android WebView :has() support is uncertain across older devices, so the
+  // home/tools-drawer visibility for the world/jobs tabs is driven by this
+  // explicit class rather than a :has() selector reading nav aria-pressed.
+  $('workspace').classList.remove('view-studio', 'view-world', 'view-jobs');
+  $('workspace').classList.add(`view-${view}`);
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-native-view]')) button.setAttribute('aria-pressed', String(button.dataset.nativeView === view));
   if (view === 'studio' && connectionStatus === 'online') guard(async () => { await studio?.refresh(); });
 }

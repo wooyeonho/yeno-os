@@ -1,8 +1,14 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {validateMotivation} from './motivation.mjs';
+import {driveWorldName,driveWorldNameEn} from './seven-drives.mjs';
 
 // Drives generate bounded goals, not fabricated performance scores or seven
 // continuously running model calls. Execution belongs to the durable job loop.
+// id/label stay byte-for-byte identical to every persisted quest.driveId and
+// every existing display string; worldName/worldNameEn are additive fields
+// from the single canonical mapping in seven-drives.mjs (Phase C
+// reconciliation, issue #25) - see that file for the id->world-name
+// rationale. Nothing here breaks a persisted quest record.
 export const SEVEN_DRIVES=Object.freeze([
   {id:'greed',name:'강욕',goal:'남는 돈·소유 자산·기회 늘리기',evidence:['환불·원가 반영 수익','재구매','확인된 소유권']},
   {id:'gluttony',name:'폭식',goal:'현재 목표에 부족한 능력 찾기',evidence:['이전에는 못 하던 실제 업무 완료']},
@@ -11,7 +17,7 @@ export const SEVEN_DRIVES=Object.freeze([
   {id:'lust',name:'색욕',goal:'자발적으로 선택하고 다시 찾는 제품 만들기',evidence:['만족','재방문','동의한 구독·추천']},
   {id:'wrath',name:'분노',goal:'고객 불편과 반복 오류 줄이기',evidence:['오류 감소','복구 시간 감소','재발 방지']},
   {id:'sloth',name:'나태',goal:'같은 품질에서 소유자의 개입 줄이기',evidence:['실제로 줄어든 개입 시간·수작업']}
-].map(drive=>Object.freeze({...drive,label:({pride:'긍지',lust:'매혹'})[drive.id]??drive.name,description:drive.goal,evidence:Object.freeze(drive.evidence)})));
+].map(drive=>Object.freeze({...drive,label:({pride:'긍지',lust:'매혹'})[drive.id]??drive.name,description:drive.goal,evidence:Object.freeze(drive.evidence),worldName:driveWorldName(drive.id),worldNameEn:driveWorldNameEn(drive.id)})));
 
 export class QuestError extends Error {
   constructor(status,code,message=code){super(message);this.name='QuestError';this.status=status;this.code=code;}
@@ -50,6 +56,20 @@ export function synthesisFingerprint(archetype,evidence){
 export function synthesisQuestId(fingerprint){
   if(!hash(fingerprint))throw new Error('Invalid synthesis fingerprint');
   return `${fingerprint.slice(0,8)}-${fingerprint.slice(8,12)}-${fingerprint.slice(12,16)}-${fingerprint.slice(16,20)}-${fingerprint.slice(20,32)}`;
+}
+// Closed-loop execution link: the quest's `jobId` is a capability job whose
+// request names the same reviewed capability, the grade snapshot is a real
+// grade, and the authority that started it is one of two known values.
+const LOOP_KEYS='authorizedBy,capabilityId,discoveryFingerprint,engine,gradeBefore,jobId,kirbyAction,startedAt,version';
+const LOOP_KIRBY_ACTIONS=['reuse'];
+const LOOP_ENGINES=['declarative-v1','quickjs-v1'];
+const loopJobRequest=(job,engine)=>engine==='quickjs-v1'?(job?.type==='code'&&job.codeTask?.mode==='run'?job.codeTask.request:null):(job?.type==='capability'?job.capabilityRequest:null);
+function validateLoop(q,job){
+  const l=q.loop;
+  if(!q.synthesis)throw new Error('Loop execution requires an autonomous quest');
+  if(!object(l)||Object.keys(l).sort().join()!==LOOP_KEYS||l.version!==3||!LOOP_ENGINES.includes(l.engine)||!['owner','autopilot'].includes(l.authorizedBy)||!LOOP_KIRBY_ACTIONS.includes(l.kirbyAction)||!/^[a-f0-9]{64}$/.test(l.discoveryFingerprint??'')||!['E','D','C','B','A','S'].includes(l.gradeBefore)||!iso(l.startedAt))throw new Error('Invalid quest loop record');
+  const request=loopJobRequest(job,l.engine);
+  if(l.jobId!==q.jobId||!job||!request||request.id!==l.capabilityId||job.questId!==q.id)throw new Error('Invalid quest loop execution');
 }
 function validateSynthesis(q){
   const p=q.synthesis;
@@ -190,9 +210,10 @@ export function validateQuestState(state){
     if(q.projectId!==null&&(!uuid(q.projectId)||!projects.some(p=>p.id===q.projectId)))throw new Error('Invalid quest project reference');
     if(q.jobId!==null){
       const job=jobs.find(j=>j.id===q.jobId);
-      if(!uuid(q.jobId)||linkedJobs.has(q.jobId)||!job||job.type!=='agent'||(job.questId!==undefined&&job.questId!==q.id))throw new Error('Invalid quest job reference');
+      if(!uuid(q.jobId)||linkedJobs.has(q.jobId)||!job||!(job.type==='agent'||(['capability','code'].includes(job.type)&&q.loop!==undefined))||(job.questId!==undefined&&job.questId!==q.id))throw new Error('Invalid quest job reference');
       linkedJobs.add(q.jobId);
-    }else if(q.status!=='proposed')throw new Error('Unassigned quest cannot claim execution');
+      if(q.loop!==undefined)validateLoop(q,job);
+    }else if(q.status!=='proposed'||q.loop!==undefined)throw new Error('Unassigned quest cannot claim execution');
     for(const key of ['startedAt','deadlineAt','finishedAt'])if(q[key]!==undefined&&q[key]!==null&&!iso(q[key]))throw new Error('Invalid quest timestamp');
     if(q.projectVersion!==undefined&&!integer(q.projectVersion,1,Number.MAX_SAFE_INTEGER))throw new Error('Invalid quest project version');
     if(q.projectContext!==undefined){
@@ -202,7 +223,7 @@ export function validateQuestState(state){
     if(q.reviewOf!==undefined&&(!uuid(q.reviewOf)||q.reviewOf===q.id||!quests.some(item=>item.id===q.reviewOf)))throw new Error('Invalid quest review reference');
     if(q.sourceArtifactSha256!==undefined&&!hash(q.sourceArtifactSha256))throw new Error('Invalid quest review artifact');
     if(q.synthesis!==undefined)validateSynthesis(q);
-    if(Object.keys(q).some(key=>!['id','version','goal','driveId','drive','provider','projectId','successCriterion','baseline','maxCalls','durationMinutes','costUsd','status','jobId','createdAt','updatedAt','projectVersion','projectContext','reviewOf','sourceArtifactSha256','startedAt','deadlineAt','finishedAt','synthesis'].includes(key)))throw new Error('Untrusted quest field');
+    if(Object.keys(q).some(key=>!['id','version','goal','driveId','drive','provider','projectId','successCriterion','baseline','maxCalls','durationMinutes','costUsd','status','jobId','createdAt','updatedAt','projectVersion','projectContext','reviewOf','sourceArtifactSha256','startedAt','deadlineAt','finishedAt','synthesis','loop'].includes(key)))throw new Error('Untrusted quest field');
   }
   const outcomeIds=new Set();
   for(const o of outcomes){

@@ -119,7 +119,10 @@ test('source migration preserves legacy records and rejects corrupt registries w
   };
   opened.state.sources.push(registered);
   opened.save();
-  assert.deepEqual(openStore(dir).state, { ...legacy, requestLedger, revision: 38, sources: [registered] });
+  // save() runs the event-driven Living Core heartbeat, so blackholeCore
+  // advances (heartbeatCount/lastHeartbeatAt/heartbeatLog) independently of
+  // this migration; compare against the real post-heartbeat value.
+  assert.deepEqual(openStore(dir).state, { ...legacy, requestLedger, revision: 38, sources: [registered], blackholeCore: opened.state.blackholeCore });
   for (const sources of [
     null, {}, [null], [{ ...registered, summary: null }], [{ ...registered, extra: true }],
     [{ ...registered, id: 'not-an-id' }], [{ ...registered, version: 0 }],

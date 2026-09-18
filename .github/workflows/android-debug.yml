@@ -3,7 +3,7 @@ run-name: Android APK · ${{ github.event_name }} · ${{ github.event_name == 'w
 
 on:
   push:
-    branches: [codex]
+    branches: [codex, blackhole/android-live-voice-claude-20260917, blackhole/mobile-ux-claude-20260917, blackhole/living-core-v1-claude-20260918, blackhole/memory-phase-b-claude-20260918]
     paths:
       - 'apps/controller/**'
       - 'runtime/public/studio-view.mjs'
@@ -92,6 +92,8 @@ jobs:
           cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
       - name: Initialize Android project
         run: npm run tauri -- android init --ci --skip-targets-install
+      - name: Apply post-init mobile safety patches (RECORD_AUDIO permission for native Live Voice)
+        run: node ../../scripts/android-release.mjs permissions
       - name: Build ARM64 debug APK
         run: npm run tauri -- android build --debug --apk --target aarch64 --ci
       - name: Collect APK and build evidence

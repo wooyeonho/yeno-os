@@ -1,0 +1,67 @@
+/* BLACKHOLE Living Core (FINAL UI Slice 1, issue #25). One persistent
+   organic anchor for Home, shared by the web cockpit (runtime/public) and
+   the native Android/Tauri controller (apps/controller) so both surfaces
+   render the exact same approved visual - never a second divergent
+   implementation. An orb + orbit ring whose CSS state class is set directly
+   from the real activity enum in living-core-view.mjs; never a
+   randomly-cycled animation. Only idle/executing/emergency/offline are ever
+   actually reachable today; the other classes are defined so a later phase
+   can start writing that activity value with no CSS work needed.
+
+   Environment-neutral by design: every color reference below is one of
+   --accent/--panel/--line/--text/--muted, which both host stylesheets
+   (runtime/public/style.css and apps/controller/src/style.css) already
+   define on :root with equivalent dark/teal/mint values - this file never
+   redefines :root itself, so it can never clash with either host's theme. */
+.living-core { display:grid; gap:16px; margin-bottom:26px; }
+.living-orb-wrap { display:flex; align-items:center; gap:18px; }
+.living-orb { position:relative; width:60px; height:60px; flex-shrink:0; display:grid; place-items:center; }
+.living-orb-ring { position:absolute; inset:0; border-radius:50%; border:1px solid #4f9d84; opacity:.45; }
+.living-orb-core { position:relative; width:28px; height:28px; border-radius:50%; background:radial-gradient(circle at 35% 30%,#c8fbe9,#43d9a8 55%,#0d3a2c); box-shadow:0 0 20px #43d9a866; }
+.living-orb.idle .living-orb-core { animation:living-breathe 3.4s ease-in-out infinite; }
+.living-orb.idle .living-orb-ring { animation:living-ring 6s linear infinite; }
+.living-orb.listening .living-orb-core,
+.living-orb.thinking .living-orb-core,
+.living-orb.planning .living-orb-core,
+.living-orb.absorbing .living-orb-core,
+.living-orb.remembering .living-orb-core { animation:living-breathe 2s ease-in-out infinite; }
+.living-orb.listening .living-orb-ring,
+.living-orb.thinking .living-orb-ring,
+.living-orb.planning .living-orb-ring,
+.living-orb.absorbing .living-orb-ring,
+.living-orb.remembering .living-orb-ring { animation:living-ring 3.5s linear infinite; opacity:.65; }
+.living-orb.executing .living-orb-core,
+.living-orb.verifying .living-orb-core,
+.living-orb.leveling .living-orb-core { animation:living-pulse 1.1s ease-in-out infinite; }
+.living-orb.executing .living-orb-ring,
+.living-orb.verifying .living-orb-ring,
+.living-orb.leveling .living-orb-ring { border-color:var(--accent); opacity:.85; animation:living-ring 2.2s linear infinite; }
+.living-orb.blocked .living-orb-core { background:radial-gradient(circle at 35% 30%,#fff2c9,#f2c46a 55%,#4a3712); box-shadow:0 0 16px #f2c46a55; animation:none; }
+.living-orb.blocked .living-orb-ring { border-color:#f2c46a; opacity:.7; animation:none; }
+.living-orb.emergency .living-orb-core { background:radial-gradient(circle at 35% 30%,#ffd7ce,#ff8b76 55%,#4a1712); box-shadow:0 0 20px #ff836644; animation:none; }
+.living-orb.emergency .living-orb-ring { border-color:#ff8b76; opacity:.9; animation:none; }
+.living-orb.offline .living-orb-core { background:#3a4a4c; box-shadow:none; animation:none; }
+.living-orb.offline .living-orb-ring { opacity:.25; animation:none; }
+.living-orb-text { min-width:0; }
+.living-sentence { font-size:.9375rem; color:var(--text); margin-top:4px; }
+.living-voice-cta { width:100%; }
+.living-mission, .living-recent { display:block; width:100%; text-align:left; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px 18px; color:inherit; }
+.living-mission p, .living-recent p { margin-top:6px; font-size:.9375rem; overflow-wrap:anywhere; }
+.living-mission small, .living-recent small { display:block; margin-top:6px; color:var(--muted); }
+.living-mission.empty, .living-orbit.empty, .living-recent.empty { color:var(--muted); border:1px dashed #3a4b51; background:none; }
+.living-signals { display:flex; flex-wrap:wrap; gap:8px; }
+.living-signal-chip { border:1px solid var(--line); border-radius:999px; padding:6px 13px; font-size:.8125rem; color:var(--muted); }
+.living-orbit { display:grid; gap:10px; }
+.living-orbit-row { display:flex; flex-wrap:wrap; gap:8px; }
+.living-orbit-node { border:1px solid #385249; border-radius:999px; background:#152321; color:var(--text); padding:8px 14px; font-size:.8125rem; max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.living-orbit-more { color:var(--accent); border-color:#3f6a58; }
+@keyframes living-breathe { 0%,100% { transform:scale(1); opacity:1; } 50% { transform:scale(1.08); opacity:.85; } }
+@keyframes living-pulse { 0%,100% { transform:scale(1); } 50% { transform:scale(1.18); } }
+@keyframes living-ring { from { transform:rotate(0); } to { transform:rotate(360deg); } }
+@media(max-width:720px) {
+  .living-orb { width:48px; height:48px; }
+  .living-orb-core { width:22px; height:22px; }
+  .living-sentence { font-size:.875rem; }
+}
+.compact .living-mission, .compact .living-orbit, .compact .living-recent, .compact .living-signals { display:none; }
+@media(prefers-reduced-motion:reduce) { .living-orb * { animation:none!important; } }

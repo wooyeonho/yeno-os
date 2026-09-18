@@ -1,4 +1,4 @@
-import {codeHash,validateCodeManifest,validateCodeRequest,getCodeVersion,importCode,testCodeManifest,recordCodeVerification,activateCode,recordCodeRun,fetchGithubCode,CodeWorkshopError} from './code-workshop.mjs';
+import {codeHash,canonicalCode,validateCodeManifest,validateCodeRequest,getCodeVersion,importCode,testCodeManifest,recordCodeVerification,activateCode,recordCodeRun,fetchGithubCode,CodeWorkshopError} from './code-workshop.mjs';
 import {executeCodeBundle} from './code-sandbox.mjs';
 const fail=m=>{throw new CodeWorkshopError(400,m);};
 const object=v=>v&&typeof v==='object'&&!Array.isArray(v);
@@ -49,7 +49,7 @@ export async function runCodeJob({job,state,save,signal,runModel,fetchImpl}){
    const result=await executeCodeBundle({...m,input:q.input},{signal});live();
    if(active(state.codeWorkshop,q.id)!==q.hash)throw new CodeWorkshopError(409,'실행 중 기능 버전이 바뀌어 결과 적용을 멈췄습니다.');
    state.codeWorkshop=recordCodeRun(state.codeWorkshop,q.id,q.hash,{runId:job.id,inputSha256:q.inputSha256,outputSha256:codeHash(result.output)}).registry;
-   job.codeCheckpoint={fixtureOrigin:'imported',feedback:[],finished:true,passed:true,resultHash:q.hash,message:'등록한 JavaScript 기능을 실제 입력으로 실행했습니다.'};job.codeOutput=JSON.stringify(result.output,null,2);checkpoint();
+   job.codeCheckpoint={fixtureOrigin:'imported',feedback:[],finished:true,passed:true,resultHash:q.hash,message:'등록한 JavaScript 기능을 실제 입력으로 실행했습니다.'};job.codeOutput=canonicalCode(result.output);checkpoint();
    return {markdown:report(m.name,job.codeCheckpoint,`\`\`\`json\n${job.codeOutput}\n\`\`\`\n\n원본 SHA-256: ${q.hash}\n입력 SHA-256: ${q.inputSha256}`)};
  }
  if(t.mode==='verify'){

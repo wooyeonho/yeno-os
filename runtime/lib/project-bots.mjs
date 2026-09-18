@@ -10,7 +10,7 @@ export function validateBotAssignment(job) {
   const b=job.botAssignment;
   if(!Object.hasOwn(job,'botAssignment'))return;
   if(job.type!=='agent'||!b||typeof b!=='object'||Array.isArray(b)||Object.keys(b).sort().join()!=='batchId,context,profile,projectVersion'||!['primary','grok'].includes(b.profile)||!UUID.test(b.batchId)||!Number.isSafeInteger(b.projectVersion)||b.projectVersion<1)throw new Error('Invalid project bot assignment');
-  if(!b.context||Object.keys(b.context).sort().join()!==['id','name','repositoryUrl','summary','nextAction','status','version','createdAt','updatedAt'].sort().join())throw new Error('Invalid project context fields');
+  if(!b.context||Object.keys(b.context).sort().join()!==['id','name','repositoryUrl','summary','nextAction','status','version','createdAt','updatedAt','milestones'].sort().join())throw new Error('Invalid project context fields');
   validateProjectRegistry([b.context]);
   if(job.projectId!==b.context.id||b.projectVersion!==b.context.version||!['active','paused'].includes(b.context.status))throw new Error('Invalid project bot scope');
 }

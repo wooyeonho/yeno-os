@@ -1,5 +1,41 @@
 # 2026-09-15 — 호문쿨루스 자율 목표 합성 첫 조각: 저장된 근거 → 결정적 후보 → 일곱 동기 → `proposed` 퀘스트 1개
 
+## 2026-09-15 Solo Leveling 증거 기반 기능 이력 순수 계층 (배선 없음)
+
+- `runtime/lib/solo-leveling.mjs` 추가: `buildSkillHistory`(레지스트리 run + 검증된 실행 기록 → 성공/실패, 입력 해시==다른 기능 출력 해시 → 조합, 개입 없는 autopilot 성공 3건 → 자율, PHASE 5 `external_verified` verdict → S; 승급/강등 궤적, 증거 시각 기반 결정적 지문), `validateSkillHistory`/`parseSkillHistory`(등급 재계산·지문·비밀 거부, 실패 폐쇄), `levelingOverview`.
+- `runtime/test/solo-leveling.test.mjs` 5건: E→D→C 판정, B/A/S 실제 증거 요건, 가짜 증거 승급 불가, 증거 소실 시 강등, 재시작/순서/재폴링 결정성·비밀 거부.
+- server/quests/closed-loop/growth/store 배선 변경 없음.
+
+
+## 2026-09-15 Real Outcome Verification 순수 계층 (배선 없음)
+
+- **신규** `runtime/lib/outcome-verification.mjs`: `verifyExecution`(산출물 SHA == run outputSha256·runId·inputSha256·완료 → `executionVerified`), 성과 근거 스키마 15필드(`createOutcomeEvidence`/`validateOutcomeEvidence`/`parseOutcomeEvidence`, 정의된 metric·unit·source 종류만, 타입별 authority 고정, 모델 출력은 외부 근거 불가, collectedAt 제외 결정적 지문), `verifyOutcome`(외부 타입 + 링크 일치 + source 식별 일치 + 같은 metric/value/unit/timestamp 보유 + execution 검증일 때만 `outcomeVerified`; `external_verified`만 `highGradeCandidate`; `authorizesAction:false`), `validateOutcomeVerdict`, `assertNoSecrets`.
+- **자동시험** `runtime/test/outcome-verification.test.mjs` 12건: 지시된 12 시나리오(실행 검증≠성과 검증, self_reported false, 외부 검증 true, source ID/링크 불일치, 소실·변경, 모델 텍스트, 가짜 부·명예·인지도·adoption 주장, 결정적 지문, 변조 실패 폐쇄, 비밀 거부, 재시작 동일 verdict).
+
+
+## 2026-09-15 Multi-Model Router 순수 정책 계층 (배선 없음)
+
+- **신규** `runtime/lib/model-router.mjs`: `validateDeclaredModel`/`parseDeclaredModels`(소유자 선언 metadata 16필드, 이름 기반 추정 없음, free는 verified-free 증거 필수), `configuredProviders(env)`(provider-config 요약에서 키 없이 configured 증거), `brainPool(declared, configuration)`, `routeModel(pool, request, {ownerOverride, policy, at})`(capability → owner pin → safety/background opt-in·budget → configured/available/quota → quality → 최소 비용; `authorizesCall:false` 고정 프로비넌스 + 지문), `validateRoutingDecision`, `failoverDecision`(pre-send 명확 실패만 다음 후보, post-send는 outcomeUnknown·재실행 금지), `assertNoSecrets`.
+- **자동시험** `runtime/test/model-router.test.mjs` 7건: 검증된 무료 NVIDIA 선택·증거 없는 NVIDIA는 무료 취급 안 함, configured Grok 후보/선택·미설정 Grok 제외, owner pin 우선·부적격 pin은 무선택, coding/reasoning/realtime 요구 미충족 제외, pre-send failover·post-send 금지·pin 시 failover 없음·후보 소진, 비밀 미노출·자격 증명 형태 입력 거부, 결정성·지문·변조 실패 폐쇄·background opt-in/budget 게이트·owner disabled.
+
+
+- **신규** `runtime/lib/capability-discovery.mjs`: `requiredCapability(state, quest)`(근거가 이름 붙인 기록 → 기록 유형·필드·ID·SHA-256 지문), `manifestFits(manifest, requirement)`, `searchCapabilities(state, requirement, {manifests})`(보유 선언형·코드 레지스트리 + 검토 원본, 보유 ID는 중복 후보 아님, 거절 사유 명시), `projectInput(records, manifest)`, `discoverCapability(state, quest, {manifests})`/`discoverCapabilities(state, {manifests})`(`gap`: none / inactive_owner_review / acquire_reviewed / missing / evidence_changed / no_records). 고정 아키타입→기능 매핑 없음. 상태 변경·모델 호출·import/activate/실행 없음. `qualifyCandidate(candidate,{manifest,emergencyStop})`: 후보별 source/license/pinned commit/hash/fixtures/sandbox/owner 상태/전체 멈춤 체크 + `risk`(local-reversible / capability-change / external-code)·`approvalRequired`·`action`(reuse / acquire_with_owner_approval / blocked).
+- `server.mjs`·`quests.mjs`·`closed-loop.mjs` 변경 없음(PR #15 검수 중). 배선은 #15 merge 후.
+- **자동시험** `runtime/test/capability-discovery.test.mjs` 6건(자격 판정 2건 추가: 활성 재사용·검토 원본 소유자 승인·외부 코드는 라이선스/고정 커밋/샌드박스 증거/fixture 중 하나만 없어도 차단·해시 불일치 차단·소유자 비활성 재활성화 없음·전체 멈춤 시 재사용도 차단; 실제 code-workshop 레지스트리에 import→recordCodeVerification 전후 판정 변화)(실제 서버 경로로 만든 저장 상태, 모델 호출 0회 확인): 실제 실패 작업 2건의 `repair` 퀘스트 → `job` 요구사항 → 활성 `failure-triage` 일치·`ledger-digest`/`evidence-gap-brief`는 필드 부족으로 거절 → 투영 입력이 `createCapabilityRequest`에 그대로 수락 → 재시작 후 지문 동일; 실제 성과 기록으로 생긴 `acquire-capability` 퀘스트 → 검토 원본 `ledger-digest`가 `acquire_reviewed`(sandboxable, fixture 수) → 원본 없으면 `missing`(필요 필드 보고) → 기존 import/verify/activate 후 `none` → 소유자 disable 후 `inactive_owner_review`(우회 후보 없음); `measure-outcome` 퀘스트는 `missing`(`evidence-gap-brief`는 evidenceCount·priority·nextStep 부족); 소유자 퀘스트 `not_autonomous`, 기록 소실·상태 변경 `evidence_changed`, 미지 근거 종류·참조 없음 `no_records`, 코드 묶음 `no_declarative_schema`, 손상 레지스트리는 검색 거부.
+- **검증**: `npm test` 547건 540 pass·0 fail·7 skip(기존 Docker/환경 skip), `npm run test:developer` 78건 75 pass·0 fail·3 skip(Docker 필요).
+
+# 2026-09-15 — 호문쿨루스 자율 목표 합성 첫 조각: 저장된 근거 → 결정적 후보 → 일곱 동기 → `proposed` 퀘스트 1개
+
+- **신규** `runtime/lib/closed-loop.mjs`(순수): `closedLoopStatus(state, at, {manifests})`(자율 퀘스트별 goal/capabilityGap/kirby/execution/verification/growth/replan 추적, `GET /api/quests`의 `loop`), `planClosedLoop(state, at, {emergencyStop, authorizedBy, manifests})`(호출당 `acquire`/`execute`/`none` 중 하나), `loopInput`(퀘스트 프로비넌스가 이름 붙인 기록만으로 기능 입력 구성), `bindLoopExecution`(퀘스트 `loop` 블록 + 저장 전 실패 폐쇄 검증).
+- `runtime/lib/quests.mjs`: 선택적 `loop` 블록 허용. `loop` 있는 퀘스트만 `type:'capability'` 작업 링크 가능, `loop`는 `synthesis` 있는 퀘스트에만, 작업 `capabilityRequest.id`·`questId`·등급·시각 일치 검증. 그 외 퀘스트 검증은 그대로.
+- `runtime/server.mjs`: `advanceClosedLoop(authorizedBy)` — `acquire`는 기존 `kirbyAutoAcquire()`, `execute`는 기존 `capabilityJob()`(모델 호출 0회) 후 퀘스트 바인딩(실패 시 jobs/quests/events 원복). `POST /api/quests/loop`(소유자, 변경 시 201/그 외 200, 전체 멈춤 409). 스케줄러 tick은 `autopilot.enabled && !emergencyStop`일 때 `'autopilot'` 권한으로 진행하며 `approvalRequired` 퀘스트는 `owner_approval_required`로 건너뛴다.
+- **약화하지 않은 것**: 합성 퀘스트의 `decideAndRunQuest()` 자동 실행 거부, 소유자 `proposed` 우선, `acquire-capability`의 소유자 승인, 전체 멈춤(관찰만), 커비 import→verify→activate·불합격 비활성 유지, 산출물 SHA-256·`self_reported` 성과 계약, 성장 등급의 이력 전용 계산, 지문·재시작·폴링 중복 방지.
+- **자동시험** `runtime/test/closed-loop.test.mjs` 5건: (1) 실제 실패 작업 2건 → `repair` 퀘스트 → `decide`는 여전히 보류 → 소유자 `loop` → `failure-triage` 기능 작업(입력 = 프로비넌스의 실패 작업 정확히) → 완료 → 산출물 해시 == 실행 기록 해시 → E→D → `/api/state` 성장 동일 → 재계획이 `measure-outcome` 1개 생성·`repair` 무중복 → 소유자 성과 기록 201 → 재시작 후 동일, 모델 호출 0회; (2) 자동 운영 opt-in만으로 스케줄러가 합성·실행(`authorizedBy:'autopilot'`), 순수 계획기는 `approvalRequired` 퀘스트를 `owner_approval_required`로 거절, 알 수 없는 권한은 예외; (3) 전체 멈춤 중 기록된 실제 성과로 남은 진짜 `ledger-digest` 격차 → `acquire-capability`(승인 필요) → 자동 운영은 흡수하지 않음 → 소유자 `loop` 1회로 커비 흡수(활성) → 재계획 `resolved` → 2회차 `loop`로 자비스 실행(입력 = 그 성과 정확히) → 검증·E→D → 재시작 보존; (4) 소유자가 끈 기능은 `capability_inactive_owner_review`로 재활성화 없음, 근거 소실은 `evidence_changed`, `loop` 위조(작업 없음 / agent 작업 / 지어낸 등급)는 저장소 검증 거부; (5) 대응 기능 없는 원형과 소유자 퀘스트는 고리가 절대 건드리지 않음.
+- **검증**: 전체 `npm test` 548건 541 pass·0 fail·7 skip(기존 Docker/환경 skip), `npm run test:developer` 78건 75 pass·0 fail·3 skip(Docker 필요).
+- **남은 것**: `verify`·`measure-outcome`에 대응하는 검토된 기능(현재 소유자 실행 전용), 성과의 외부 검증(S 등급), 기능 조합·개입 횟수 추적(B/A), 실패한 `loop` 실행의 재시도 정책(현재 재시도 없음 — 실패 작업은 그대로 남아 다음 `repair` 근거가 된다).
+
+# 2026-09-15 — 호문쿨루스 자율 목표 합성 첫 조각: 저장된 근거 → 결정적 후보 → 일곱 동기 → `proposed` 퀘스트 1개
+
 - **결함**: 호문쿨루스는 이미 있는 `proposed` 퀘스트의 순위만 매길 수 있었고, 소유자가 목표를 하나도 쓰지 않으면 어떤 일이 존재하는지 스스로 정하지 못했다.
 - **신규**: `runtime/lib/goal-synthesis.mjs` — `observeEvidenceGaps(state, {manifests})`(검증된 상태만 읽어 정규화된 근거 갭 반환) → `previewAutonomousGoals(state, at, {manifests})`(활성 원형의 결정적 후보를 기존 `rankMotivatedCandidates`로 채점) → `synthesizeAutonomousGoal(state, at, {emergencyStop, manifests})`(순수 계획: 새 퀘스트 1개 / 기존 퀘스트 / 근거 없음 / 소유자 퀘스트 대기 / 전체 멈춤 / 상한). 모델 호출·네트워크 없음.
 - `runtime/lib/quests.mjs`: 퀘스트 레코드에 선택적 `synthesis` 프로비넌스 블록(`version, archetype, evidence[{kind,references,values}], sourceState, reason, riskClass, approvalRequired, autonomousGoalId, sourceEvidenceFingerprint, motivation, createdAt`)을 허용하고, 로드마다 지문·ID·동기 점수를 재계산해 불일치 시 실패 폐쇄. `planQuest`는 여전히 `synthesis`를 받지 않는다(호출자가 프로비넌스를 제출할 수 없음). 원형·리스크 등급·지문 함수를 여기서 export한다.

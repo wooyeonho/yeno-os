@@ -1,6 +1,12 @@
 import {validateRepositoryJob,validateJobEvidence} from './repository-patch.mjs';
 import {initialCodeWorkshop,validateCodeWorkshop,disableCodeForRestore} from './code-workshop.mjs';
 import {validateCodeJob} from './code-jobs.mjs';
+import {validateRouting} from './brain-routing.mjs';
+import {validateSelfTests} from './readiness.mjs';
+import {validateBootRecords} from './https-evidence.mjs';
+import {validateDeviceAcceptances} from './device-evidence.mjs';
+import {validateConnectors,validateReadings} from './outcome-connector.mjs';
+import {validateOutcomeEvidences} from './outcome-verification.mjs';
 import {initialCapabilities,validateCapabilities,validateCapabilityRequest,capabilityInputSha256,disableAllCapabilitiesForRestore} from './capabilities.mjs';
 import {validateWorldSnapshot} from './world.mjs';
 import fs from 'node:fs';
@@ -17,6 +23,9 @@ import {validateBotAssignment} from './project-bots.mjs';
 import {validateQuestState} from './quests.mjs';
 import {emptyStudio,validateStudio} from './studio.mjs';
 import {initialAutopilot,validateAutopilot,validateAutopilotJob} from './autopilot.mjs';
+import {initialCoreState,validateCoreState,evaluateHeartbeat,createCoreIdentity} from './blackhole-core.mjs';
+import {validateMemoryEvents} from './memory-events.mjs';
+import {validateOutbox} from './memory-sync-outbox.mjs';
 
 export const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 export const uid = () => crypto.randomUUID();
@@ -32,7 +41,7 @@ export function atomicWrite(file, content) {
 export function initialState() {
  return {revision:0, emergencyStop:false, concurrency:1,
  modules:{memory:true,documents:true,diagnostics:true,ai:false},
- jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), capabilities:initialCapabilities(), codeWorkshop:initialCodeWorkshop(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem()};
+ jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), capabilities:initialCapabilities(), codeWorkshop:initialCodeWorkshop(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem(), blackholeCore:initialCoreState(), memoryEvents:[], memorySyncOutbox:[]};
 }
 function initializeQuestCollections(state) {
  // Missing collections identify older stores. Present malformed data must fail
@@ -51,6 +60,30 @@ function initializeQuestCollections(state) {
  for(const job of state.jobs)validateAutopilotJob(job,state);
  validateStudio(state.studio);
  validateQuestState(state);
+ validateSelfTests(state.selfTests);
+ if(Object.hasOwn(state,'runtimeBoots'))validateBootRecords(state.runtimeBoots);
+ if(Object.hasOwn(state,'deviceAcceptances'))validateDeviceAcceptances(state.deviceAcceptances);
+ if(Object.hasOwn(state,'outcomeConnectors'))validateConnectors(state.outcomeConnectors);
+ if(Object.hasOwn(state,'outcomeReadings'))validateReadings(state.outcomeReadings);
+ if(Object.hasOwn(state,'outcomeEvidence'))validateOutcomeEvidences(state.outcomeEvidence);
+ if((state.outcomeReadings??[]).some(r=>!(state.outcomeConnectors??[]).some(c=>c.id===r.connectorId)))throw new Error('Reading references an unknown connector');
+ for(const job of state.jobs)if(job.selfTestId!==undefined&&!(state.selfTests??[]).some(item=>item.id===job.selfTestId))throw new Error('Invalid self-test job link');
+ // BLACKHOLE Living Core (Phase A): missing collections identify older stores,
+ // exactly like every other additive migration above. Memory events validate
+ // first because the Core record's relationshipMemoryPointer references them.
+ if(!Object.hasOwn(state,'memoryEvents'))state.memoryEvents=[];
+ validateMemoryEvents(state.memoryEvents,state);
+ if(!Object.hasOwn(state,'blackholeCore'))state.blackholeCore=initialCoreState();
+ // A store whose blackholeCore predates the stable-identity correction gets
+ // one generated here, exactly once - after this, the field is always
+ // present in the persisted state, so no later call ever regenerates it.
+ else if(!Object.hasOwn(state.blackholeCore,'identity'))state.blackholeCore.identity=createCoreIdentity(now());
+ validateCoreState(state.blackholeCore,state);
+ // BLACKHOLE Durable Memory Fabric (Phase B): the sync outbox is pure
+ // bookkeeping around the already-canonical memoryEvents ledger above, so it
+ // validates last, once memoryEvents is guaranteed present and correct.
+ if(!Object.hasOwn(state,'memorySyncOutbox'))state.memorySyncOutbox=[];
+ validateOutbox(state.memorySyncOutbox,state);
  return state;
 }
 function sanitizeEnrollmentReceipts(state) {
@@ -75,7 +108,7 @@ export function openStore(directory) {
  fs.mkdirSync(directory,{recursive:true,mode:0o700});
  const file=path.join(directory,'state.json');
  let state, recovered=false;
- const decode = file => {const envelope=JSON.parse(fs.readFileSync(file,'utf8')); if(digest(envelope.payload)!==envelope.sha256)throw new Error('checksum mismatch'); const data=JSON.parse(envelope.payload); if(!Array.isArray(data.jobs)||!Array.isArray(data.memories)||!Array.isArray(data.snapshots)||!Array.isArray(data.events)||!data.modules||!data.requests||!data.artifacts||!Number.isInteger(data.revision))throw new Error('invalid state schema');if(Object.hasOwn(data,'projects'))validateProjectRegistry(data.projects);if(Object.hasOwn(data,'sources'))validateSourceRegistry(data.sources,data.projects??[]);if(Object.hasOwn(data,'discovery'))validateDiscovery(data.discovery);if(Object.hasOwn(data,'ecosystem'))validateEcosystem(data.ecosystem);for(const job of data.jobs){if(job.worldSnapshot)validateWorldSnapshot(job.worldSnapshot);if(job.type==='world'&&job.step>=2&&!job.worldSnapshot)throw new Error('missing world checkpoint');if(job.agentJournal)validateAgentJournal(job.agentJournal);validateBotAssignment(job);}initializeQuestCollections(data);sanitizeEnrollmentReceipts(data);validateRequestLedger(data);return data;};
+ const decode = file => {const envelope=JSON.parse(fs.readFileSync(file,'utf8')); if(digest(envelope.payload)!==envelope.sha256)throw new Error('checksum mismatch'); const data=JSON.parse(envelope.payload); if(!Array.isArray(data.jobs)||!Array.isArray(data.memories)||!Array.isArray(data.snapshots)||!Array.isArray(data.events)||!data.modules||!data.requests||!data.artifacts||!Number.isInteger(data.revision))throw new Error('invalid state schema');if(Object.hasOwn(data,'projects'))validateProjectRegistry(data.projects);if(Object.hasOwn(data,'sources'))validateSourceRegistry(data.sources,data.projects??[]);if(Object.hasOwn(data,'discovery'))validateDiscovery(data.discovery);if(Object.hasOwn(data,'ecosystem'))validateEcosystem(data.ecosystem);for(const job of data.jobs){if(job.worldSnapshot)validateWorldSnapshot(job.worldSnapshot);if(job.type==='world'&&job.step>=2&&!job.worldSnapshot)throw new Error('missing world checkpoint');if(job.agentJournal)validateAgentJournal(job.agentJournal);if(job.routing!==undefined)validateRouting(job.routing);validateBotAssignment(job);}initializeQuestCollections(data);sanitizeEnrollmentReceipts(data);validateRequestLedger(data);return data;};
  if(fs.existsSync(file)) {try{state=decode(file);}catch{try{state=decode(`${file}.bak`);recovered=true;}catch{throw new Error('Both state and backup are unreadable. Original data has been preserved.');}}}
  else if(fs.existsSync(`${file}.bak`)){state=decode(`${file}.bak`);recovered=true;}
  else state=initialState();
@@ -85,6 +118,12 @@ export function openStore(directory) {
  // Add the registry only to older stores; never replace an existing registry.
  // Project data is deliberately outside memory/settings snapshot restoration.
  if(!Object.hasOwn(state,'projects'))state.projects=[];
+ // BLACKHOLE Project Universe (Phase C): a store predating durable
+ // milestones gets an empty array per project, exactly once - every other
+ // field is preserved untouched, and validateProjectRegistry above already
+ // tolerated the field's absence, so this is purely normalization, never a
+ // reason validation could have failed.
+ for(const project of state.projects)if(!Object.hasOwn(project,'milestones'))project.milestones=[];
  // Only legacy stores without a source registry receive an empty one. A malformed
  // existing registry is a recovery error, never a reason to discard source reviews.
  if(!Object.hasOwn(state,'sources'))state.sources=[];
@@ -96,7 +135,16 @@ export function openStore(directory) {
  // Existing hashes migrate unchanged; IDs evicted by older runtimes cannot
  // be reconstructed from a job alone and are not claimed as recovered.
  initializeRequestLedger(state);
- function save(){
+ function save(trigger){
+   // Event-driven heartbeat: every real persist re-derives the Core's
+   // activity/mission/shadows/result/relationship pointer from the state
+   // being saved - never a timer, never a provider call, never a side effect
+   // beyond this record itself. `trigger` is the caller's own reason for
+   // calling save() right now (see blackhole-core.mjs's evaluateHeartbeat);
+   // callers that have no more specific provenance to give may omit it and
+   // fall back to the honest 'state_changed' default.
+   state.blackholeCore=evaluateHeartbeat(state.blackholeCore,state,{at:now(),...(trigger?{trigger}:{})}).core;
+   validateCoreState(state.blackholeCore,state);
    state.revision++;
    sanitizeEnrollmentReceipts(state);
    // Re-encode the verified previous state so legacy secrets are not copied

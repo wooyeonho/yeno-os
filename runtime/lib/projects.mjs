@@ -1,5 +1,78 @@
+import { randomUUID } from 'node:crypto';
+
 export class ProjectError extends Error {
   constructor(status, message, extra = {}) { super(message); this.status = status; this.extra = extra; }
+}
+
+// BLACKHOLE Project Universe (Phase C, issue #25) — durable milestones.
+// Progress is always reported as real completed/total counts (e.g. "3/7"),
+// never an invented percentage: a milestone only exists because the owner
+// (or a verified system action) explicitly recorded it, and only becomes
+// "completed" through an explicit toggle - never inferred from job status,
+// time elapsed, or any other proxy.
+export const MAX_MILESTONES = 30;
+const MILESTONE_FIELDS = Object.freeze(['id', 'text', 'completed', 'createdAt', 'completedAt']);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+const iso = value => typeof value === 'string' && ISO.test(value) && Number.isFinite(Date.parse(value));
+
+export function validateMilestone(milestone) {
+  if (!milestone || typeof milestone !== 'object' || Array.isArray(milestone)) throw new ProjectError(400, 'Invalid milestone record.');
+  if (Object.keys(milestone).sort().join() !== [...MILESTONE_FIELDS].sort().join()) throw new ProjectError(400, `Milestone must have exactly ${MILESTONE_FIELDS.join(', ')}.`);
+  if (typeof milestone.id !== 'string' || !UUID.test(milestone.id)) throw new ProjectError(400, 'Invalid milestone ID.');
+  if (typeof milestone.text !== 'string' || !milestone.text.trim() || milestone.text.length > 300 || milestone.text !== milestone.text.trim()) throw new ProjectError(400, 'Milestone text must be 1-300 trimmed characters.');
+  if (typeof milestone.completed !== 'boolean') throw new ProjectError(400, 'Milestone completed must be a boolean.');
+  if (!iso(milestone.createdAt)) throw new ProjectError(400, 'Invalid milestone createdAt.');
+  if (milestone.completed && !iso(milestone.completedAt)) throw new ProjectError(400, 'A completed milestone requires a real completedAt timestamp.');
+  if (!milestone.completed && milestone.completedAt !== null) throw new ProjectError(400, 'An incomplete milestone must not carry a completedAt timestamp.');
+  return true;
+}
+
+export function validateMilestones(milestones) {
+  if (!Array.isArray(milestones) || milestones.length > MAX_MILESTONES) throw new ProjectError(400, `A project may have at most ${MAX_MILESTONES} milestones.`);
+  const ids = new Set();
+  for (const milestone of milestones) {
+    validateMilestone(milestone);
+    if (ids.has(milestone.id)) throw new ProjectError(400, 'Duplicate milestone ID.');
+    ids.add(milestone.id);
+  }
+  return true;
+}
+
+// Honest evidence-based progress: real completed/total counts only. Never a
+// percentage unless a future caller derives one deterministically from these
+// exact two integers (and even then, showing "3/7" plainly is preferred).
+export function milestoneProgress(project) {
+  const milestones = project.milestones ?? [];
+  return { completed: milestones.filter(m => m.completed).length, total: milestones.length };
+}
+
+export function addMilestone(project, text, at) {
+  const trimmed = typeof text === 'string' ? text.trim() : '';
+  if (!trimmed || trimmed.length > 300) throw new ProjectError(400, 'Milestone text must be 1-300 trimmed characters.');
+  const milestones = project.milestones ?? [];
+  if (milestones.length >= MAX_MILESTONES) throw new ProjectError(409, `This project already has the maximum of ${MAX_MILESTONES} milestones.`);
+  const milestone = { id: randomUUID(), text: trimmed, completed: false, createdAt: at, completedAt: null };
+  const next = { ...project, milestones: [...milestones, milestone], version: project.version + 1, updatedAt: at };
+  validateMilestones(next.milestones);
+  return { project: next, milestone };
+}
+
+export function setMilestoneCompletion(project, milestoneId, completed, at) {
+  const milestones = project.milestones ?? [];
+  const index = milestones.findIndex(m => m.id === milestoneId);
+  if (index < 0) throw new ProjectError(404, 'Milestone not found.');
+  if (typeof completed !== 'boolean') throw new ProjectError(400, 'completed must be a boolean.');
+  const updated = { ...milestones[index], completed, completedAt: completed ? at : null };
+  const next = { ...project, milestones: milestones.map((m, i) => i === index ? updated : m), version: project.version + 1, updatedAt: at };
+  validateMilestones(next.milestones);
+  return next;
+}
+
+export function removeMilestone(project, milestoneId, at) {
+  const milestones = project.milestones ?? [];
+  if (!milestones.some(m => m.id === milestoneId)) throw new ProjectError(404, 'Milestone not found.');
+  return { ...project, milestones: milestones.filter(m => m.id !== milestoneId), version: project.version + 1, updatedAt: at };
 }
 
 export const projectNameKey = value => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
@@ -48,7 +121,7 @@ export function validateProjectRegistry(projects) {
   const ids = new Set(), names = new Set();
   for (const project of projects) {
     if (!project || typeof project !== 'object' || Array.isArray(project)) throw new Error('invalid project record');
-    const { id, name, repositoryUrl, summary, nextAction, status, version, createdAt, updatedAt } = project;
+    const { id, name, repositoryUrl, summary, nextAction, status, version, createdAt, updatedAt, milestones } = project;
     if (typeof id !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id) || ids.has(id)) throw new Error('invalid or duplicate project ID');
     const checked = validateProjectFields({ name, repositoryUrl, summary, nextAction, status, requestId: 'stored-project-validation' }, { creating: true });
     if (name !== checked.name || repositoryUrl !== checked.repositoryUrl || !Number.isSafeInteger(version) || version < 1) throw new Error('invalid stored project fields');
@@ -57,6 +130,7 @@ export function validateProjectRegistry(projects) {
     for (const timestamp of [createdAt, updatedAt]) {
       if (typeof timestamp !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(timestamp) || !Number.isFinite(Date.parse(timestamp)) || new Date(timestamp).toISOString() !== (timestamp.includes('.') ? timestamp : timestamp.replace('Z', '.000Z'))) throw new Error('invalid project timestamp');
     }
+    try { validateMilestones(milestones ?? []); } catch { throw new Error('invalid stored project milestones'); }
     ids.add(id); names.add(key);
   }
 }

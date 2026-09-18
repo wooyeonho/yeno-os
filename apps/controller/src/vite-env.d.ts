@@ -13,3 +13,30 @@ declare module '*studio-view.mjs' {
 declare module '*world-view.mjs' {
   export function createWorldView(options: {load: () => Promise<unknown>; submit: () => Promise<void>}): {update(overview: unknown, canRun: boolean): Promise<void>; reset(): void};
 }
+declare module '*living-core-view.mjs' {
+  export function createLivingCoreView(options: {root: HTMLElement; onNavigate?: (id: string) => void}): {
+    updateState(state: unknown, online: boolean): void;
+    reset(): void;
+    destroy(): void;
+  };
+}
+declare module '*live-voice-client.mjs' {
+  export type LiveVoiceEvent =
+    | {type: 'state'; state: string; attempt?: number}
+    | {type: 'error'; message: string}
+    | {type: 'blocked'; reason: string}
+    | {type: 'transcript'; role: string; text: string}
+    | {type: 'barge_in'; droppedChunks: number}
+    | {type: 'playback_overflow'; droppedSamples: number};
+  export function createLiveVoiceClient(deps: {
+    url: string;
+    connect: (url: string) => EventTarget & {send(data: string): void; close(): void; readyState: number};
+    doc?: Document; win?: Window;
+    onEvent?: (event: LiveVoiceEvent) => void;
+  }): {
+    start(): Promise<void>;
+    stop(reason?: string): void;
+    setEmergencyStop(active: boolean): void;
+    readonly state: {started: boolean; explicitlyStopped: boolean; emergencyStop: boolean; connectionEpoch: number; reconnectAttempt: number; queued: number};
+  };
+}

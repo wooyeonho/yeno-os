@@ -34,3 +34,8 @@ progress.job-progress{display:block;width:100%;border:0;appearance:none;-webkit-
 .connection-alternative { margin:22px 0; border-top:1px solid var(--border); padding-top:18px; }
 .connection-alternative summary { cursor:pointer; padding:8px 0; }
 .connection-alternative form { padding-top:12px; }
+
+/* BLACKHOLE Living Core visual language now lives in the shared
+   /living-core.css (see index.html's <link>) so the web cockpit and the
+   native Android/Tauri controller render the exact same approved design -
+   never two divergent implementations (issue #25 Slice 1 review). */

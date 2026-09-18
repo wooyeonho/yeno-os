@@ -1,11 +1,20 @@
+import {createLiveVoiceClient} from './live-voice-client.mjs';
+
 /** Browser speech is optional; durable execution and result retrieval belong to the host app. */
-export function createVoiceView(root, {onSend, onReadResult} = {}) {
+export function createVoiceView(root, {onSend, onReadResult, liveVoiceUrl} = {}) {
   const doc = root.ownerDocument, win = doc.defaultView;
   const Recognition = win.SpeechRecognition || win.webkitSpeechRecognition;
   const synth = win.speechSynthesis, Utterance = win.SpeechSynthesisUtterance;
   let state = {online:false,jobs:[]}, epoch = 0, audioEpoch = 0, destroyed = false;
   let recognition = null, submitting = false, pending = null, reading = false, speaking = false, stagedTurn = null;
   let lastAnswer = '', lastQuestion = '', history = [], status = '', resultError = false;
+  // Real-time Gemini Live call: a separate, additive path. It never touches
+  // recognition/speaking/pending above - SpeechRecognition, speechSynthesis
+  // and the typed-input+job-polling flow stay exactly as they were and
+  // remain the fallback whenever live voice is unsupported, blocked or not
+  // started.
+  const liveSupported = !!(win.WebSocket && win.navigator?.mediaDevices?.getUserMedia);
+  let liveState = 'idle', liveTranscript = [], liveError = '';
   root.innerHTML = `<section class="voice-panel" aria-label="자비스 음성 대화">
     <div class="voice-heading"><div><span class="eyebrow">JARVIS · VOICE</span><h3>말하고, 이어서 맡기세요</h3></div><span class="voice-indicator" data-voice-indicator>대기</span></div>
     <p class="voice-help">마이크를 누르고 한국어로 말하세요. 인식된 문장을 고쳐 보낼 수 있습니다. 답변은 실제 작업 결과가 도착하면 읽습니다.</p>
@@ -18,6 +27,13 @@ export function createVoiceView(root, {onSend, onReadResult} = {}) {
     <p class="voice-help">연속 대화를 켠 뒤 마이크를 누르면, 답변 읽기가 끝난 뒤 다음 말을 듣습니다. 전체 작업 정지는 상단의 전체 멈춤을 사용하세요.</p>
     <p data-voice-status role="status" aria-live="polite"></p>
     <div class="voice-answer" data-voice-answer hidden><h4>실제 답변</h4><p data-voice-job></p><pre data-voice-answer-text></pre><div class="voice-actions"><button type="button" class="button subtle" data-voice-action="replay">다시 듣기</button><button type="button" class="button subtle" data-voice-action="retry" hidden>결과 다시 확인</button></div></div>
+    <div class="voice-live" data-voice-live hidden>
+      <h4>실시간 통화 (Gemini Live)</h4>
+      <p class="voice-help">누르면 마이크 권한을 요청하고 실시간으로 대화합니다. 말하는 도중에도 끼어들 수 있습니다. 도구는 서버에서만 실행되며 이 화면은 실행 권한이 없습니다.</p>
+      <div class="voice-actions"><button type="button" class="button" data-voice-action="live-toggle">실시간 통화 시작</button></div>
+      <p data-voice-live-status role="status" aria-live="polite"></p>
+      <div class="voice-live-transcript" data-voice-live-transcript aria-live="polite"></div>
+    </div>
   </section>`;
   const q = selector => root.querySelector(selector);
   const input = q('[data-voice-input]'), interim = q('[data-voice-interim]');
@@ -47,7 +63,35 @@ export function createVoiceView(root, {onSend, onReadResult} = {}) {
     q('[data-voice-indicator]').textContent = recognition ? '듣는 중' : speaking ? '읽는 중' : submitting ? '접수 중' : stagedTurn ? '접수 확인 필요' : pending ? '답변 대기' : '대기';
     q('[data-voice-indicator]').dataset.active = String(!!recognition || speaking);
     q('[data-voice-support]').textContent = !Recognition ? '이 브라우저는 음성 인식을 지원하지 않습니다. 아래에 입력해 보내세요. 휴대폰의 키보드 음성 입력도 사용할 수 있습니다.' : !outputSupported() ? '음성 인식은 사용할 수 있지만 답변 읽기는 이 브라우저에서 지원하지 않습니다.' : '';
+    renderLive();
   }
+  const liveActive = () => ['connecting', 'listening', 'reconnecting'].includes(liveState);
+  function renderLive() {
+    q('[data-voice-live]').hidden = !liveSupported;
+    if (!liveSupported) return;
+    const liveButton = button('live-toggle');
+    liveButton.disabled = !allowed() && !liveActive();
+    liveButton.textContent = liveActive() ? '실시간 통화 종료' : '실시간 통화 시작';
+    const labels = {idle: '', connecting: '마이크 권한 요청 및 연결 중…', listening: '실시간으로 듣고 있습니다. 말씀하세요.', reconnecting: '연결이 끊겨 다시 연결하는 중입니다…', fallback_required: '실시간 연결에 반복 실패했습니다. 마이크 켜기(음성 인식)로 이어서 사용하세요.', stopped: '실시간 통화를 종료했습니다.', hidden: '화면을 벗어나 실시간 통화를 멈췄습니다.', page_hidden: '화면을 벗어나 실시간 통화를 멈췄습니다.', offline: '연결이 끊겨 실시간 통화를 멈췄습니다.', logout: '로그아웃되어 실시간 통화를 멈췄습니다.', emergency_stop: '전체 멈춤 상태입니다. 실시간 통화를 멈췄습니다.'};
+    q('[data-voice-live-status]').textContent = liveError || labels[liveState] || '';
+    q('[data-voice-live-transcript]').innerHTML = liveTranscript.map(turn => `<p><strong>${turn.role === 'user' ? '나' : 'JARVIS'}</strong>: ${escapeHtml(turn.text)}</p>`).join('');
+  }
+  function escapeHtml(text) {
+    return String(text).replace(/[&<>"']/g, ch => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[ch]);
+  }
+  const liveClient = liveSupported ? createLiveVoiceClient({
+    url: liveVoiceUrl || `${win.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${win.location.host}/api/voice/live`,
+    doc, win,
+    onEvent(event) {
+      if (destroyed) return;
+      if (event.type === 'state') {liveState = event.state; if (event.state !== 'connecting') liveError = '';}
+      else if (event.type === 'error') {liveError = event.message === 'microphone_permission_denied' ? '마이크 권한이 필요합니다. 브라우저의 사이트 권한에서 마이크를 허용하세요.' : '실시간 연결에 문제가 발생했습니다.';}
+      else if (event.type === 'blocked') {liveState = 'idle'; liveError = event.reason === 'emergency_stop' ? '전체 멈춤 상태에서는 실시간 통화를 시작할 수 없습니다.' : '실시간 통화가 차단되었습니다.';}
+      else if (event.type === 'transcript' && typeof event.text === 'string' && event.text.trim()) {liveTranscript = [...liveTranscript, {role: event.role, text: event.text}].slice(-20);}
+      else if (event.type === 'barge_in') {/* playback already stopped inside the client; nothing to render beyond the status label above */}
+      render();
+    }
+  }) : null;
   function abortRecognition() {
     const current = recognition; recognition = null; interim.textContent = '';
     if (current) { current.cancelled = true; try { current.engine.abort(); } catch {} }
@@ -190,6 +234,10 @@ export function createVoiceView(root, {onSend, onReadResult} = {}) {
       case 'stop': stopAudio(); break;
       case 'replay': speakAnswer(lastAnswer,false); break;
       case 'retry': if (pending?.job) void receive(pending.job); break;
+      case 'live-toggle':
+        if (liveActive()) liveClient?.stop('stopped');
+        else if (allowed()) void liveClient?.start();
+        break;
     }
   };
   const change = event => {
@@ -209,19 +257,23 @@ export function createVoiceView(root, {onSend, onReadResult} = {}) {
     update(next) {
       if (destroyed) return;
       state = next || {online:false,jobs:[]};
+      liveClient?.setEmergencyStop(state.emergencyStop === true);
+      if (!state.online) liveClient?.stop('offline');
       if (!allowed()) stopAudio(!state.online ? '연결이 끊겨 음성을 멈췄습니다.' : '음성을 멈췄습니다.');
       render();
       if (pending && !resultError) { const job = (state.jobs || []).find(item => item.id === pending.id); if (job) void receive(job); }
     },
-    stop() { stopAudio(); },
+    stop() { stopAudio(); liveClient?.stop('stopped'); },
     reset() {
       epoch++; stopAudio(''); submitting = false; pending = null; stagedTurn = null; reading = false; resultError = false;
       lastAnswer = ''; lastQuestion = ''; history = []; input.value = ''; read.checked = true; status = '';
+      liveClient?.stop('stopped'); liveTranscript = []; liveError = '';
       q('[data-voice-answer]').hidden = true; q('[data-voice-answer-text]').textContent = ''; q('[data-voice-job]').textContent = '';
       state = {online:false,jobs:[]}; render();
     },
     destroy() {
       epoch++; stopAudio(''); destroyed = true;
+      liveClient?.stop('destroyed');
       root.removeEventListener('click',click); root.removeEventListener('change',change); input.removeEventListener('input',inputChanged);
       doc.removeEventListener('visibilitychange',hide); win.removeEventListener('pagehide',pagehide); root.innerHTML = '';
       history = []; lastAnswer = ''; lastQuestion = ''; pending = null; stagedTurn = null;
