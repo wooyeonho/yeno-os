@@ -50,24 +50,35 @@ function assertProjectUsable(project) {
 export function planShadowMission(state, body) {
   if (!object(body)) throw new ShadowArmyError(400, '임무 입력 형식이 잘못되었습니다.');
   if (state.emergencyStop) throw new ShadowArmyError(409, '전체 멈춤을 먼저 해제하세요.');
-  if (Object.keys(body).some(key => !['requestId', 'projectId', 'goal', 'successCriterion'].includes(key))) throw new ShadowArmyError(400, '지원하지 않는 필드가 있습니다.');
-  const project = (state.projects ?? []).find(p => p.id === body.projectId);
-  if (!uuid(body.projectId) || !project) throw new ShadowArmyError(404, '기존 프로젝트를 찾을 수 없습니다.');
+  if (Object.keys(body).some(key => !['requestId', 'projectId', 'goal', 'successCriterion', 'questId'].includes(key))) throw new ShadowArmyError(400, '지원하지 않는 필드가 있습니다.');
+  const plannerQuestId = body.questId ?? null;
+  const plannerQuest = plannerQuestId ? (state.quests ?? []).find(q => q.id === plannerQuestId) : null;
+  if (body.questId !== undefined && (!uuid(body.questId) || !plannerQuest)) throw new ShadowArmyError(404, '연결할 기존 목표를 찾을 수 없습니다.');
+  if (plannerQuest && (plannerQuest.status !== 'proposed' || plannerQuest.jobId !== null)) throw new ShadowArmyError(409, '아직 실행되지 않은 제안 목표만 Shadow Army에 연결할 수 있습니다.');
+  if (plannerQuest && !plannerQuest.projectId) throw new ShadowArmyError(409, 'Shadow Army에 연결하려면 목표에 기존 프로젝트가 필요합니다.');
+  if (plannerQuest && body.projectId !== undefined && body.projectId !== plannerQuest.projectId) throw new ShadowArmyError(400, '목표의 프로젝트와 요청 프로젝트가 다릅니다.');
+  if (plannerQuest && body.goal !== undefined && body.goal !== plannerQuest.goal) throw new ShadowArmyError(400, '연결 목표의 원문을 바꿀 수 없습니다.');
+  if (plannerQuest && body.successCriterion !== undefined && body.successCriterion !== plannerQuest.successCriterion) throw new ShadowArmyError(400, '연결 목표의 성공 기준을 바꿀 수 없습니다.');
+  const projectId = plannerQuest?.projectId ?? body.projectId;
+  const project = (state.projects ?? []).find(p => p.id === projectId);
+  if (!uuid(projectId) || !project) throw new ShadowArmyError(404, '기존 프로젝트를 찾을 수 없습니다.');
   assertProjectUsable(project);
   const activeMissions = missionsForProject(project.id, state).filter(m => !['completed', 'failed'].includes(m.phase));
   if (activeMissions.length >= MAX_ACTIVE_MISSIONS_PER_PROJECT) throw new ShadowArmyError(409, '이 프로젝트에 이미 진행 중인 임무가 최대치입니다. 기존 임무를 완료하거나 취소하세요.');
-  const goal = trimmedText(body.goal, 4000);
+  if (plannerQuestId && activeMissions.some(m => m.plannerQuestId === plannerQuestId)) throw new ShadowArmyError(409, '이 목표에는 이미 진행 중인 Shadow 임무가 있습니다. 기존 임무를 먼저 확인하세요.');
+  const goal = plannerQuest?.goal ?? trimmedText(body.goal, 4000);
   if (!goal) throw new ShadowArmyError(400, '목표는 1~4000자여야 합니다.');
-  const successCriterion = trimmedText(body.successCriterion, 2000) ?? '실제 산출물 1개를 완성하고 검증 가능한 근거를 남긴다.';
+  const successCriterion = plannerQuest?.successCriterion ?? trimmedText(body.successCriterion, 2000) ?? '실제 산출물 1개를 완성하고 검증 가능한 근거를 남긴다.';
   const missionId = randomUUID();
   const scoutId = randomUUID(), researcherId = randomUUID(), builderId = randomUUID(), verifierId = randomUUID();
   // The full project record (same shape project-bots.mjs's botAssignment.context
   // already carries) - a shadow worker's tools scope to this exact clone, so a
   // trimmed context would silently break project_read/project_sources for it.
   const projectContext = structuredClone(project);
-  const base = {missionId, projectId: project.id, projectVersion: project.version, projectContext, goal, successCriterion};
+  const base = {missionId, projectId: project.id, projectVersion: project.version, projectContext, goal, successCriterion, ...(plannerQuestId ? {plannerQuestId} : {})};
   return {
     missionId,
+    ...(plannerQuestId ? {plannerQuestId} : {}),
     specs: [
       {...base, id: scoutId, role: 'scout', dependsOnJobIds: []},
       {...base, id: researcherId, role: 'researcher', dependsOnJobIds: []},
@@ -81,7 +92,7 @@ export function planShadowMission(state, body) {
 // `type:'agent'` jobs (no new execution path); the verifier role is the one
 // genuinely new, deterministic, local job type this slice adds.
 export function shadowJobFromSpec(spec, at) {
-  const shadowAssignment = {missionId: spec.missionId, role: spec.role, dependsOnJobIds: spec.dependsOnJobIds, projectId: spec.projectId, projectVersion: spec.projectVersion, context: spec.projectContext};
+  const shadowAssignment = {missionId: spec.missionId, role: spec.role, dependsOnJobIds: spec.dependsOnJobIds, projectId: spec.projectId, projectVersion: spec.projectVersion, context: spec.projectContext, ...(spec.plannerQuestId ? {plannerQuestId: spec.plannerQuestId} : {})};
   const hasDeps = spec.dependsOnJobIds.length > 0;
   const common = {id: spec.id, status: hasDeps ? 'paused' : 'queued', ...(hasDeps ? {pauseReason: 'dependencyPending'} : {}), step: 0, totalSteps: 3, createdAt: at, updatedAt: at, error: null, version: 1, artifacts: [], projectId: spec.projectId, shadowAssignment};
   if (spec.role === 'verifier') {
@@ -93,8 +104,11 @@ export function shadowJobFromSpec(spec, at) {
 export function validateShadowAssignment(job) {
   const a = job.shadowAssignment;
   if (!Object.hasOwn(job, 'shadowAssignment')) return;
-  if (!object(a) || Object.keys(a).sort().join() !== 'context,dependsOnJobIds,missionId,projectId,projectVersion,role'.split(',').sort().join()) throw new Error('Invalid shadow assignment');
-  if (!uuid(a.missionId) || !SHADOW_ROLES.includes(a.role) || !Array.isArray(a.dependsOnJobIds) || a.dependsOnJobIds.length > 4 || a.dependsOnJobIds.some(id => !uuid(id))) throw new Error('Invalid shadow assignment fields');
+  const assignmentKeys = Object.keys(a).sort().join();
+  const baseAssignmentKeys = 'context,dependsOnJobIds,missionId,projectId,projectVersion,role';
+  const plannerAssignmentKeys = [...baseAssignmentKeys.split(','), 'plannerQuestId'].sort().join();
+  if (!object(a) || ![baseAssignmentKeys, plannerAssignmentKeys].includes(assignmentKeys)) throw new Error('Invalid shadow assignment');
+  if (!uuid(a.missionId) || !SHADOW_ROLES.includes(a.role) || !Array.isArray(a.dependsOnJobIds) || a.dependsOnJobIds.length > 4 || a.dependsOnJobIds.some(id => !uuid(id)) || (a.plannerQuestId !== undefined && !uuid(a.plannerQuestId))) throw new Error('Invalid shadow assignment fields');
   if (!Number.isSafeInteger(a.projectVersion) || a.projectVersion < 1) throw new Error('Invalid shadow assignment project version');
   if (!object(a.context) || a.context.id !== a.projectId || a.context.version !== a.projectVersion || !['active', 'paused'].includes(a.context.status)) throw new Error('Invalid shadow assignment context');
   validateProjectRegistry([a.context]);
@@ -203,6 +217,7 @@ export function missionStatus(missionId, state) {
   const jobs = (state.jobs ?? []).filter(job => job.shadowAssignment?.missionId === missionId);
   if (!jobs.length) return null;
   const verify = jobs.find(job => job.shadowAssignment.role === 'verifier') ?? null;
+  const plannerQuestId = jobs.find(job => job.shadowAssignment.plannerQuestId)?.shadowAssignment.plannerQuestId ?? null;
   const shadows = jobs.filter(job => job.shadowAssignment.role !== 'verifier').map(job => ({
     jobId: job.id, role: job.shadowAssignment.role, status: job.status, pauseReason: job.pauseReason ?? null,
     dependsOnJobIds: job.shadowAssignment.dependsOnJobIds, artifacts: (job.artifacts ?? []).map(a => ({id: a.id, name: a.name})),
@@ -211,9 +226,14 @@ export function missionStatus(missionId, state) {
   }));
   const projectId = jobs[0].projectId;
   return {
-    missionId, projectId, phase: shadowPhase(shadows, verify), shadows,
+    missionId, projectId, plannerQuestId, phase: shadowPhase(shadows, verify), shadows,
     verify: verify ? {jobId: verify.id, status: verify.status, pauseReason: verify.pauseReason ?? null, result: verify.verifyResult ?? null, failureReason: shadowFailureReason(verify)} : null,
   };
+}
+
+export function missionsForQuest(questId, state) {
+  const ids = new Set((state.jobs ?? []).filter(job => job.shadowAssignment?.plannerQuestId === questId).map(job => job.shadowAssignment.missionId));
+  return [...ids].map(id => missionStatus(id, state)).filter(Boolean);
 }
 
 export function missionsForProject(projectId, state) {

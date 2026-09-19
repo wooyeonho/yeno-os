@@ -20,8 +20,17 @@ export function questCandidateSignals(quest) {
 }
 
 // Returns null (not a fabricated pick) when there is nothing to decide among.
+function hasReusableShadowMission(state, questId) {
+  const linked = (state.jobs ?? []).filter(job => job.shadowAssignment?.plannerQuestId === questId);
+  // A proposed Quest already has a real Shadow execution once any linked job
+  // is still active or has completed. Do not let the generic Jarvis decision
+  // path launch a second, unrelated agent job. All-linked failed/cancelled
+  // missions remain retryable through the explicit Shadow mission route.
+  return linked.length > 0 && linked.some(job => !['failed', 'cancelled'].includes(job.status));
+}
+
 export function decideQuest(state, at) {
-  const proposed = (state.quests ?? []).filter(quest => quest.status === 'proposed');
+  const proposed = (state.quests ?? []).filter(quest => quest.status === 'proposed' && !hasReusableShadowMission(state, quest.id));
   if (!proposed.length) return null;
   const candidates = proposed.map(quest => ({
     action: { kind: 'quest', taskKey: 'quest:' + quest.id },
