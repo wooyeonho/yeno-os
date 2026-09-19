@@ -222,6 +222,43 @@ export function shadowDispatchLogEntry({at, job, response, realDecision}) {
   return entry;
 }
 
+// JEV Shadow Mode evaluation/calibration (master directive v2 §4.2/§5.E) -
+// pure aggregation over the real, already-validated shadow-mode log. This is
+// the required "기존 scheduler와 JEV 판단의 일치율 / false positive / false
+// negative / abstain rate / confidence" evaluation - it reads the log only,
+// computes nothing new about any job, and grants JEV no authority. With the
+// real decision (`realDecision`) as the reference (the real scheduler is
+// still the only thing that ever actually dispatches), a "false positive" is
+// JEV answering 'dispatch' when the real path held; a "false negative" is
+// JEV answering 'hold'/'escalate' when the real path dispatched anyway. An
+// empty log returns null counts, never a fabricated 0% or 100%.
+export function calibrateShadowLog(log) {
+  validateJevShadowLog(log);
+  const sampleSize = log.length;
+  if (sampleSize === 0) {
+    return {sampleSize: 0, matchRate: null, abstainRate: null, falsePositiveRate: null, falseNegativeRate: null, avgConfidenceOverall: null, avgConfidenceWhenDecided: null, byAnswer: {dispatch: 0, hold: 0, escalate: 0, null: 0}, byStatus: {decided: 0, uncertain: 0, abstain: 0, blocked: 0}};
+  }
+  const decided = log.filter(e => e.jevStatus === 'decided');
+  const falsePositives = log.filter(e => e.jevAnswer === 'dispatch' && e.realDecision === 'hold');
+  const falseNegatives = log.filter(e => e.jevAnswer !== 'dispatch' && e.realDecision === 'dispatch');
+  const byAnswer = {dispatch: 0, hold: 0, escalate: 0, null: 0};
+  for (const entry of log) byAnswer[entry.jevAnswer === null ? 'null' : entry.jevAnswer]++;
+  const byStatus = {decided: 0, uncertain: 0, abstain: 0, blocked: 0};
+  for (const entry of log) byStatus[entry.jevStatus]++;
+  const sum = values => values.reduce((total, value) => total + value, 0);
+  return {
+    sampleSize,
+    matchRate: decided.length ? sum(decided.map(e => e.matchedRealDecision ? 1 : 0)) / decided.length : null,
+    abstainRate: (sampleSize - decided.length) / sampleSize,
+    falsePositiveRate: falsePositives.length / sampleSize,
+    falseNegativeRate: falseNegatives.length / sampleSize,
+    avgConfidenceOverall: sum(log.map(e => e.jevConfidence)) / sampleSize,
+    avgConfidenceWhenDecided: decided.length ? sum(decided.map(e => e.jevConfidence)) / decided.length : null,
+    byAnswer, byStatus,
+    engineVersion: JEV_ENGINE_VERSION, calibrationVersion: JEV_CALIBRATION_VERSION,
+  };
+}
+
 export function validateJevShadowLog(log) {
   if (!Array.isArray(log)) fail('jevShadowLog는 배열이어야 합니다.');
   if (log.length > JEV_SHADOW_LOG_CAP) fail('jevShadowLog가 보존 한도를 초과했습니다.');
