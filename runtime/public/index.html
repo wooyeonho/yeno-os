@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/living-core.css">
   <link rel="stylesheet" href="/project-universe.css">
+  <link rel="stylesheet" href="/drive-orbit.css">
   <link rel="stylesheet" href="/studio.css">
   <link rel="stylesheet" href="/cockpit.css">
   <link rel="stylesheet" href="/code.css">
@@ -186,6 +187,7 @@
     </form>
   </dialog>
   <dialog id="quest-outcome-dialog" aria-labelledby="quest-outcome-title"><form id="quest-outcome-form"><div class="dialog-top"><h2 id="quest-outcome-title">실제 성과 기록</h2><button type="button" class="button subtle" data-close="quest-outcome-dialog">닫기</button></div><p id="quest-outcome-goal"></p><p class="muted">직접 확인한 결과를 적어주세요. ‘사용자 보고’로 저장되며 외부 검증으로 표시하지 않습니다.</p><div class="project-fields"><label for="quest-outcome-ledger">성과 분류<select id="quest-outcome-ledger"><option value="wealth">부 · 수익과 소유 자산</option><option value="honor">명예 · 품질과 신뢰</option><option value="fame">인지도 · 자발적 관심과 확산</option></select></label><label for="quest-outcome-summary">확인한 성과와 근거<textarea id="quest-outcome-summary" maxlength="2000" required rows="3" placeholder="예: 이 소개 문서를 사용해 인터뷰 대상 2명에게서 이용 의향을 직접 확인했다."></textarea></label><label for="quest-outcome-artifact">연결할 결과 파일<select id="quest-outcome-artifact" required></select></label><div class="quest-form-grid"><label for="quest-outcome-value">측정값 · 선택<input id="quest-outcome-value" type="number" step="any" placeholder="예: 2"></label><label for="quest-outcome-unit">단위 · 숫자 입력 시 필수<input id="quest-outcome-unit" maxlength="80" placeholder="예: 명, 원, 분"></label></div></div><p id="quest-outcome-error" class="form-error" role="alert"></p><div class="dialog-actions"><button id="save-quest-outcome" type="submit" class="button primary">사용자 보고 저장</button></div></form></dialog>
+  <dialog id="drive-orbit-dialog" aria-label="일곱 욕망"><div id="drive-orbit-root"></div></dialog>
   <dialog id="artifact-dialog"><div class="dialog-top"><h2 id="artifact-title">결과물</h2><button class="button subtle" data-close="artifact-dialog">닫기</button></div><video id="artifact-video" controls playsinline hidden></video><pre id="artifact-content"></pre><button id="download-artifact" class="button primary">파일 다운로드</button></dialog>
   <dialog id="restore-dialog"><h2>이 시점으로 복원할까요?</h2><p id="restore-label"></p><p>기억·능력 설정·실행 규모가 바뀝니다. 작업 이력과 결과 파일은 유지하고 현재 상태도 보관합니다.</p><p>실행 중인 작업이 있으면 먼저 멈춰주세요.</p><div class="dialog-actions"><button class="button subtle" data-close="restore-dialog">그대로 두기</button><button id="confirm-restore" class="button primary">복원하기</button></div></dialog>
   <div id="toast" role="status" class="toast" hidden></div>

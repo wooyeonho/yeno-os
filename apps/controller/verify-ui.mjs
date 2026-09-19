@@ -182,9 +182,9 @@ try {
   // completion nothing here would wait for.
   const livingCoreText=$('#living-core-root').textContent;
   assert.match(livingCoreText,/진행 중인 미션 없음/,'no live mission exists yet, so Home must say so plainly rather than fabricate one');
-  assert.match(livingCoreText,/아직 평가 전/,'no live drive evidence exists yet, so Home must never invent a drive name');
+  assert.match(livingCoreText,/욕망 평가 전/,'no live drive evidence exists yet, so Home must never invent a drive name');
   assert.match(livingCoreText,/블랙홀에게 말하기/,'the native Home must expose the Living Core voice CTA');
-  evidence.checks.push('native Home mounts the shared Living Core view, binds to the real embedded Core summary, and states "아직 평가 전"/"진행 중인 미션 없음" rather than fabricating a drive or mission');
+  evidence.checks.push('native Home mounts the shared Living Core view, binds to the real embedded Core summary, and states "욕망 평가 전"/"진행 중인 미션 없음" rather than fabricating a drive or mission');
 
   evidence.ok=true;console.log(JSON.stringify(evidence,null,2));
 } finally {dom?.window.close();core.shutdown();rmSync(dataDir,{recursive:true,force:true});}

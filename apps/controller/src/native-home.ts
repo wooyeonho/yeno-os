@@ -14,18 +14,26 @@
 // to the advanced-tools drawer - the owner must never have to open 고급
 // 도구 to reach Project Universe. quests/memory taps still open the
 // advanced-tools drawer until their own drill-down screens (Slice 5+) land.
+//
+// Seven Drives UI (issue #25): the drive chip opens the real Drive Orbit
+// overlay (showDriveOrbit) directly from Home, never the advanced-tools
+// drawer - like Project Universe, it must not be hidden behind 고급 도구,
+// and unlike Project Universe it must never become a permanent bottom-nav
+// destination either (it stays reachable only from this one chip).
 export function createNativeHomeNavigation({
   liveVoiceRoot,
   toolsDrawerSelector = '.tools-drawer',
   doc = document,
   showJobsView,
   showProjectsView,
+  showDriveOrbit,
 }: {
   liveVoiceRoot: HTMLElement;
   toolsDrawerSelector?: string;
   doc?: Document;
   showJobsView: () => void;
   showProjectsView: (projectId?: string) => void;
+  showDriveOrbit: () => void;
 }) {
   function activateVoice() {
     liveVoiceRoot.scrollIntoView({block: 'center', behavior: 'smooth'});
@@ -41,6 +49,7 @@ export function createNativeHomeNavigation({
   function navigate(id: string, projectId?: string | null) {
     if (id === 'voice') { activateVoice(); return; }
     if (id === 'project-universe') { showProjectsView(projectId ?? undefined); return; }
+    if (id === 'drive-orbit') { showDriveOrbit(); return; }
     if (id === 'quests' || id === 'memory') { openAdvancedTools(); return; }
     if (id === 'control') { showJobsView(); return; }
   }

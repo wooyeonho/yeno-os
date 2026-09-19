@@ -68,14 +68,24 @@ test('current mission shows the real mission goal and project, and the exact con
   h.close();
 });
 
-test('the signal row shows the real dominant drive and shadow count, with the exact truthful empty-state wording', () => {
+test('the signal row shows the real canonical drive world name and shadow count, with the exact truthful empty-state wording - never the old internal sin vocabulary', () => {
   const h = setup();
   h.view.updateState({core: coreFixture(), emergencyStop: false, projects: [], memories: []}, true);
-  assert.match(h.root.textContent, /아직 평가 전/);
+  assert.match(h.root.textContent, /욕망 평가 전/);
   assert.match(h.root.textContent, /활동 중인 그림자 없음/);
-  h.view.updateState({core: coreFixture({dominantDriveName: '강욕', activeShadowCount: 3}), emergencyStop: false, projects: [], memories: []}, true);
-  assert.match(h.root.textContent, /강욕/);
+  h.view.updateState({core: coreFixture({dominantDriveName: '강욕', dominantDriveWorldName: '부', activeShadowCount: 3}), emergencyStop: false, projects: [], memories: []}, true);
+  assert.match(h.root.textContent, /부/);
+  assert.doesNotMatch(h.root.textContent, /강욕/, 'the old internal sin vocabulary must never appear on the normal owner-facing Home');
   assert.match(h.root.textContent, /그림자 3개 활동 중/);
+  h.close();
+});
+
+test('the drive chip is a real drill-down button into the Drive Orbit surface, and the Shadow chip stays inert', () => {
+  const h = setup();
+  h.view.updateState({core: coreFixture({dominantDriveWorldName: '진화'}), emergencyStop: false, projects: [], memories: []}, true);
+  h.root.querySelector('.living-signal-drive').dispatchEvent(new h.dom.window.Event('click', {bubbles: true}));
+  assert.deepEqual(h.navigated, ['drive-orbit']);
+  assert.equal(h.root.querySelector('.living-signals span.living-signal-chip').tagName, 'SPAN', 'the Shadow chip must not become clickable yet');
   h.close();
 });
 

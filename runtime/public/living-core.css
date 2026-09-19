@@ -51,6 +51,7 @@
 .living-mission.empty, .living-orbit.empty, .living-recent.empty { color:var(--muted); border:1px dashed #3a4b51; background:none; }
 .living-signals { display:flex; flex-wrap:wrap; gap:8px; }
 .living-signal-chip { border:1px solid var(--line); border-radius:999px; padding:6px 13px; font-size:.8125rem; color:var(--muted); }
+.living-signal-drive { background:none; font-family:inherit; cursor:pointer; }
 .living-orbit { display:grid; gap:10px; }
 .living-orbit-row { display:flex; flex-wrap:wrap; gap:8px; }
 .living-orbit-node { border:1px solid #385249; border-radius:999px; background:#152321; color:var(--text); padding:8px 14px; font-size:.8125rem; max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

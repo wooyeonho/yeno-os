@@ -392,6 +392,19 @@ button:disabled {
 .page-panel {
   padding: 20px 16px;
 }
+/* Seven Drives UI (issue #25): a real overlay/panel reached only from the
+   Home drive chip - deliberately not a page-panel/bottom-nav destination,
+   so it layers on top of whichever view is showing and is dismissed by its
+   own close button (drive-orbit-view.mjs) or the OS back gesture, never a
+   fifth .native-nav tab. */
+.drive-orbit-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--bg);
+  overflow-y: auto;
+  padding: max(16px, env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
+}
 .page-title,
 .section-heading {
   display: flex;

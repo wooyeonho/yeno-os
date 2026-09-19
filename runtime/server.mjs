@@ -1206,6 +1206,7 @@ export function createYenoServer(options={}) {
        Object.assign(allowed,{'/growth-view.mjs':'growth-view.mjs'});
        Object.assign(allowed,{'/living-core-view.mjs':'living-core-view.mjs','/living-core.css':'living-core.css'});
        Object.assign(allowed,{'/project-universe-view.mjs':'project-universe-view.mjs','/project-universe.css':'project-universe.css','/project-universe-model.mjs':'project-universe-model.mjs'});
+       Object.assign(allowed,{'/drive-orbit-view.mjs':'drive-orbit-view.mjs','/drive-orbit.css':'drive-orbit.css','/drive-orbit-model.mjs':'drive-orbit-model.mjs'});
        const filename=allowed[url.pathname];if(!filename)throw new HttpError(404,'Not found');const file=path.join(ROOT,'public',filename);if(!fs.existsSync(file))throw new HttpError(404,'UI not available');const contentTypes={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.png':'image/png'};res.writeHead(200,{'Content-Type':contentTypes[path.extname(file)]??'application/octet-stream'});if(req.method==='HEAD')return res.end();return fs.createReadStream(file).pipe(res);
      }
      const recipientMatch=url.pathname.match(/^\/api\/hankki\/checkins\/([a-f0-9-]+)$/);

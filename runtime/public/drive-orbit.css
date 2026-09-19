@@ -1,0 +1,62 @@
+/* BLACKHOLE Drive Orbit (Seven Drives UI, issue #25). Shared by the web
+   cockpit and the native Android/Tauri controller, like living-core.css
+   and project-universe.css - never a second divergent implementation.
+   Uses only the --accent/--panel/--line/--text/--muted tokens both hosts
+   already define.
+
+   Organic interaction: opening the orbit plays a fade+rise on the panel
+   and a short staggered unfold on each drive node - original BLACKHOLE
+   visual language (orb/ring motifs already established by living-core.css),
+   never a copied anime/game UI. This is a partial organic transition: the
+   BLACKHOLE Core orb itself is not carried into this panel (it lives on
+   Home), so the "Core remains the conceptual anchor" requirement is only
+   met by the eyebrow/identity heading here, not a continuous shared
+   element - reported as partial, not complete. */
+.drive-orbit { display:grid; gap:14px; animation:dob-panel-in .28s ease-out; }
+.dob-header { display:flex; align-items:center; justify-content:space-between; }
+.dob-close { color:var(--accent); }
+.dob-notice { background:#4a3712; color:#f2c46a; border-radius:10px; padding:10px 14px; font-size:.875rem; }
+.dob-loading, .dob-empty-line { color:var(--muted); font-size:.875rem; }
+
+.dob-explain-card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px 16px; display:grid; gap:6px; }
+.dob-explanation { font-size:.9375rem; overflow-wrap:anywhere; margin:0; }
+
+.dob-orbit { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
+.dob-node {
+  display:grid; gap:6px; justify-items:start; text-align:left;
+  background:var(--panel); border:1px solid #385249; border-radius:14px; padding:14px;
+  color:inherit; min-height:76px;
+  animation:dob-node-in .3s ease-out backwards;
+}
+.dob-node:nth-child(1) { animation-delay:.02s; }
+.dob-node:nth-child(2) { animation-delay:.06s; }
+.dob-node:nth-child(3) { animation-delay:.1s; }
+.dob-node:nth-child(4) { animation-delay:.14s; }
+.dob-node:nth-child(5) { animation-delay:.18s; }
+.dob-node:nth-child(6) { animation-delay:.22s; }
+.dob-node:nth-child(7) { animation-delay:.26s; }
+.dob-node.is-causal { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset; }
+.dob-node-name { font-size:1rem; font-weight:600; }
+.dob-node-badge { border-radius:999px; background:#0d3a2c; color:#43d9a8; padding:2px 9px; font-size:.6875rem; }
+.dob-node-pressure { color:var(--muted); font-size:.8125rem; font-variant-numeric:tabular-nums; }
+
+.dob-detail { display:grid; gap:10px; animation:dob-panel-in .28s ease-out; }
+.dob-back { color:var(--accent); justify-self:start; }
+.dob-detail h2 { font-size:1.125rem; }
+.dob-causal-line { color:var(--accent); font-size:.875rem; margin:0; }
+.dob-pressure-line { font-size:.9375rem; margin:0; }
+.dob-reason { font-size:.9375rem; overflow-wrap:anywhere; margin:0; }
+.dob-goal { font-size:.875rem; color:var(--muted); overflow-wrap:anywhere; margin:0; }
+.dob-measured, .dob-trend { color:var(--muted); font-size:.8125rem; margin:0; }
+
+@keyframes dob-panel-in { from { opacity:0; transform:translateY(10px) scale(.98); } to { opacity:1; transform:none; } }
+@keyframes dob-node-in { from { opacity:0; transform:scale(.9); } to { opacity:1; transform:none; } }
+
+@media(max-width:480px) {
+  .dob-orbit { grid-template-columns:1fr 1fr; }
+  .dob-node { padding:12px; min-height:68px; }
+}
+
+@media(prefers-reduced-motion:reduce) {
+  .drive-orbit, .dob-detail, .dob-node { animation:none; }
+}

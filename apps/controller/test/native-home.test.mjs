@@ -26,8 +26,9 @@ function setup() {
   dom.window.HTMLElement.prototype.scrollIntoView = function (options) { scrolled.push({id: this.id || this.className, options}); };
   const shownViews = [];
   const shownProjects = [];
-  const nav = createNativeHomeNavigation({liveVoiceRoot: doc.getElementById('live-voice'), doc, showJobsView: () => shownViews.push('jobs'), showProjectsView: projectId => shownProjects.push(projectId ?? null)});
-  return {dom, doc, nav, scrolled, shownViews, shownProjects, close: () => dom.window.close()};
+  const driveOrbitOpens = [];
+  const nav = createNativeHomeNavigation({liveVoiceRoot: doc.getElementById('live-voice'), doc, showJobsView: () => shownViews.push('jobs'), showProjectsView: projectId => shownProjects.push(projectId ?? null), showDriveOrbit: () => driveOrbitOpens.push(true)});
+  return {dom, doc, nav, scrolled, shownViews, shownProjects, driveOrbitOpens, close: () => dom.window.close()};
 }
 
 test('voice navigation scrolls to the existing native Live Voice card and clicks its real toggle when enabled', () => {
@@ -81,6 +82,15 @@ test('project-universe navigation with no specific project id still opens the Pr
   h.close();
 });
 
+test('drive-orbit navigation opens the real native Drive Orbit overlay, never the advanced-tools drawer and never a bottom-nav tab (Seven Drives UI)', () => {
+  const h = setup();
+  const details = h.doc.querySelector('.tools-drawer');
+  h.nav.navigate('drive-orbit');
+  assert.equal(details.open, false, 'the owner must never be routed through 고급 도구 to reach the Drive Orbit');
+  assert.deepEqual(h.driveOrbitOpens, [true]);
+  h.close();
+});
+
 test('control navigation calls the real native jobs view switch, not a fabricated one', () => {
   const h = setup();
   h.nav.navigate('control');
@@ -101,7 +111,7 @@ test('the shared Living Core view actually mounts into the native #living-core-r
   const h = setup();
   const view = createLivingCoreView({root: h.doc.getElementById('living-core-root'), onNavigate: id => h.nav.navigate(id)});
   view.updateState({
-    core: {activity: 'idle', missionGoal: '근거 공백을 확인한다', focusProjectName: 'Buzz', dominantDriveName: '강욕', activeShadowCount: 2, recentArtifactResult: null, verifiedResult: null, lastHeartbeatAt: null},
+    core: {activity: 'idle', missionGoal: '근거 공백을 확인한다', focusProjectName: 'Buzz', dominantDriveId: 'greed', dominantDriveWorldName: '부', activeShadowCount: 2, recentArtifactResult: null, verifiedResult: null, lastHeartbeatAt: null},
     emergencyStop: false,
     projects: [{id: '1', name: 'Buzz', status: 'active'}],
     memories: [{id: 'm-1', text: '최근 기억', createdAt: '2026-09-18T00:00:00.000Z'}],
@@ -110,7 +120,7 @@ test('the shared Living Core view actually mounts into the native #living-core-r
   assert.match(root.innerHTML, /living-orb idle/);
   assert.match(root.textContent, /블랙홀에게 말하기/);
   assert.match(root.textContent, /근거 공백을 확인한다/);
-  assert.match(root.textContent, /강욕/);
+  assert.match(root.textContent, /부/);
   assert.match(root.textContent, /그림자 2개 활동 중/);
   assert.match(root.textContent, /최근 기억/);
 

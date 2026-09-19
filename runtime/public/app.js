@@ -12,6 +12,8 @@ const {createGrowthView} = await import('/growth-view.mjs');
 const {createLivingCoreView} = await import('/living-core-view.mjs');
 const {createProjectUniverseView} = await import('/project-universe-view.mjs');
 const {projectUniverseListModel,projectUniverseDetailModel} = await import('/project-universe-model.mjs');
+const {createDriveOrbitView} = await import('/drive-orbit-view.mjs');
+const {driveOrbitModel} = await import('/drive-orbit-model.mjs');
 const {connectBrowser,enableInstall} = await import('/web-client.mjs');
 const $ = (id) => document.getElementById(id);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -71,7 +73,28 @@ const requestId=()=>crypto.randomUUID();
 const autopilotView=createAutopilotView({root:$('autopilot-root'),notify,onNavigate:tab=>showTab(tab),onCapabilityAction:async(action,payload)=>{const result=await durableMutation(`/api/capabilities/${action}`,payload);await refresh(true);return result;},onControl:async enabled=>{await durableMutation('/api/autopilot',{enabled});await refresh(true);},onOpenJob:()=>{showTab('control');void refresh(true);},onOpenArtifact:id=>perform(()=>openArtifact(id))});
 const growthView=createGrowthView({root:$('growth-root'),onNavigate:tab=>showTab(tab),storage:requestStorage});
 function renderGrowth() {growthView.updateState(current,questData);}
-const livingCoreView=createLivingCoreView({root:$('living-core-root'),onNavigate:(tab,projectId)=>{showTab(tab);if(tab==='project-universe'&&projectId)void openProjectUniverse(projectId);}});
+const livingCoreView=createLivingCoreView({root:$('living-core-root'),onNavigate:(tab,projectId)=>{if(tab==='drive-orbit'){void openDriveOrbit();return;}showTab(tab);if(tab==='project-universe'&&projectId)void openProjectUniverse(projectId);}});
+// Seven Drives UI (issue #25): a real overlay/panel reached only from the
+// Home drive chip - deliberately NOT a permanent nav tab/tab-panel, so it
+// never touches activeTab/showTab. One bounded GET /api/drives/status per
+// open, combined with the same core summary living-core-view.mjs already
+// renders - never a second scoring engine, never polled for animation.
+const driveOrbitView=createDriveOrbitView({root:$('drive-orbit-root'),onOpenProject:id=>{$('drive-orbit-dialog').close();void openProjectUniverse(id);},onClose:()=>$('drive-orbit-dialog').close()});
+let driveOrbitEpoch=0;
+async function openDriveOrbit(){
+  const epoch=++driveOrbitEpoch;
+  driveOrbitView.reset();
+  $('drive-orbit-dialog').showModal();
+  driveOrbitView.updateState({screen:'orbit',loading:true,notice:null});
+  try{
+    const status=await api('/api/drives/status');
+    if(epoch!==driveOrbitEpoch)return;
+    driveOrbitView.updateState({screen:'orbit',...driveOrbitModel(status,current?.core),loading:false,notice:null});
+  }catch(error){
+    if(epoch!==driveOrbitEpoch)return;
+    driveOrbitView.updateState({screen:'orbit',loading:false,notice:friendly(error.message)});
+  }
+}
 const projectUniverseView=createProjectUniverseView({root:$('project-universe-root'),onOpenProject:id=>void openProjectUniverse(id),onBack:()=>{projectUniverseOpenId=null;projectUniverseView.updateState(projectUniverseListModelForCurrentState());},onNavigate:(target,payload)=>{showTab(target);if(target==='sources'&&payload?.projectId){const card=[...document.querySelectorAll('[data-project-edit]')].find(button=>button.dataset.projectEdit===payload.projectId)?.closest('article');card?.scrollIntoView({block:'center'});}},onMilestoneAction:(action,payload)=>projectMilestoneAction(action,payload)});
 let projectUniverseOpenId=null;
 function projectUniverseListModelForCurrentState(){return projectUniverseListModel(current?.projects,current?.jobs);}
