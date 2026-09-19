@@ -1,5 +1,5 @@
 const LOCAL_JOB_TYPES = Object.freeze([
-  'document', 'diagnostics', 'evolution', 'world', 'video', 'forai', 'capability',
+  'document', 'diagnostics', 'evolution', 'world', 'video', 'forai', 'capability', 'verify',
 ]);
 const MODEL_JOB_TYPES = Object.freeze(['agent', 'ai']);
 const DEVELOPMENT_CODE_MODES = Object.freeze(['generate', 'repair']);
@@ -51,6 +51,7 @@ export function executionBoundary(job) {
     const trigger = job.voiceConversation === true ? 'voice-request'
       : job.researchRequest ? 'research-request'
       : job.botAssignment ? 'project-bot-request'
+      : job.shadowAssignment ? 'shadow-army-request'
       : job.autopilot ? 'bounded-autopilot-request'
       : job.questId ? 'goal-run-request'
       : 'explicit-request';

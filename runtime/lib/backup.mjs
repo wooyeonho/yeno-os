@@ -19,6 +19,7 @@ import { validateDiscovery } from './discovery.mjs';
 import { validateEcosystem } from './ecosystem.mjs';
 import { validateAgentJournal, recoverAgentJournals } from './agent.mjs';
 import {validateBotAssignment} from './project-bots.mjs';
+import {validateShadowAssignment} from './shadow-army.mjs';
 import {validateQuestState} from './quests.mjs';
 import {emptyStudio,validateStudio} from './studio.mjs';
 import {validateVideoInput} from './video.mjs';
@@ -124,6 +125,7 @@ function validateState(state) {
     if (Object.hasOwn(job, 'worldSnapshot')) { if (job.type !== 'world') fail('invalid world job'); validateWorldSnapshot(job.worldSnapshot); }
     if (job.type === 'world' && job.step >= 2 && !job.worldSnapshot) fail('missing world checkpoint');
     validateBotAssignment(job);
+    validateShadowAssignment(job);
     timestamp(job.createdAt); timestamp(job.updatedAt);
     if (Date.parse(job.updatedAt) < Date.parse(job.createdAt)) fail('invalid job timestamp order');
     if (job.status === 'completed' && (job.step !== 3 || job.artifacts.length === 0)) fail('invalid completed job');

@@ -75,6 +75,7 @@ class HttpError extends Error {constructor(status,message,extra={}){super(messag
 function requiredText(value,maximum=80000){if(typeof value!=='string'||!value.trim())throw new HttpError(400,'text must be a non-empty string');if(value.length>maximum)throw new HttpError(400,`text is limited to ${maximum} characters`);return value.trim();}
 import {publicJob} from './lib/job-view.mjs';
 import {BotError,planProjectBots,botBlockReason,botCanStart,botStatus,botDocument} from './lib/project-bots.mjs';
+import {ShadowArmyError,planShadowMission,shadowJobFromSpec,shadowDependenciesMet,shadowDependencyFailed,shadowBlockReason,verifyShadowArtifacts,missionStatus} from './lib/shadow-army.mjs';
 function publicSnapshot(snapshot){const {data,...out}=snapshot;return out;}
 const examples=['세계 현황','흡수 현황','자율 점검','자율 임무: 공식 자료를 읽고 다음 개선 초안을 만들어줘','운영 브리핑','운영 현황','기억해: 이번 주에는 YENO 한 프로젝트에 집중한다','찾아줘: YENO','문서 만들어: YENO의 첫 목표는 기억과 실행이다','프로젝트 목록','프로젝트 브리핑: 프로젝트 이름','프로젝트 작업: 프로젝트 이름 | 준비할 작업','자료 목록','자료 브리핑: 자료 ID','개선 후보: 자료 ID','진단해','개선점 찾아줘'];
 
@@ -728,6 +729,41 @@ export function createYenoServer(options={}) {
    event(`Project bots ${action}; no unattended shell, publish, payment or deployment.`);
    return {status:200,payload:{kind:'bots',bots:botStatus(s,profiles),stoppingJobIds:[...controllers.keys()].filter(id=>s.jobs.some(j=>j.id===id&&j.botAssignment))}};
  }
+ // Phase D (issue #25 §6): the one call that plans a real Shadow Army
+ // mission for an existing project. Mirrors startBots exactly - a pure
+ // planner (planShadowMission) produces plain specs, this durable-writer
+ // turns each into one real job and pushes all of them in the same save, and
+ // s.concurrency is raised the same way startBots already does so the two
+ // independent leaf shadows (scout, researcher) can actually run at once.
+ function startShadowMission(body){
+   if(!body.requestId)throw new ShadowArmyError(400,'지속 요청 번호가 필요합니다.');
+   const plan=planShadowMission(s,body),at=now();
+   const jobs=plan.specs.map(spec=>shadowJobFromSpec(spec,at));
+   if(agentSettings.ready)s.modules.ai=true;
+   s.jobs.unshift(...jobs);s.concurrency=Math.max(s.concurrency,2);
+   event(`Shadow Army mission planned: ${plan.missionId} (${jobs.length} shadows) for project.`);
+   return {status:201,payload:{kind:'shadowMission',missionId:plan.missionId,mission:missionStatus(plan.missionId,s)}};
+ }
+ // A verify job completing verified:true is the only thing in this slice
+ // that may advance a real project milestone or record a memory event -
+ // never a shadow's own completion, which only proves the artifact exists,
+ // not that it was checked. Reuses the exact same milestone/memory-event
+ // functions the owner's own project/memory routes already call.
+ function advanceMissionFromVerify(verifyJob){
+   const index=s.projects.findIndex(p=>p.id===verifyJob.projectId);
+   if(index<0)return;
+   const at=now(),missionId=verifyJob.shadowAssignment.missionId;
+   try{
+     const {project,milestone}=addMilestone(s.projects[index],`Shadow Army 임무 완료 · ${missionId.slice(0,8)}`,at);
+     s.projects[index]=setMilestoneCompletion(project,milestone.id,true,at);
+     event(`Shadow Army mission verified and milestone recorded: ${s.projects[index].name}`);
+   }catch(error){event(`Shadow Army milestone update skipped: ${error.message}`);return;}
+   try{
+     const claim={type:'result',text:`Shadow Army 임무(${missionId})가 검증을 통과해 프로젝트 마일스톤을 갱신했습니다.`,confidence:1,projectId:s.projects[index].id,questId:null,sourceRefs:[{type:'job',id:verifyJob.id}]};
+     const memoryEvent=createMemoryEvent(claim,s,{at});
+     s.memoryEvents=addMemoryEvent(s.memoryEvents,memoryEvent,s);
+   }catch(error){event(`Shadow Army memory event failed (milestone preserved): ${error.message}`);}
+ }
  function addMemory(body){requireModule('memory');const memory={id:uid(),text:requiredText(body.text,20000),createdAt:now()};s.memories.unshift(memory);event('Memory saved.');return memory;}
  function ensureUniqueProject(name,exceptId){if(s.projects.some(project=>project.id!==exceptId&&projectNameKey(project.name)===projectNameKey(name)))throw new ProjectError(409,'A project with this name already exists.');}
  function addProject(body){const fields=validateProjectFields(body,{creating:true});ensureUniqueProject(fields.name);const at=now(),project={id:uid(),...fields,version:1,createdAt:at,updatedAt:at,milestones:[]};s.projects.push(project);event(`Project registered: ${project.name}`);return project;}
@@ -850,12 +886,21 @@ export function createYenoServer(options={}) {
    if(mission){const job=newJob({type:'agent',title:'YENO 자동 자료 검토',text:mission.text});job.agentJournal.automaticKey=mission.key;job.agentJournal.automaticScope=mission.scope;save();}
    if(!s.emergencyStop){for(const job of s.jobs.slice().reverse()){
      if(job.botAssignment&&job.status==='paused'&&job.pauseReason==='dailyBudget'&&!botBlockReason(job,s,profiles)&&agentUsage(s.jobs).attempts<configFor(job).dailyCallLimit){job.status='queued';delete job.pauseReason;touch(job);save();}
+     // Shadow Army (issue #25 §6): a dependent shadow/verify job starts
+     // paused with pauseReason 'dependencyPending' at creation (see
+     // shadow-army.mjs shadowJobFromSpec) - dependencies are resolved only
+     // from real sibling job records, never a second graph, and a failed
+     // dependency fails the dependent honestly rather than leaving it stuck.
+     if(job.shadowAssignment&&job.status==='paused'&&job.pauseReason==='dependencyPending'){
+       if(shadowDependencyFailed(job,s.jobs)){job.status='failed';job.error='shadow_dependency_failed';touch(job);save();}
+       else if(shadowDependenciesMet(job,s.jobs)){job.status='queued';delete job.pauseReason;touch(job);save();}
+     }
      if(active()>=s.concurrency)break;
      if(job.status!=='queued'||!botCanStart(job,s,controllers))continue;
      if(job.type==='code'&&s.jobs.some(other=>other.id!==job.id&&other.type==='code'&&other.status==='running'))continue;
-     const blocked=job.botAssignment?botBlockReason(job,s,profiles):null;
+     const blocked=job.botAssignment?botBlockReason(job,s,profiles):job.shadowAssignment?shadowBlockReason(job,s,agentSettings):null;
      const lastAssistant=job.agentJournal?.history.findLast(m=>m.role==='assistant');
-     const budget=job.botAssignment&&job.step<2&&(!lastAssistant||lastAssistant.toolCalls.length>0)&&agentUsage(s.jobs).attempts>=configFor(job).dailyCallLimit;
+     const budget=(job.botAssignment||job.shadowAssignment)&&job.step<2&&(!lastAssistant||lastAssistant.toolCalls.length>0)&&agentUsage(s.jobs).attempts>=configFor(job).dailyCallLimit;
      if(blocked||budget||(!localResearchCompletion(job)&&!s.modules[jobModule(job)]&&!job.questId)){job.status='paused';job.pauseReason=blocked||(budget?'dailyBudget':'moduleDisabled');touch(job);save();continue;}
      job.status='running';delete job.pauseReason;touch(job);save();const generation=(generations.get(job.id)??0)+1;generations.set(job.id,generation);runStep(job,generation);
    }}
@@ -987,6 +1032,16 @@ export function createYenoServer(options={}) {
          validateCapabilityRequest(job.capabilityRequest,s.capabilities);
          const result=executeCapability(s.capabilities,job.capabilityRequest.id,job.capabilityRequest.input,{hash:job.capabilityRequest.hash,runId:job.id});
          if(!valid())return;s.capabilities=result.registry;job.draft=result.result.markdown;
+       }else if(job.type==='verify'){
+         // Shadow Army Verifier (issue #25 §6): deterministic, local, no
+         // model call - runs in its own job/context, separate from the
+         // shadow(s) it checks, exactly as required. Reuses the same
+         // completed/artifact/settled-call bar quests.mjs's
+         // recordQuestOutcome already requires before accepting evidence.
+         const subjects=job.verifyRequest.subjectJobIds.map(id=>s.jobs.find(j=>j.id===id));
+         const verdict=verifyShadowArtifacts(subjects);
+         job.verifyResult={...verdict,checkedAt:now()};
+         job.draft=`# Shadow Army 검증 결과\n\n임무: ${job.shadowAssignment.missionId}\n검증: ${verdict.verified?'통과':'불합격'}\n\n${verdict.subjects.map(subject=>`- 작업 ${subject.jobId??'(없음)'}: ${subject.verified?'통과':`불합격 (${subject.reasons.join(', ')})`}`).join('\n')}\n\n결정론적 검사만 수행했습니다: 완료 상태, 산출물 존재, 모델 호출 결과 확인. 산출물 내용의 품질은 판단하지 않습니다.\n`;
        }else if(job.type==='document'){
          const paras=job.normalized.split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean);
          job.draft=job.operatingReport?`${job.normalized}\n\n---\n출처: YENO에 저장된 작업·프로젝트·자료의 생성 시점 상태.\n보고서 입력 SHA-256: ${job.inputSha256}\n`:`# ${job.title.replace(/[\r\n]/g,' ')}\n\n작성 시각: ${now()}\n\n## 입력 내용을 문서로 정리\n${paras.map((p,i)=>`### ${i+1}\n\n${p}`).join('\n\n')}\n\n## 출처와 처리 내역\n- 출처: ${job.sourceReport?'YENO에 등록된 자료와 검토 기록':job.projectReport?'YENO에 등록된 프로젝트 정보와 소유자의 요청':'연호님이 이 작업에 입력한 텍스트'}\n- 처리: 유니코드·줄바꿈 정규화, 빈 줄 기준 문단 분리, 제목·출처 부착\n- 외부 조사 또는 AI 호출: 없음\n- 입력 SHA-256: ${job.inputSha256}\n- 원문 의미를 해석하거나 사실 확인한 문서가 아닙니다.\n`;
@@ -1000,9 +1055,9 @@ export function createYenoServer(options={}) {
        }
        else {const draft=await aiDraft(job);if(!valid())return;job.draft=`# ${job.title}\n\n${draft}\n\n---\nAI 생성 초안 · 모델: ${aiModel}\n외부 사실 검증이나 도구 실행은 하지 않았습니다.\n입력 SHA-256: ${job.inputSha256}\n`;}
        job.step=2;
-     }else if(job.step===2){writeArtifact(job,job.draft,`${job.repositoryTask?'repository-patch':job.researchRequest?'research-answer':job.type}-${job.id.slice(0,8)}.${job.repositoryTask?'json':'md'}`,job.repositoryTask?'application/json':undefined);if(job.type==='forai'&&job.productionEvidence){writeArtifact(job,JSON.stringify(job.productionEvidence,null,2),`forai-evidence-${job.id.slice(0,8)}.json`,'application/json');}if(job.autopilot?.kind==='forai')writeArtifact(job,JSON.parse(job.input).content,`research-page-${job.autopilot.parentJobId.slice(0,8)}.html`,'text/html; charset=utf-8');if(job.type==='code'&&job.codeOutput)writeArtifact(job,job.codeOutput,`code-${job.codeTask.mode==='run'?'result':'source'}-${job.id.slice(0,8)}.json`,'application/json');delete job.draft;delete job.productionEvidence;delete job.codeOutput;job.step=3;job.status=job.type==='code'&&job.codeCheckpoint?.passed===false?'failed':'completed';event(`Job completed and output verified: ${job.title}`);}
+     }else if(job.step===2){writeArtifact(job,job.draft,`${job.repositoryTask?'repository-patch':job.researchRequest?'research-answer':job.type}-${job.id.slice(0,8)}.${job.repositoryTask?'json':'md'}`,job.repositoryTask?'application/json':undefined);if(job.type==='forai'&&job.productionEvidence){writeArtifact(job,JSON.stringify(job.productionEvidence,null,2),`forai-evidence-${job.id.slice(0,8)}.json`,'application/json');}if(job.autopilot?.kind==='forai')writeArtifact(job,JSON.parse(job.input).content,`research-page-${job.autopilot.parentJobId.slice(0,8)}.html`,'text/html; charset=utf-8');if(job.type==='code'&&job.codeOutput)writeArtifact(job,job.codeOutput,`code-${job.codeTask.mode==='run'?'result':'source'}-${job.id.slice(0,8)}.json`,'application/json');delete job.draft;delete job.productionEvidence;delete job.codeOutput;job.step=3;job.status=(job.type==='code'&&job.codeCheckpoint?.passed===false)||(job.type==='verify'&&job.verifyResult?.verified===false)?'failed':'completed';event(`Job completed and output verified: ${job.title}`);if(job.type==='verify'&&job.status==='completed')advanceMissionFromVerify(job);}
      touch(job);save();
-   }catch(error){if(!valid())return;const hold=job.botAssignment&&error instanceof AgentError&&({daily_call_limit:'dailyBudget',previous_call_outcome_unknown:'outcomeUnknown',project_scope_changed:'projectChanged'}[error.code]);job.status=hold?'paused':'failed';if(hold)job.pauseReason=hold;job.error=job.type==='agent'?(error instanceof AgentError||error instanceof ResearchError?error.message:'Agent execution stopped or failed; inspect preserved checkpoints.'):job.type==='ai'?(String(error.message).startsWith('AI provider')?error.message:'AI request failed or timed out; no provider response details retained.'):String(error.message).slice(0,300);touch(job);event(`Job failed: ${job.title}`);save();}
+   }catch(error){if(!valid())return;const hold=(job.botAssignment||job.shadowAssignment)&&error instanceof AgentError&&({daily_call_limit:'dailyBudget',previous_call_outcome_unknown:'outcomeUnknown',project_scope_changed:'projectChanged'}[error.code]);job.status=hold?'paused':'failed';if(hold)job.pauseReason=hold;job.error=job.type==='agent'?(error instanceof AgentError||error instanceof ResearchError?error.message:'Agent execution stopped or failed; inspect preserved checkpoints.'):job.type==='ai'?(String(error.message).startsWith('AI provider')?error.message:'AI request failed or timed out; no provider response details retained.'):String(error.message).slice(0,300);touch(job);event(`Job failed: ${job.title}`);save();}
    if(valid()){const timer=setTimeout(()=>runStep(job,generation),250);timer.unref();}
  }
  function bearer(req){const supplied=req.headers.authorization;if(typeof supplied!=='string'||!supplied.startsWith('Bearer '))return null;return supplied.slice(7);}
@@ -1490,6 +1545,7 @@ export function createYenoServer(options={}) {
        if(questAction){if(!b.requestId)throw new HttpError(400,'Persistent requestId required');if(Object.keys(b).some(k=>!(questAction[2]==='run'?['requestId']:['requestId','provider','maxCalls']).includes(k)))throw new HttpError(400,'Unknown goal action field');return questAction[2]==='run'?runQuest(questAction[1]):reviewQuest(questAction[1],b);}
        if(url.pathname==='/api/outcomes'){if(!b.requestId)throw new HttpError(400,'Persistent requestId required');verifiedQuestArtifact(findQuest(b.questId),b.artifactId);const outcome=recordQuestOutcome(b,s);s.outcomes.unshift(outcome);event('Owner-reported outcome recorded with an actual output reference.');const reality=outcomeRealities(s).find(r=>r.outcomeId===outcome.id);const kirbyAcquisition=kirbyAutoAcquire();return {status:201,payload:{outcome,reality,...(kirbyAcquisition?{kirbyAcquisition}:{})}};}
        if(url.pathname==='/api/bots'){if(!b.requestId)throw new BotError(400,'Persistent requestId required');if(b.action==='start')return startBots(b);if(Object.keys(b).some(k=>!['action','requestId'].includes(k)))throw new BotError(400,'Unknown bot control field');return controlBots(b.action);}
+       if(url.pathname==='/api/shadow-army/missions')return startShadowMission(b);
        if(url.pathname==='/api/ecosystem'){
          if(typeof b.enabled!=='boolean'||Object.keys(b).some(key=>!['enabled','requestId'].includes(key))||!b.requestId)throw new HttpError(400,'Provide enabled:boolean and persistent requestId');
          return controlEcosystem(b.enabled);
@@ -1587,7 +1643,7 @@ export function createYenoServer(options={}) {
        throw new HttpError(404,'Not found');
      },{required:versioned||!!principal.web,safetyAction:url.pathname==='/api/code/disable'||url.pathname==='/api/capabilities/disable'||(url.pathname==='/api/studio'&&isStudioSafetyAction(s.studio,b))||(url.pathname==='/api/bots'&&b.action==='stop')||(url.pathname==='/api/commands'&&/^(?:봇|자동)\s*운영\s*중지$/.test(b.text??''))||(url.pathname==='/api/control'&&b.action==='stop')||(['/api/discovery','/api/ecosystem','/api/autopilot'].includes(url.pathname)&&b.enabled===false)});
      respond(res,result.status,result.payload);
-   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof RepositoryPatchError||error instanceof CodeWorkshopError||error instanceof CodeSandboxError||error instanceof CapabilityError||error instanceof ResearchError||error instanceof WebSessionError||error instanceof ProductionCapacityError||error instanceof StudioError||error instanceof VideoError||error instanceof ForAiError||error instanceof QuestError||error instanceof BotError||error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError||error instanceof RequestLedgerError;if(!known&&process.env.YENO_DEBUG_ERRORS)console.error(error);respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
+   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof RepositoryPatchError||error instanceof CodeWorkshopError||error instanceof CodeSandboxError||error instanceof CapabilityError||error instanceof ResearchError||error instanceof WebSessionError||error instanceof ProductionCapacityError||error instanceof StudioError||error instanceof VideoError||error instanceof ForAiError||error instanceof QuestError||error instanceof BotError||error instanceof ShadowArmyError||error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError||error instanceof RequestLedgerError;if(!known&&process.env.YENO_DEBUG_ERRORS)console.error(error);respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
  });
  server.requestTimeout=15000;server.headersTimeout=10000;
  server.on('upgrade',(req,socket,head)=>{

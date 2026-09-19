@@ -5,6 +5,7 @@ import { DISCOVERY_REPOS } from './discovery.mjs';
 
 import {publicEcosystem} from './ecosystem.mjs';
 import {validateBotAssignment} from './project-bots.mjs';
+import {validateShadowAssignment} from './shadow-army.mjs';
 
 import {AGENT_ENDPOINTS as ENDPOINTS, AgentError} from './provider-config.mjs';
 export {AgentError, agentConfig, agentConfigForProvider, agentProfiles} from './provider-config.mjs';
@@ -197,8 +198,10 @@ export async function runAgent({job,state,config,save,signal,fetchImpl=fetch,clo
   if (journal.provider!==config.provider || journal.model!==config.model) throw new AgentError('provider_changed_since_checkpoint');
   if (journal.calls.some(call=>call.status!=='settled')) throw new AgentError('previous_call_outcome_unknown');
   validateBotAssignment(job);
-  const live=()=>{if(signal.aborted)throw new AgentError('stopped');if(job.botAssignment){const p=state.projects.find(p=>p.id===job.projectId);if(!p||p.status!==job.botAssignment.context.status||p.version!==job.botAssignment.projectVersion)throw new AgentError('project_scope_changed');}};
-  const toolState=()=>job.botAssignment?{...state,projects:[job.botAssignment.context],jobs:state.jobs.filter(j=>j.projectId===job.projectId),memories:[],sources:state.sources.filter(source=>!source.projectId||source.projectId===job.projectId)}:state;
+  validateShadowAssignment(job);
+  const scope=job.botAssignment??job.shadowAssignment;
+  const live=()=>{if(signal.aborted)throw new AgentError('stopped');if(scope){const p=state.projects.find(p=>p.id===job.projectId);if(!p||p.status!==scope.context.status||p.version!==scope.projectVersion)throw new AgentError('project_scope_changed');}};
+  const toolState=()=>scope?{...state,projects:[scope.context],jobs:state.jobs.filter(j=>j.projectId===job.projectId),memories:[],sources:state.sources.filter(source=>!source.projectId||source.projectId===job.projectId)}:state;
   while (true) {
     live();
     const lastAssistant=job.codeTask&&journal.history.at(-1)?.role==='user'?null:journal.history.findLast(message=>message.role==='assistant');

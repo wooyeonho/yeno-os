@@ -1,6 +1,7 @@
 import { milestoneProgress } from './projects.mjs';
 import { publicQuest } from './quests.mjs';
 import { driveWorldName, driveWorldNameEn } from './seven-drives.mjs';
+import { missionsForProject } from './shadow-army.mjs';
 
 // BLACKHOLE Project Universe (Phase C, issue #25) — a pure read-side
 // projection over records that already carry projectId (jobs, quests,
@@ -56,6 +57,11 @@ export function projectUniverseSummary(state, projectId) {
   return {
     projectId: project.id,
     milestones: milestoneProgress(project),
+    // Phase D (issue #25 §6): real Shadow Army missions for this project,
+    // reusing the same real job records already filtered above - no second
+    // index. This is the minimal data connection Phase D calls for; the
+    // dedicated Shadow Army visualization is UI Slice 3, not this patch.
+    shadowMissions: missionsForProject(project.id, state),
     blockers: blockersFor(jobs, quests),
     dominantDrives: dominantDrives(quests),
     quests: quests.slice(0, MAX_LINKED_RECORDS).map(quest => ({
