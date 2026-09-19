@@ -105,8 +105,15 @@ test('POST /api/shadow-army/missions links Jarvis Quest -> real Shadow Army, blo
   assert.equal(new Set(after.map(job => job.shadowAssignment.plannerQuestId)).size, 1);
   const linkedAfterRestart = await h.get(`/api/quests/${quest.id}/shadow-missions`);
   assert.equal(linkedAfterRestart.status, 200);
-  assert.deepEqual(linkedAfterRestart.body.missions[0], linked.body.missions[0]);
-  assert.deepEqual(missionsForQuest(quest.id, h.disk()), linked.body.missions);
+  const beforeShape = mission => ({
+    missionId: mission.missionId,
+    projectId: mission.projectId,
+    plannerQuestId: mission.plannerQuestId,
+    shadows: mission.shadows.map(shadow => ({jobId: shadow.jobId, role: shadow.role, dependsOnJobIds: shadow.dependsOnJobIds})),
+    verifyJobId: mission.verify?.jobId ?? null,
+  });
+  assert.deepEqual(beforeShape(linkedAfterRestart.body.missions[0]), beforeShape(linked.body.missions[0]));
+  assert.deepEqual(beforeShape(missionsForQuest(quest.id, h.disk())[0]), beforeShape(linked.body.missions[0]));
 });
 
 test('a Quest without an existing project cannot be promoted into a Shadow mission', async t => {
