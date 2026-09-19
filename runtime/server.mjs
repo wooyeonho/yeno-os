@@ -75,7 +75,7 @@ class HttpError extends Error {constructor(status,message,extra={}){super(messag
 function requiredText(value,maximum=80000){if(typeof value!=='string'||!value.trim())throw new HttpError(400,'text must be a non-empty string');if(value.length>maximum)throw new HttpError(400,`text is limited to ${maximum} characters`);return value.trim();}
 import {publicJob} from './lib/job-view.mjs';
 import {BotError,planProjectBots,botBlockReason,botCanStart,botStatus,botDocument} from './lib/project-bots.mjs';
-import {ShadowArmyError,planShadowMission,shadowJobFromSpec,shadowDependenciesMet,shadowDependencyFailed,shadowBlockReason,verifyShadowArtifacts,verifyFailureSummary,missionStatus} from './lib/shadow-army.mjs';
+import {ShadowArmyError,planShadowMission,shadowJobFromSpec,shadowDependenciesMet,shadowDependencyFailed,shadowBlockReason,verifyShadowArtifacts,verifyFailureSummary,missionStatus,missionsForQuest} from './lib/shadow-army.mjs';
 import {JEV_ENGINE_VERSION,JEV_CALIBRATION_VERSION,JEV_SHADOW_LOG_CAP,evaluateDecisions,buildShadowDispatchRequest,buildVerifierEscalateRequest,shadowDispatchLogEntry,calibrateShadowLog} from './lib/jev.mjs';
 function publicSnapshot(snapshot){const {data,...out}=snapshot;return out;}
 const examples=['세계 현황','흡수 현황','자율 점검','자율 임무: 공식 자료를 읽고 다음 개선 초안을 만들어줘','운영 브리핑','운영 현황','기억해: 이번 주에는 YENO 한 프로젝트에 집중한다','찾아줘: YENO','문서 만들어: YENO의 첫 목표는 기억과 실행이다','프로젝트 목록','프로젝트 브리핑: 프로젝트 이름','프로젝트 작업: 프로젝트 이름 | 준비할 작업','자료 목록','자료 브리핑: 자료 ID','개선 후보: 자료 ID','진단해','개선점 찾아줘'];
@@ -742,8 +742,10 @@ export function createYenoServer(options={}) {
    const jobs=plan.specs.map(spec=>shadowJobFromSpec(spec,at));
    if(agentSettings.ready)s.modules.ai=true;
    s.jobs.unshift(...jobs);s.concurrency=Math.max(s.concurrency,2);
-   event(`Shadow Army mission planned: ${plan.missionId} (${jobs.length} shadows) for project.`);
-   return {status:201,payload:{kind:'shadowMission',missionId:plan.missionId,mission:missionStatus(plan.missionId,s)}};
+   event(plan.plannerQuestId
+     ? `Jarvis 목표 ${plan.plannerQuestId}를 Shadow Army 임무 ${plan.missionId}에 연결했습니다.`
+     : `Shadow Army mission planned: ${plan.missionId} (${jobs.length} shadows) for project.`);
+   return {status:201,payload:{kind:'shadowMission',missionId:plan.missionId,plannerQuestId:plan.plannerQuestId??null,mission:missionStatus(plan.missionId,s)}};
  }
  // BLACKHOLE JEV v0 shadow-mode (issue #25 §4.6/§5.1): computes JEV's own
  // typed answer for a real dispatch/verify decision purely for comparison
@@ -1447,6 +1449,8 @@ export function createYenoServer(options={}) {
        const file=studioExport(s.studio,{kind:url.searchParams.get('kind'),id:url.searchParams.get('id')??undefined});
        res.writeHead(200,{'Content-Type':file.mimeType,'Content-Disposition':`attachment; filename="${file.name}"`,'Content-Length':Buffer.byteLength(file.content),'X-Content-SHA256':digest(file.content)});return res.end(file.content);
      }
+     const questShadowMatch=url.pathname.match(/^\/api\/quests\/([a-f0-9-]+)\/shadow-missions$/);
+     if(req.method==='GET'&&questShadowMatch){const quest=findQuest(questShadowMatch[1]);return respond(res,200,{questId:quest.id,projectId:quest.projectId,status:quest.status,missions:missionsForQuest(quest.id,s)});}
      if(req.method==='GET'&&url.pathname==='/api/quests')return respond(res,200,questState());
      // Already served on both surfaces the repository convention expects:
      // legacy GET /api/core accepts either credential kind (authenticate()
