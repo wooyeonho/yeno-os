@@ -1,6 +1,7 @@
 import '../../../runtime/public/studio.css';
 import '../../../runtime/public/living-core.css';
 import '../../../runtime/public/project-universe.css';
+import '../../../runtime/public/drive-orbit.css';
 import './style.css';
 import { fetch } from '@tauri-apps/plugin-http';
 import { appDataDir, join } from '@tauri-apps/api/path';
@@ -17,6 +18,7 @@ import { createNativeLiveVoiceView } from './native-live-voice-view.ts';
 import { createLivingCoreView } from '../../../runtime/public/living-core-view.mjs';
 import { createNativeHomeNavigation } from './native-home.ts';
 import { createNativeProjects } from './native-projects.ts';
+import { createNativeDrives } from './native-drives.ts';
 
 type Job = { id: string; title: string; status: string; version: number; updatedAt: string; artifacts: { id: string; name: string }[]; projectId?: string; pauseReason?: string };
 // BLACKHOLE Living Core (Phase A): a trimmed, already-derived projection of
@@ -64,6 +66,11 @@ let vaultPassword: string | null = null;
 let studio: ReturnType<typeof createStudioView> | null = null;
 let studioStorage: SecureRequestStorage | null = null;
 let activeView: 'studio' | 'world' | 'jobs' | 'projects' = 'studio';
+// Seven Drives UI (issue #25): a real overlay/panel, deliberately separate
+// from activeView/showView - it is reached only from the Home drive chip
+// and layers on top of whichever view is showing, never a fifth bottom-nav
+// destination.
+let driveOrbitOpen = false;
 let artifactFile: VerifiedFile | null = null, artifactUrl: string | null = null, artifactEpoch = 0, savingFile = false;
 // Native Gemini Live: an additive path owned entirely by native-live-voice-view.ts,
 // built on the exact same reused runtime/public/live-voice-client.mjs state
@@ -73,13 +80,27 @@ const liveVoiceView = createNativeLiveVoiceView($('live-voice'));
 // BLACKHOLE Living Core Home (FINAL UI Slice 1 correction, issue #25): the
 // exact same shared runtime/public/living-core-view.mjs the web cockpit
 // uses, mounted natively - never a second divergent implementation.
-const nativeHomeNavigation = createNativeHomeNavigation({liveVoiceRoot: $('live-voice'), showJobsView: () => showView('jobs'), showProjectsView: projectId => { showView('projects'); if (projectId) nativeProjects.openProject(projectId); }});
+const nativeHomeNavigation = createNativeHomeNavigation({liveVoiceRoot: $('live-voice'), showJobsView: () => showView('jobs'), showProjectsView: projectId => { showView('projects'); if (projectId) nativeProjects.openProject(projectId); }, showDriveOrbit: () => showDriveOrbit()});
 const livingCoreView = createLivingCoreView({root: $('living-core-root'), onNavigate: (id, projectId) => nativeHomeNavigation.navigate(id, projectId)});
 // UI Slice 2 (issue #25): the real native Projects destination, mounting
 // the exact same shared runtime/public/project-universe-view.mjs the web
 // cockpit uses. api() here already prefixes /api and attaches the current
 // device credential exactly like every other native call.
 const nativeProjects = createNativeProjects({root: $('project-universe-root'), api, requestId, onNavigate: target => { if (target === 'sources' || target === 'memory') showView('studio'); }});
+// Seven Drives UI (issue #25): the real native Drive Orbit overlay, mounting
+// the exact same shared runtime/public/drive-orbit-view.mjs the web cockpit
+// uses - one bounded GET /api/drives/status per open, never a second
+// scoring engine.
+const nativeDrives = createNativeDrives({root: $('drive-orbit-root'), api, onOpenProject: id => { closeDriveOrbit(); showView('projects'); nativeProjects.openProject(id); }, onClose: () => closeDriveOrbit()});
+function showDriveOrbit() {
+  driveOrbitOpen = true;
+  $('drive-orbit-overlay').hidden = false;
+  void nativeDrives.open(state?.core);
+}
+function closeDriveOrbit() {
+  driveOrbitOpen = false;
+  $('drive-orbit-overlay').hidden = true;
+}
 
 async function openVault(password: string) {
   if (nativeVault && vaultPassword === password) return nativeVault;
@@ -139,7 +160,7 @@ async function activate(value: Connection) {
     else await vault.store.insert(key, Array.from(encoder.encode(next)));
     await vault.stronghold.save();
   });
-  studio?.reset(); world.reset(); nativeProjects.reset(); clearArtifact();
+  studio?.reset(); world.reset(); nativeProjects.reset(); nativeDrives.reset(); closeDriveOrbit(); clearArtifact();
   const root = $('native-studio').cloneNode(false) as HTMLElement;
   $('native-studio').replaceWith(root);
   liveVoiceView.setConnection(value);
@@ -378,7 +399,7 @@ async function forgetConnection() {
   localStorage.removeItem(vaultMarker);
   liveVoiceView.setConnection(null);
   connection = null; commands = null; state = null; lastSeen = null;
-  studio?.reset(); studio = null; studioStorage = null; world.reset(); nativeProjects.reset(); clearArtifact();
+  studio?.reset(); studio = null; studioStorage = null; world.reset(); nativeProjects.reset(); nativeDrives.reset(); closeDriveOrbit(); clearArtifact();
   if (nativeVault) { await nativeVault.stronghold.unload(); nativeVault = null; }
   vaultPassword = null;
   $('receipt-body').replaceChildren(); $('artifact-body').textContent = ''; $<HTMLTextAreaElement>('text').value = '';

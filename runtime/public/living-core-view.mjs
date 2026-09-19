@@ -63,9 +63,16 @@ function missionCardHTML(core) {
 }
 
 function signalRowHTML(core) {
-  const drive = core?.dominantDriveName ? esc(core.dominantDriveName) : '아직 평가 전';
+  // Seven Drives UI (issue #25): the normal owner-facing Home shows only
+  // the canonical owner-facing world name (부/진화/지식/자유/명예/영향력/
+  // 창조), never the old internal sin vocabulary - that stays available
+  // only through blackholeCore's own advanced/diagnostic fields, not here.
+  // The chip is a real drill-down entry into the Drive Orbit surface; the
+  // Shadow chip stays inert until a real Shadow Army owner-facing surface
+  // exists.
+  const driveLabel = core?.dominantDriveWorldName ? esc(core.dominantDriveWorldName) : '욕망 평가 전';
   const shadows = core?.activeShadowCount > 0 ? `그림자 ${core.activeShadowCount}개 활동 중` : '활동 중인 그림자 없음';
-  return `<div class="living-signals"><span class="living-signal-chip">${drive}</span><span class="living-signal-chip">${esc(shadows)}</span></div>`;
+  return `<div class="living-signals"><button type="button" class="living-signal-chip living-signal-drive" data-living-action="navigate" data-id="drive-orbit">${driveLabel}</button><span class="living-signal-chip">${esc(shadows)}</span></div>`;
 }
 
 function projectOrbitHTML(projects) {

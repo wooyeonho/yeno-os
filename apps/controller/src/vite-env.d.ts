@@ -38,6 +38,20 @@ declare module '*project-universe-model.mjs' {
   export function projectUniverseDetailModel(project: Record<string, unknown>, universe: Record<string, unknown>): Record<string, unknown>;
   export function projectReasonSentence(project: Record<string, unknown>, universe: Record<string, unknown>): string | null;
 }
+declare module '*drive-orbit-view.mjs' {
+  export function createDriveOrbitView(options: {
+    root: HTMLElement;
+    onOpenProject?: (id: string) => void;
+    onClose?: () => void;
+  }): {
+    updateState(next: Record<string, unknown>): void;
+    reset(): void;
+    destroy(): void;
+  };
+}
+declare module '*drive-orbit-model.mjs' {
+  export function driveOrbitModel(driveStatus: unknown, core: unknown): Record<string, unknown>;
+}
 declare module '*live-voice-client.mjs' {
   export type LiveVoiceEvent =
     | {type: 'state'; state: string; attempt?: number}
