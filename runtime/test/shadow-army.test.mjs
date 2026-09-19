@@ -6,7 +6,7 @@ import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {start} from '../server.mjs';
 import {openStore} from '../lib/store.mjs';
-import {planShadowMission, shadowJobFromSpec, shadowDependenciesMet, shadowDependencyFailed, verifyShadowArtifacts, missionStatus, ShadowArmyError, SHADOW_ROLES} from '../lib/shadow-army.mjs';
+import {planShadowMission, shadowJobFromSpec, shadowDependenciesMet, shadowDependencyFailed, verifyShadowArtifacts, verifyFailureSummary, shadowFailureReason, missionStatus, ShadowArmyError, SHADOW_ROLES} from '../lib/shadow-army.mjs';
 
 // Phase D — Real Shadow Army (issue #25 §6), first slice: real project goal
 // -> two independent shadows -> a dependent builder -> a separate deterministic
@@ -73,6 +73,21 @@ test('verifyShadowArtifacts is deterministic: passes only a completed job with a
   assert.equal(verifyShadowArtifacts([{...good, agentJournal: {calls: [{status: 'unknown'}]}}]).verified, false);
   assert.equal(verifyShadowArtifacts([null]).verified, false);
   assert.equal(shadowDependencyFailed({shadowAssignment: {dependsOnJobIds: ['a']}}, [{id: 'a', status: 'failed'}]), true);
+});
+
+test('verifyFailureSummary/shadowFailureReason: a rejected verify job is classified and given a real, non-null reason', () => {
+  const missionId = '11111111-1111-1111-1111-111111111111';
+  const verdict = verifyShadowArtifacts([{id: 'b', status: 'failed', artifacts: [], agentJournal: {calls: []}}]);
+  assert.equal(verdict.verified, false);
+  assert.equal(verifyFailureSummary(verdict), verdict.reasons.join(', '));
+  assert.equal(verifyFailureSummary({reasons: []}), 'verification_rejected');
+  const verifyJob = {status: 'failed', error: verifyFailureSummary(verdict), verifyResult: verdict, shadowAssignment: {missionId, role: 'verifier', dependsOnJobIds: ['b']}};
+  assert.equal(shadowFailureReason(verifyJob), 'verification_rejected');
+  const cancelledShadow = {status: 'cancelled', shadowAssignment: {missionId, role: 'scout', dependsOnJobIds: []}};
+  assert.equal(shadowFailureReason(cancelledShadow), 'cancelled');
+  const runningShadow = {status: 'running', shadowAssignment: {missionId, role: 'scout', dependsOnJobIds: []}};
+  assert.equal(shadowFailureReason(runningShadow), null, 'a job still in flight is never classified as failed');
+  assert.equal(shadowFailureReason({status: 'failed'}), null, 'a non-shadow job is out of scope');
 });
 
 test('a real mission runs two independent shadows in parallel, gates the builder on both, and the verifier passes and updates the real project milestone + memory event', async (t) => {
@@ -162,6 +177,44 @@ test('emergency stop blocks planning a new mission, and a real dependency failur
   const builderJob = await h.wait(builderJobId, ['failed']);
   assert.equal(builderJob.status, 'failed');
   assert.equal(builderJob.error, 'shadow_dependency_failed');
+  // Hardening (master directive v2 §5.G "failure classification"): the real
+  // reason must be named consistently, not left as a free-text string only.
+  assert.equal(shadowFailureReason(builderJob), 'dependency_failed');
+  const failedMission = missionStatus(missionResponse.body.missionId, h.disk());
+  assert.equal(failedMission.phase, 'failed');
+  assert.equal(failedMission.shadows.find(s => s.jobId === builderJobId).failureReason, 'dependency_failed');
+});
+
+test('a failed mission never blocks replanning a fresh mission for the same project - the real, already-safe retry/replan path', async (t) => {
+  const h = await setup(t);
+  const project = await createProject(h);
+  const first = await h.post('/api/shadow-army/missions', {projectId: project.id, goal: '첫 시도'});
+  assert.equal(first.status, 201);
+  const scoutJobId = first.body.mission.shadows.find(s => s.role === 'scout').jobId;
+  // Fail the mission honestly via a real dependency failure (no fabricated
+  // failure) - same real path as the test above.
+  const cancel = await h.post(`/api/jobs/${scoutJobId}/action`, {action: 'cancel'});
+  assert.equal(cancel.status, 200, JSON.stringify(cancel.body));
+  const builderJobId = first.body.mission.shadows.find(s => s.role === 'builder').jobId;
+  await h.wait(builderJobId, ['failed']);
+  assert.equal(missionStatus(first.body.missionId, h.disk()).phase, 'failed');
+
+  // Replanning is not a new mechanism: MAX_ACTIVE_MISSIONS_PER_PROJECT only
+  // counts missions whose phase is neither 'completed' nor 'failed', so a
+  // genuinely failed mission must never count against the cap, and the
+  // owner must be able to try again for the same real project immediately -
+  // this is the real "retry policy" the failed mission needs, without any
+  // new auto-retry-a-specific-job machinery that could duplicate a possibly-
+  // external action.
+  const second = await h.post('/api/shadow-army/missions', {projectId: project.id, goal: '재시도'});
+  assert.equal(second.status, 201, JSON.stringify(second.body));
+  assert.notEqual(second.body.missionId, first.body.missionId);
+  // The failed mission's own jobs/artifacts are real historical evidence -
+  // replanning must never touch, hide, or delete them.
+  const disk = h.disk();
+  assert.ok(disk.jobs.some(j => j.id === builderJobId && j.status === 'failed'), 'the failed mission\'s jobs must remain untouched');
+  assert.equal(missionStatus(first.body.missionId, disk).phase, 'failed', 'the old failed mission record must be unchanged');
+  assert.equal(second.body.mission.shadows.length, 3);
 });
 
 test('a real restart mid-mission never duplicates work and the mission still reaches a real verified completion afterward', async (t) => {

@@ -11,6 +11,7 @@ import {
   JevError, evaluateDecisions, validateDecisionRequest,
   buildShadowDispatchRequest, buildVerifierEscalateRequest,
   shadowDispatchLogEntry, shadowDispatchMatchesReal, validateJevShadowLog,
+  calibrateShadowLog,
 } from '../lib/jev.mjs';
 
 // BLACKHOLE JEV v0 (issue #25 §4.6/§5.1) — first slice: a pure typed decision
@@ -83,6 +84,19 @@ test('dependencyReady/parallelSafe/shadowDispatch: dispatch, hold, escalate and 
   assert.equal(clear.answers.shadowDispatch, 'dispatch');
 });
 
+test('no stale decisions: JEV recomputes from the evidence given on every call, never caches or reuses a prior answer', () => {
+  const missionId = randomUUID();
+  const decide = state => evaluateDecisions({state, questions: ['dependencyReady', 'parallelSafe', 'shadowDispatch'], evidenceRefs: [], policyContext: {emergencyStop: false, missionId, role: 'builder'}}, AT);
+  const beforeDependencyDone = decide({dependsOnJobIds: ['dep1'], jobStatuses: {dep1: 'running'}, concurrencyLimit: 2, activeCount: 0, blockReason: null});
+  assert.equal(beforeDependencyDone.answers.shadowDispatch, 'hold');
+  // Same question, same job, only the real dependency's status changed -
+  // the answer must change with it, proving there is no memoized/stale
+  // decision keyed on job id or mission id.
+  const afterDependencyDone = decide({dependsOnJobIds: ['dep1'], jobStatuses: {dep1: 'completed'}, concurrencyLimit: 2, activeCount: 0, blockReason: null});
+  assert.equal(afterDependencyDone.answers.shadowDispatch, 'dispatch');
+  assert.notEqual(beforeDependencyDone.fingerprint, afterDependencyDone.fingerprint);
+});
+
 test('emergencyStop blocks the dispatch question regardless of otherwise-clear evidence', () => {
   const request = {
     state: {dependsOnJobIds: [], jobStatuses: {}, concurrencyLimit: 2, activeCount: 0, blockReason: null},
@@ -126,6 +140,36 @@ test('shadowDispatchLogEntry/validateJevShadowLog: the bounded observation log i
   assert.throws(() => validateJevShadowLog([{...agree, engineVersion: 'jev-fake'}]));
 });
 
+test('calibrateShadowLog: JEV Shadow Mode evaluation math (match rate, abstain rate, false positive/negative, confidence)', () => {
+  const empty = calibrateShadowLog([]);
+  assert.equal(empty.sampleSize, 0);
+  assert.equal(empty.matchRate, null, 'an empty log must never report a fabricated 0% or 100% match rate');
+
+  const job = {id: randomUUID(), shadowAssignment: {missionId: randomUUID(), role: 'scout', dependsOnJobIds: []}};
+  const dispatchReq = buildShadowDispatchRequest({job, jobs: [], blockReason: null, concurrencyLimit: 2, activeCount: 0, emergencyStop: false});
+  const dispatchResponse = evaluateDecisions(dispatchReq, AT);
+  const holdReq = buildShadowDispatchRequest({job, jobs: [], blockReason: null, concurrencyLimit: 1, activeCount: 1, emergencyStop: false});
+  const holdResponse = evaluateDecisions(holdReq, AT);
+
+  const log = [
+    shadowDispatchLogEntry({at: AT, job, response: dispatchResponse, realDecision: 'dispatch'}), // agree: dispatch/dispatch
+    shadowDispatchLogEntry({at: AT, job, response: holdResponse, realDecision: 'hold'}), // agree: hold/hold
+    shadowDispatchLogEntry({at: AT, job, response: dispatchResponse, realDecision: 'hold'}), // JEV false positive: said dispatch, real held
+  ];
+  const report = calibrateShadowLog(log);
+  assert.equal(report.sampleSize, 3);
+  assert.equal(report.abstainRate, 0, 'every entry here is a decided answer');
+  assert.ok(Math.abs(report.matchRate - 2 / 3) < 1e-9);
+  assert.ok(Math.abs(report.falsePositiveRate - 1 / 3) < 1e-9);
+  assert.equal(report.falseNegativeRate, 0);
+  assert.equal(report.avgConfidenceWhenDecided, 1);
+  assert.equal(report.byAnswer.dispatch, 2);
+  assert.equal(report.byAnswer.hold, 1);
+  assert.equal(report.byStatus.decided, 3);
+  assert.equal(report.engineVersion, JEV_ENGINE_VERSION);
+  assert.equal(report.calibrationVersion, JEV_CALIBRATION_VERSION);
+});
+
 // --- Real HTTP server / real store / real Shadow Army mission integration ---
 const MODEL_ENV = {YENO_AGENT_PROVIDER: 'openai', YENO_OPENAI_API_KEY: 'synthetic-openai-key', YENO_OPENAI_MODEL: 'synthetic-openai', YENO_AGENT_DAILY_CALL_LIMIT: '20'};
 const ok = text => new Response(JSON.stringify({choices: [{finish_reason: 'stop', message: {content: text, tool_calls: []}}], usage: {prompt_tokens: 30, completion_tokens: 20}}), {headers: {'Content-Type': 'application/json'}});
@@ -140,8 +184,9 @@ async function setup(t, {env = MODEL_ENV} = {}) {
   const get = route => request('GET', route);
   const wait = async (id, statuses = ['completed', 'failed', 'paused']) => { for (let i = 0; i < 400; i++) { const j = openStore(dir).state.jobs.find(j => j.id === id); if (j && statuses.includes(j.status)) return j; await new Promise(r => setTimeout(r, 20)); } assert.fail('job did not reach target state'); };
   const until = async (check, label) => { for (let i = 0; i < 400; i++) { const value = check(); if (value) return value; await new Promise(r => setTimeout(r, 20)); } assert.fail(label); };
+  const restart = async () => { runtime.shutdown(); runtime = await start({host: '127.0.0.1', port: 0, dataDir: dir, token, env, agentFetch}); };
   t.after(() => { runtime.shutdown(); fs.rmSync(dir, {recursive: true, force: true}); });
-  return {dir, post, get, wait, until, modelCalls, disk: () => openStore(dir).state};
+  return {dir, post, get, wait, until, restart, modelCalls, disk: () => openStore(dir).state};
 }
 
 async function createProject(h, overrides = {}) {
@@ -196,4 +241,23 @@ test('no configured provider: JEV baseline still decides honestly (hold on provi
   assert.equal(scoutEntry.realDecision, 'hold');
   assert.equal(scoutEntry.matchedRealDecision, true);
   assert.equal(h.modelCalls.length, 0, 'no real or fake provider call was ever made');
+});
+
+test('a real restart preserves the shadow-mode log exactly, and GET /api/state\'s calibration reflects the preserved evidence identically', async (t) => {
+  const h = await setup(t);
+  const project = await createProject(h);
+  const missionResponse = await h.post('/api/shadow-army/missions', {projectId: project.id, goal: '목표'});
+  const scout = missionResponse.body.mission.shadows.find(s => s.role === 'scout'), researcher = missionResponse.body.mission.shadows.find(s => s.role === 'researcher');
+  await h.wait(scout.jobId); await h.wait(researcher.jobId);
+  const beforeLog = h.disk().jevShadowLog;
+  assert.ok(beforeLog.length >= 2, 'both leaf shadows must already have a real logged decision before restart');
+  const beforeCalibration = (await h.get('/api/state')).body.jev.calibration;
+
+  await h.restart();
+
+  const afterLog = h.disk().jevShadowLog;
+  assert.deepEqual(afterLog, beforeLog, 'restart must preserve the real shadow-mode log exactly - no loss, no duplication, no mutation');
+  const afterCalibration = (await h.get('/api/state')).body.jev.calibration;
+  assert.deepEqual(afterCalibration, beforeCalibration, 'the same preserved evidence must calibrate identically after restart');
+  assert.equal(afterCalibration.sampleSize, beforeLog.length);
 });

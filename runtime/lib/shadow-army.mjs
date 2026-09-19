@@ -153,6 +153,39 @@ export function verifyShadowArtifacts(subjectJobs) {
   return {verified: subjects.length > 0 && subjects.every(s => s.verified), reasons: subjects.flatMap(s => s.reasons), subjects};
 }
 
+export const SHADOW_FAILURE_REASONS = Object.freeze(['dependency_failed', 'verification_rejected', 'execution_error', 'cancelled']);
+
+// Real, evidence-based failure classification (Phase D hardening, master
+// directive v2 §5.G "failure classification") - reads only the job's own
+// already-real fields (status/error/verifyResult), never re-derives or
+// guesses. A job still in flight (queued/running/paused/completed) is never
+// classified; only a job that has actually reached 'failed'/'cancelled' is.
+// This never changes what failed or why - it only names the real reason
+// consistently so callers (and, later, UI) don't have to parse free-text
+// error strings.
+// The real, structured reason a verify job's own `job.error` is set to on
+// rejection (server.mjs) - pulled out as a pure function so the exact text
+// is unit-testable without going through the full job engine. Under the
+// job engine's own existing invariants a completed job always has at least
+// one artifact and no unsettled call (writeArtifact()/step completion
+// guarantee this), so in practice a subject only ever reaches verify after
+// truly completing cleanly - `verification_rejected` is real, defined,
+// evidence-based defense-in-depth for a subject type where that invariant
+// might not hold in the future, not a path this slice's real HTTP tests can
+// currently force to fire end-to-end.
+export function verifyFailureSummary(verdict) {
+  return verdict.reasons.length ? verdict.reasons.join(', ') : 'verification_rejected';
+}
+
+export function shadowFailureReason(job) {
+  if (!job.shadowAssignment) return null;
+  if (job.status === 'cancelled') return 'cancelled';
+  if (job.status !== 'failed') return null;
+  if (job.error === 'shadow_dependency_failed') return 'dependency_failed';
+  if (job.shadowAssignment.role === 'verifier' && job.verifyResult?.verified === false) return 'verification_rejected';
+  return 'execution_error';
+}
+
 function shadowPhase(shadows, verify) {
   if (shadows.some(s => s.status === 'failed') || verify?.status === 'failed') return 'failed';
   if (verify?.status === 'completed') return 'completed';
@@ -174,11 +207,12 @@ export function missionStatus(missionId, state) {
     jobId: job.id, role: job.shadowAssignment.role, status: job.status, pauseReason: job.pauseReason ?? null,
     dependsOnJobIds: job.shadowAssignment.dependsOnJobIds, artifacts: (job.artifacts ?? []).map(a => ({id: a.id, name: a.name})),
     provider: job.agentJournal?.provider ?? null, model: job.agentJournal?.model ?? null,
+    failureReason: shadowFailureReason(job),
   }));
   const projectId = jobs[0].projectId;
   return {
     missionId, projectId, phase: shadowPhase(shadows, verify), shadows,
-    verify: verify ? {jobId: verify.id, status: verify.status, pauseReason: verify.pauseReason ?? null, result: verify.verifyResult ?? null} : null,
+    verify: verify ? {jobId: verify.id, status: verify.status, pauseReason: verify.pauseReason ?? null, result: verify.verifyResult ?? null, failureReason: shadowFailureReason(verify)} : null,
   };
 }
 
