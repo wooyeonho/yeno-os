@@ -106,7 +106,7 @@ export function validateShadowAssignment(job) {
   if (!Object.hasOwn(job, 'shadowAssignment')) return;
   const assignmentKeys = Object.keys(a).sort().join();
   const baseAssignmentKeys = 'context,dependsOnJobIds,missionId,projectId,projectVersion,role';
-  const plannerAssignmentKeys = `${baseAssignmentKeys},plannerQuestId`;
+  const plannerAssignmentKeys = [...baseAssignmentKeys.split(','), 'plannerQuestId'].sort().join();
   if (!object(a) || ![baseAssignmentKeys, plannerAssignmentKeys].includes(assignmentKeys)) throw new Error('Invalid shadow assignment');
   if (!uuid(a.missionId) || !SHADOW_ROLES.includes(a.role) || !Array.isArray(a.dependsOnJobIds) || a.dependsOnJobIds.length > 4 || a.dependsOnJobIds.some(id => !uuid(id)) || (a.plannerQuestId !== undefined && !uuid(a.plannerQuestId))) throw new Error('Invalid shadow assignment fields');
   if (!Number.isSafeInteger(a.projectVersion) || a.projectVersion < 1) throw new Error('Invalid shadow assignment project version');
