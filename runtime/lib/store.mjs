@@ -21,6 +21,7 @@ import {initialEcosystem,validateEcosystem} from './ecosystem.mjs';
 import {validateAgentJournal} from './agent.mjs';
 import {validateBotAssignment} from './project-bots.mjs';
 import {validateShadowAssignment} from './shadow-army.mjs';
+import {validateJevShadowLog} from './jev.mjs';
 import {validateQuestState} from './quests.mjs';
 import {emptyStudio,validateStudio} from './studio.mjs';
 import {initialAutopilot,validateAutopilot,validateAutopilotJob} from './autopilot.mjs';
@@ -42,7 +43,7 @@ export function atomicWrite(file, content) {
 export function initialState() {
  return {revision:0, emergencyStop:false, concurrency:1,
  modules:{memory:true,documents:true,diagnostics:true,ai:false},
- jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), capabilities:initialCapabilities(), codeWorkshop:initialCodeWorkshop(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem(), blackholeCore:initialCoreState(), memoryEvents:[], memorySyncOutbox:[]};
+ jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), capabilities:initialCapabilities(), codeWorkshop:initialCodeWorkshop(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem(), blackholeCore:initialCoreState(), memoryEvents:[], memorySyncOutbox:[], jevShadowLog:[]};
 }
 function initializeQuestCollections(state) {
  // Missing collections identify older stores. Present malformed data must fail
@@ -85,6 +86,11 @@ function initializeQuestCollections(state) {
  // validates last, once memoryEvents is guaranteed present and correct.
  if(!Object.hasOwn(state,'memorySyncOutbox'))state.memorySyncOutbox=[];
  validateOutbox(state.memorySyncOutbox,state);
+ // BLACKHOLE JEV v0 (issue #25 §4.6/§5.1): a store predating the shadow-mode
+ // observation log gets an empty one, exactly like every other additive
+ // migration above - this log is pure bounded telemetry, never authority.
+ if(!Object.hasOwn(state,'jevShadowLog'))state.jevShadowLog=[];
+ validateJevShadowLog(state.jevShadowLog);
  return state;
 }
 function sanitizeEnrollmentReceipts(state) {

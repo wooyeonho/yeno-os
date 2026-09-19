@@ -76,6 +76,7 @@ function requiredText(value,maximum=80000){if(typeof value!=='string'||!value.tr
 import {publicJob} from './lib/job-view.mjs';
 import {BotError,planProjectBots,botBlockReason,botCanStart,botStatus,botDocument} from './lib/project-bots.mjs';
 import {ShadowArmyError,planShadowMission,shadowJobFromSpec,shadowDependenciesMet,shadowDependencyFailed,shadowBlockReason,verifyShadowArtifacts,missionStatus} from './lib/shadow-army.mjs';
+import {JEV_ENGINE_VERSION,JEV_CALIBRATION_VERSION,JEV_SHADOW_LOG_CAP,evaluateDecisions,buildShadowDispatchRequest,buildVerifierEscalateRequest,shadowDispatchLogEntry} from './lib/jev.mjs';
 function publicSnapshot(snapshot){const {data,...out}=snapshot;return out;}
 const examples=['세계 현황','흡수 현황','자율 점검','자율 임무: 공식 자료를 읽고 다음 개선 초안을 만들어줘','운영 브리핑','운영 현황','기억해: 이번 주에는 YENO 한 프로젝트에 집중한다','찾아줘: YENO','문서 만들어: YENO의 첫 목표는 기억과 실행이다','프로젝트 목록','프로젝트 브리핑: 프로젝트 이름','프로젝트 작업: 프로젝트 이름 | 준비할 작업','자료 목록','자료 브리핑: 자료 ID','개선 후보: 자료 ID','진단해','개선점 찾아줘'];
 
@@ -144,7 +145,7 @@ export function createYenoServer(options={}) {
    }catch(error){releaseLock();throw error;}
  }
  event('YENO runtime started.');store.save('runtime_started');
- function state(){return {repositoryDevelopment:{patchDrafting:true,runnerConnected:false,automaticDeployment:false,modelCallsPerPlan:1},growth:growthState(),codeWorkshop:codeState(),autopilot:autopilotState(),bots:botStatus(s,profiles),core:coreHomeSummary(s),name:'YENO OS',version:VERSION,apiVersion:API_VERSION,requestTracking:{retained:Object.keys(s.requestLedger).length,capacity:REQUEST_LEDGER_MAX_ENTRIES,cached:Object.keys(s.requests).length,cacheMaxBytes:REQUEST_CACHE_MAX_BYTES},revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,draftConfigured:!!aiEndpoint,model:agentSettings.ready?agentSettings.model:aiEndpoint?aiModel:null},agent:{providers:providerStatus(),configured:agentSettings.ready,provider:agentSettings.provider,model:agentSettings.model||null,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs),automaticReviews:agentSettings.ready&&agentSettings.auto&&s.modules.ai&&(s.discovery.enabled||s.ecosystem.enabled)&&!s.emergencyStop,tools:AGENT_TOOLS.map(tool=>tool.name),developmentExecution:false,assignedJavaScriptCoding:true},discovery:{...s.discovery,repositories:DISCOVERY_REPOS},ecosystem:publicEcosystem(s.ecosystem),jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,world:worldOverview(s.jobs),capabilities:{worldEarthquakes:true,projectBots:true,localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,scheduledSourceDiscovery:true,boundedAgentLoop:true,ecosystemDiscovery:true,skillEvidenceIntake:true,developerWorker:false,javascriptWorker:true,externalCodeExecution:true,voiceConversation:true,autonomousProduction:true,diagnostics:true,evolution:'tested-javascript-versions',ai:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
+ function state(){return {repositoryDevelopment:{patchDrafting:true,runnerConnected:false,automaticDeployment:false,modelCallsPerPlan:1},growth:growthState(),codeWorkshop:codeState(),autopilot:autopilotState(),bots:botStatus(s,profiles),core:coreHomeSummary(s),jev:{engineVersion:JEV_ENGINE_VERSION,calibrationVersion:JEV_CALIBRATION_VERSION,authorizesDispatch:false,recentShadowDecisions:s.jevShadowLog.slice(-20)},name:'YENO OS',version:VERSION,apiVersion:API_VERSION,requestTracking:{retained:Object.keys(s.requestLedger).length,capacity:REQUEST_LEDGER_MAX_ENTRIES,cached:Object.keys(s.requests).length,cacheMaxBytes:REQUEST_CACHE_MAX_BYTES},revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,draftConfigured:!!aiEndpoint,model:agentSettings.ready?agentSettings.model:aiEndpoint?aiModel:null},agent:{providers:providerStatus(),configured:agentSettings.ready,provider:agentSettings.provider,model:agentSettings.model||null,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs),automaticReviews:agentSettings.ready&&agentSettings.auto&&s.modules.ai&&(s.discovery.enabled||s.ecosystem.enabled)&&!s.emergencyStop,tools:AGENT_TOOLS.map(tool=>tool.name),developmentExecution:false,assignedJavaScriptCoding:true},discovery:{...s.discovery,repositories:DISCOVERY_REPOS},ecosystem:publicEcosystem(s.ecosystem),jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,world:worldOverview(s.jobs),capabilities:{worldEarthquakes:true,projectBots:true,localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,scheduledSourceDiscovery:true,boundedAgentLoop:true,ecosystemDiscovery:true,skillEvidenceIntake:true,developerWorker:false,javascriptWorker:true,externalCodeExecution:true,voiceConversation:true,autonomousProduction:true,diagnostics:true,evolution:'tested-javascript-versions',ai:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
  // A failed filesystem write leaves its outcome uncertain. Retain its request
  // identity in memory, but never acknowledge a cached receipt or expose that
  // state through the API until the complete state has been persisted again.
@@ -744,6 +745,28 @@ export function createYenoServer(options={}) {
    event(`Shadow Army mission planned: ${plan.missionId} (${jobs.length} shadows) for project.`);
    return {status:201,payload:{kind:'shadowMission',missionId:plan.missionId,mission:missionStatus(plan.missionId,s)}};
  }
+ // BLACKHOLE JEV v0 shadow-mode (issue #25 §4.6/§5.1): computes JEV's own
+ // typed answer for a real dispatch/verify decision purely for comparison
+ // against the real scheduler path, which is computed exactly as it was
+ // before this module existed. Never reads back into `blocked`/`budget`/job
+ // status - `authorizesDispatch:false` is fixed inside jev.mjs itself, and
+ // neither call site below inspects the returned answer at all, only logs
+ // it. A JEV failure here never blocks the real job.
+ function pushJevLog(entry){s.jevShadowLog.push(entry);if(s.jevShadowLog.length>JEV_SHADOW_LOG_CAP)s.jevShadowLog=s.jevShadowLog.slice(-JEV_SHADOW_LOG_CAP);}
+ function recordJevShadowDispatch(job,blocked,budget){
+   try{
+     const request=buildShadowDispatchRequest({job,jobs:s.jobs,blockReason:blocked,concurrencyLimit:s.concurrency,activeCount:active(),emergencyStop:s.emergencyStop});
+     const response=evaluateDecisions(request,now());
+     pushJevLog(shadowDispatchLogEntry({at:now(),job,response,realDecision:(blocked||budget)?'hold':'dispatch'}));
+   }catch(error){event(`JEV shadow-mode 관찰 실패(실제 배정에는 영향 없음): ${error.message}`);}
+ }
+ function recordJevVerifierEscalate(job){
+   try{
+     const request=buildVerifierEscalateRequest({verifyJob:job,verifyResult:job.verifyResult,emergencyStop:s.emergencyStop});
+     const response=evaluateDecisions(request,now());
+     event(`JEV shadow-mode 관찰(실질 권한 없음, engine ${JEV_ENGINE_VERSION}/${JEV_CALIBRATION_VERSION}): verifierEscalate=${response.answers.verifierEscalate} (${response.decisionStatus.verifierEscalate}, confidence ${response.confidence.verifierEscalate})`);
+   }catch(error){event(`JEV shadow-mode 관찰 실패(실제 검증에는 영향 없음): ${error.message}`);}
+ }
  // A verify job completing verified:true is the only thing in this slice
  // that may advance a real project milestone or record a memory event -
  // never a shadow's own completion, which only proves the artifact exists,
@@ -901,6 +924,7 @@ export function createYenoServer(options={}) {
      const blocked=job.botAssignment?botBlockReason(job,s,profiles):job.shadowAssignment?shadowBlockReason(job,s,agentSettings):null;
      const lastAssistant=job.agentJournal?.history.findLast(m=>m.role==='assistant');
      const budget=(job.botAssignment||job.shadowAssignment)&&job.step<2&&(!lastAssistant||lastAssistant.toolCalls.length>0)&&agentUsage(s.jobs).attempts>=configFor(job).dailyCallLimit;
+     if(job.shadowAssignment&&job.type==='agent')recordJevShadowDispatch(job,blocked,budget);
      if(blocked||budget||(!localResearchCompletion(job)&&!s.modules[jobModule(job)]&&!job.questId)){job.status='paused';job.pauseReason=blocked||(budget?'dailyBudget':'moduleDisabled');touch(job);save();continue;}
      job.status='running';delete job.pauseReason;touch(job);save();const generation=(generations.get(job.id)??0)+1;generations.set(job.id,generation);runStep(job,generation);
    }}
@@ -1041,6 +1065,7 @@ export function createYenoServer(options={}) {
          const subjects=job.verifyRequest.subjectJobIds.map(id=>s.jobs.find(j=>j.id===id));
          const verdict=verifyShadowArtifacts(subjects);
          job.verifyResult={...verdict,checkedAt:now()};
+         recordJevVerifierEscalate(job);
          job.draft=`# Shadow Army 검증 결과\n\n임무: ${job.shadowAssignment.missionId}\n검증: ${verdict.verified?'통과':'불합격'}\n\n${verdict.subjects.map(subject=>`- 작업 ${subject.jobId??'(없음)'}: ${subject.verified?'통과':`불합격 (${subject.reasons.join(', ')})`}`).join('\n')}\n\n결정론적 검사만 수행했습니다: 완료 상태, 산출물 존재, 모델 호출 결과 확인. 산출물 내용의 품질은 판단하지 않습니다.\n`;
        }else if(job.type==='document'){
          const paras=job.normalized.split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean);
