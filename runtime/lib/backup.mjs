@@ -19,6 +19,8 @@ import { validateDiscovery } from './discovery.mjs';
 import { validateEcosystem } from './ecosystem.mjs';
 import { validateAgentJournal, recoverAgentJournals } from './agent.mjs';
 import {validateBotAssignment} from './project-bots.mjs';
+import {validateShadowAssignment} from './shadow-army.mjs';
+import {validateJevShadowLog} from './jev.mjs';
 import {validateQuestState} from './quests.mjs';
 import {emptyStudio,validateStudio} from './studio.mjs';
 import {validateVideoInput} from './video.mjs';
@@ -36,7 +38,7 @@ const MAGIC = Buffer.from('YENOBK1\n');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const HASH = /^[a-f0-9]{64}$/;
 const STATE_KEYS = ['revision', 'emergencyStop', 'concurrency', 'modules', 'jobs', 'memories', 'snapshots', 'events', 'requests', 'artifacts', 'devices', 'projects', 'sources'];
-const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt', 'productionEvidence', 'studioSeriesId', 'studioChapterId', 'researchRequest', 'researchEvidenceId', 'autopilot', 'capabilityRequest', 'codeTask', 'codeCheckpoint', 'codeOutput', 'voiceConversation', 'repositoryTask', 'developerEvidence', 'routing', 'selfTestId'];
+const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'shadowAssignment', 'verifyRequest', 'verifyResult', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt', 'productionEvidence', 'studioSeriesId', 'studioChapterId', 'researchRequest', 'researchEvidenceId', 'autopilot', 'capabilityRequest', 'codeTask', 'codeCheckpoint', 'codeOutput', 'voiceConversation', 'repositoryTask', 'developerEvidence', 'routing', 'selfTestId'];
 const fail = message => { throw new Error(`Backup: ${message}`); };
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = (value, min, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value) && value >= min && value <= max;
@@ -61,7 +63,7 @@ function memories(value) {
   }
 }
 function validateState(state) {
-  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop', 'selfTests', 'runtimeBoots', 'deviceAcceptances', 'outcomeConnectors', 'outcomeReadings', 'outcomeEvidence', 'blackholeCore', 'memoryEvents', 'memorySyncOutbox'], STATE_KEYS);
+  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop', 'selfTests', 'runtimeBoots', 'deviceAcceptances', 'outcomeConnectors', 'outcomeReadings', 'outcomeEvidence', 'blackholeCore', 'memoryEvents', 'memorySyncOutbox', 'jevShadowLog'], STATE_KEYS);
   if (Object.hasOwn(state, 'runtimeBoots')) validateBootRecords(state.runtimeBoots);
   if (Object.hasOwn(state, 'deviceAcceptances')) validateDeviceAcceptances(state.deviceAcceptances);
   if (Object.hasOwn(state, 'outcomeConnectors')) validateConnectors(state.outcomeConnectors);
@@ -94,12 +96,14 @@ function validateState(state) {
   validateCoreState(state.blackholeCore, state);
   if (!Object.hasOwn(state, 'memorySyncOutbox')) state.memorySyncOutbox = [];
   validateOutbox(state.memorySyncOutbox, state);
+  if (!Object.hasOwn(state, 'jevShadowLog')) state.jevShadowLog = [];
+  validateJevShadowLog(state.jevShadowLog);
   if (!Array.isArray(state.jobs) || !Array.isArray(state.snapshots) || !Array.isArray(state.events) || !record(state.requests) || !record(state.devices) || !record(state.artifacts)) fail('invalid state collections');
   const jobs = new Map(), references = new Set();
   for (const job of state.jobs) {
     validateAutopilotJob(job,state);
     keys(job, JOB_KEYS, ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts']);
-    if (!UUID.test(job.id) || jobs.has(job.id) || !string(job.title, 160) || !string(job.input, job.type==='forai'?160000:80000) || !['document', 'diagnostics', 'evolution', 'ai', 'agent', 'world', 'video', 'forai', 'capability', 'code'].includes(job.type) || !['queued', 'running', 'paused', 'completed', 'failed', 'cancelled'].includes(job.status) || !integer(job.step, 0, 3) || job.totalSteps !== 3 || !integer(job.version, 1, Number.MAX_SAFE_INTEGER - 1) || !Array.isArray(job.artifacts) || (job.error !== null && !string(job.error))) fail('invalid job');
+    if (!UUID.test(job.id) || jobs.has(job.id) || !string(job.title, 160) || !string(job.input, job.type==='forai'?160000:80000) || !['document', 'diagnostics', 'evolution', 'ai', 'agent', 'world', 'video', 'forai', 'capability', 'code', 'verify'].includes(job.type) || !['queued', 'running', 'paused', 'completed', 'failed', 'cancelled'].includes(job.status) || !integer(job.step, 0, 3) || job.totalSteps !== 3 || !integer(job.version, 1, Number.MAX_SAFE_INTEGER - 1) || !Array.isArray(job.artifacts) || (job.error !== null && !string(job.error))) fail('invalid job');
     if(job.type==='capability'){validateCapabilityRequest(job.capabilityRequest,state.capabilities);if(capabilityInputSha256(JSON.parse(job.input))!==job.capabilityRequest.inputSha256)fail('capability input mismatch');}else if(job.capabilityRequest)fail('unexpected capability request');
     if(job.type==='video')validateVideoInput(JSON.parse(job.input));
     if(job.type==='forai')validateForAiInput(JSON.parse(job.input));
@@ -124,6 +128,8 @@ function validateState(state) {
     if (Object.hasOwn(job, 'worldSnapshot')) { if (job.type !== 'world') fail('invalid world job'); validateWorldSnapshot(job.worldSnapshot); }
     if (job.type === 'world' && job.step >= 2 && !job.worldSnapshot) fail('missing world checkpoint');
     validateBotAssignment(job);
+    validateShadowAssignment(job);
+    if (Object.hasOwn(job, 'verifyResult') && (job.type !== 'verify' || (job.verifyResult !== null && (!record(job.verifyResult) || typeof job.verifyResult.verified !== 'boolean')))) fail('invalid verify result');
     timestamp(job.createdAt); timestamp(job.updatedAt);
     if (Date.parse(job.updatedAt) < Date.parse(job.createdAt)) fail('invalid job timestamp order');
     if (job.status === 'completed' && (job.step !== 3 || job.artifacts.length === 0)) fail('invalid completed job');
