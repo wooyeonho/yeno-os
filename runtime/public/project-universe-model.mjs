@@ -51,6 +51,10 @@ export function projectUniverseDetailModel(project, universe) {
     milestones: {completed: universe.milestones.completed, total: universe.milestones.total, items: project.milestones || []},
     quests: universe.quests, jobs: universe.jobs, sources: universe.sources, memoryEvents: universe.memoryEvents,
     outcomes: universe.outcomes, blockers: universe.blockers, dominantDrives: universe.dominantDrives,
+    // Shadow Army is a read-only projection of real durable jobs. Keep the
+    // field present even when empty so both web and Android render the same
+    // honest empty state without inventing worker activity.
+    shadowMissions: universe.shadowMissions ?? [],
     reason: projectReasonSentence(project, universe),
   };
 }
