@@ -21,6 +21,54 @@ const READING_LABEL = {unread: '아직 안 읽음', reading: '읽는 중', read:
 const DECISION_LABEL = {pending: '판단 대기', candidate: '후보', adopted: '채택', rejected: '보류'};
 const JOB_STATUS_LABEL = {queued: '대기 중', running: '진행 중', paused: '멈춤', completed: '완료', failed: '실패', cancelled: '취소됨'};
 const MEMORY_TYPE_LABEL = {episode: '경험', decision: '결정', result: '결과', relationship: '관계', skill: '능력', source: '자료', project: '프로젝트'};
+const SHADOW_ROLE_LABEL = Object.freeze({scout: 'Scout · 자료 탐색', researcher: 'Researcher · 대안 조사', builder: 'Builder · 결과 작성', verifier: 'Verifier · 독립 검사'});
+const SHADOW_PHASE_LABEL = Object.freeze({planning: '계획 중', running: '실행 중', blocked: '대기·차단', verifying: '검증 중', completed: '완료', failed: '실패'});
+const SHADOW_STATUS_LABEL = Object.freeze({queued: '대기 중', running: '진행 중', paused: '멈춤', completed: '완료', failed: '실패', cancelled: '취소됨'});
+
+function shadowJobHTML(job) {
+  const label = SHADOW_ROLE_LABEL[job.role] || 'Shadow 작업';
+  const status = SHADOW_STATUS_LABEL[job.status] || job.status || '상태 없음';
+  const dependencies = Array.isArray(job.dependsOnJobIds) && job.dependsOnJobIds.length
+    ? `<span>선행 작업 ${job.dependsOnJobIds.length}개</span>` : '<span>독립 작업</span>';
+  const artifacts = Array.isArray(job.artifacts) ? `<span>산출물 ${job.artifacts.length}개</span>` : '';
+  const provider = [job.provider, job.model].filter(Boolean).join(' · ');
+  return `<li class="puv-shadow-job" data-shadow-job-id="${esc(job.jobId)}">
+    <div class="puv-shadow-job-top"><strong>${esc(label)}</strong><span class="puv-status puv-status-${esc(job.status || 'queued')}">${esc(status)}</span></div>
+    <div class="puv-shadow-job-meta">${dependencies}${artifacts ? ` · ${artifacts}` : ''}</div>
+    ${job.pauseReason ? `<small class="puv-shadow-warning">대기 이유 · ${esc(job.pauseReason)}</small>` : ''}
+    ${provider ? `<small class="puv-shadow-provider">실행 제공자 · ${esc(provider)}</small>` : ''}
+  </li>`;
+}
+
+function shadowMissionHTML(mission, index) {
+  const shadows = Array.isArray(mission.shadows) ? mission.shadows : [];
+  const phase = SHADOW_PHASE_LABEL[mission.phase] || mission.phase || '상태 없음';
+  const completed = shadows.filter(shadow => shadow.status === 'completed').length;
+  const verify = mission.verify;
+  const result = verify?.result;
+  const verification = !verify ? '검증 작업 없음'
+    : !result ? '결정론적 검사 대기'
+    : result.verified ? '결정론적 검사 통과'
+    : '결정론적 검사 불합격';
+  return `<article class="puv-shadow-mission" data-shadow-mission-id="${esc(mission.missionId)}">
+    <div class="puv-shadow-mission-top">
+      <div><h4>Shadow 임무 ${index + 1}</h4><small>${esc(phase)} · 작업 ${completed} / ${shadows.length} 완료</small></div>
+      <span class="puv-status puv-status-${esc(mission.phase || 'queued')}">${esc(phase)}</span>
+    </div>
+    ${shadows.length ? `<ul class="puv-shadow-job-list">${shadows.map(shadowJobHTML).join('')}</ul>` : '<p class="puv-empty-line">연결된 Shadow 작업이 없습니다.</p>'}
+    <div class="puv-shadow-verification"><span>Verifier</span><strong>${esc(verification)}</strong></div>
+    <small class="puv-shadow-disclaimer">산출물 존재·실행 기록을 확인한 상태입니다. 내용의 품질이나 외부 성과를 자동 보증하지 않습니다.</small>
+  </article>`;
+}
+
+function shadowArmySectionHTML(detail) {
+  const missions = detail.shadowMissions ?? [];
+  return `<section class="puv-section puv-shadow-army" data-puv-surface="shadow-army">
+    <div class="puv-section-heading"><h3>Shadow Army</h3><span class="puv-progress">실제 임무 ${missions.length}개</span></div>
+    <p class="puv-shadow-intro">이 프로젝트에 연결된 실제 작업과 결정론적 검증 상태입니다.</p>
+    ${missions.length ? `<div class="puv-shadow-mission-list">${missions.map(shadowMissionHTML).join('')}</div>` : '<p class="puv-empty-line">현재 배정된 실제 Shadow 임무가 없습니다.</p>'}
+  </section>`;
+}
 
 function milestoneProgressText(milestones) {
   const completed = milestones?.completed ?? 0, total = milestones?.total ?? 0;
@@ -134,7 +182,7 @@ function outcomesSectionHTML(detail) {
 
 function futureSurfacesHTML() {
   return `<details class="puv-details puv-deferred">
-    <summary>그림자 · 흡수 · 성장</summary>
+    <summary>흡수 · 성장</summary>
     <p class="puv-empty-line">아직 연결되지 않았습니다. 다음 단계에서 제공됩니다.</p>
   </details>`;
 }
@@ -153,6 +201,7 @@ function detailScreenHTML(state) {
     ${reasonSectionHTML(detail)}
     ${blockersSectionHTML(detail)}
     ${milestonesSectionHTML(detail, state.busyMilestoneId)}
+    ${shadowArmySectionHTML(detail)}
     ${activeWorkSectionHTML(detail)}
     ${drivesSectionHTML(detail)}
     ${sourcesSectionHTML(detail)}
