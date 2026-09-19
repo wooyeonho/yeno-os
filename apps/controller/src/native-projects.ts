@@ -50,6 +50,11 @@ export function createNativeProjects({
     }
   }
 
+  function replaceCachedProject(next: Project) {
+    const index = projects.findIndex(p => p.id === next.id);
+    projects = index >= 0 ? [...projects.slice(0, index), next, ...projects.slice(index + 1)] : [...projects, next];
+  }
+
   async function reloadDetail(projectId: string) {
     const project = projects.find(p => p.id === projectId);
     if (!project) return null;
@@ -62,19 +67,33 @@ export function createNativeProjects({
     if (!project) throw new Error('프로젝트를 찾을 수 없습니다.');
     const revision = project.version;
     try {
+      let response: {project: Project};
       if (action === 'add') {
-        await api(`/projects/${encodeURIComponent(payload.projectId)}/milestones`, {method: 'POST', body: JSON.stringify({requestId: requestId(), revision, text: payload.text})});
+        response = await api(`/projects/${encodeURIComponent(payload.projectId)}/milestones`, {method: 'POST', body: JSON.stringify({requestId: requestId(), revision, text: payload.text})});
       } else if (action === 'toggle') {
-        await api(`/projects/${encodeURIComponent(payload.projectId)}/milestones/${encodeURIComponent(payload.milestoneId!)}`, {method: 'POST', body: JSON.stringify({requestId: requestId(), revision, action: 'toggle', completed: payload.completed})});
+        response = await api(`/projects/${encodeURIComponent(payload.projectId)}/milestones/${encodeURIComponent(payload.milestoneId!)}`, {method: 'POST', body: JSON.stringify({requestId: requestId(), revision, action: 'toggle', completed: payload.completed})});
       } else {
-        await api(`/projects/${encodeURIComponent(payload.projectId)}/milestones/${encodeURIComponent(payload.milestoneId!)}`, {method: 'POST', body: JSON.stringify({requestId: requestId(), revision, action: 'remove'})});
+        response = await api(`/projects/${encodeURIComponent(payload.projectId)}/milestones/${encodeURIComponent(payload.milestoneId!)}`, {method: 'POST', body: JSON.stringify({requestId: requestId(), revision, action: 'remove'})});
       }
+      // The server's response already carries the real, post-mutation
+      // project record (bumped version, real milestone list) - the local
+      // cache must reflect that immediately, not wait for the next
+      // ~3s state poll from main.ts, or the just-made change would appear
+      // to silently revert until then.
+      replaceCachedProject(response.project);
       return {detail: await reloadDetail(payload.projectId)};
     } catch (error) {
-      // A 409 revision conflict never silently overwrites: reload the real
-      // latest state and tell the owner it changed, exactly like the web
-      // cockpit's own projectMilestoneAction.
-      if ((error as {status?: number})?.status === 409) return {detail: await reloadDetail(payload.projectId), notice: '프로젝트가 변경되어 최신 정보를 다시 불러왔습니다.'};
+      // A 409 revision conflict never silently overwrites: refetch the
+      // real canonical project list (never keep serving the stale cached
+      // project alongside a freshly-fetched universe), replace the cache,
+      // then tell the owner it changed - exactly like the web cockpit's
+      // own projectMilestoneAction, which gets the same real refresh via
+      // its full /api/state reload.
+      if ((error as {status?: number})?.status === 409) {
+        const latest = await api<{projects: Project[]}>('/projects');
+        projects = latest.projects ?? [];
+        return {detail: await reloadDetail(payload.projectId), notice: '프로젝트가 변경되어 최신 정보를 다시 불러왔습니다.'};
+      }
       throw error;
     }
   }

@@ -19,15 +19,26 @@ export function projectUniverseListModel(projects, jobs) {
 }
 
 // "왜 이 프로젝트인가?" - built only from real evidence already aggregated
-// by GET /api/projects/:id/universe (dominant drive + its quest goal) and
-// the project's own stored nextAction. Returns null (rendered as "판단 근거
-// 부족" by project-universe-view.mjs) when neither exists - never a
-// generated justification.
+// by GET /api/projects/:id/universe (dominant drive + a real quest that
+// actually carries that same drive) and the project's own stored
+// nextAction. Returns null (rendered as "판단 근거 부족" by
+// project-universe-view.mjs) when neither exists - never a generated
+// justification.
+//
+// topDrive and topQuest must be causally linked: dominantDrives[0] is the
+// drive with the most linked quests, but quests[0] is merely first in
+// storage order and can easily belong to a different drive. Pairing them
+// independently could state a drive next to a goal that has nothing to do
+// with it - a fabricated-sounding rationale. So the quest is selected BY
+// the chosen drive's id, never by list position.
 export function projectReasonSentence(project, universe) {
   const topDrive = (universe.dominantDrives || [])[0];
-  const topQuest = (universe.quests || [])[0];
-  if (topDrive && topQuest) {
-    return `${topDrive.worldName} 욕망과 관련된 목표 "${topQuest.goal}"를 진행 중입니다.${project.nextAction ? ` 다음 작업: ${project.nextAction}` : ''}`;
+  if (topDrive) {
+    const matching = (universe.quests || []).filter(quest => quest.driveId === topDrive.driveId);
+    // Array.prototype.sort is stable, so ties keep their original (already
+    // deterministic) relative order - no further tiebreak is needed.
+    const topQuest = matching.slice().sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0))[0];
+    if (topQuest) return `${topDrive.worldName} 욕망과 관련된 목표 "${topQuest.goal}"를 진행 중입니다.${project.nextAction ? ` 다음 작업: ${project.nextAction}` : ''}`;
   }
   if (project.nextAction) return `다음 작업으로 "${project.nextAction}"을(를) 진행할 예정입니다.`;
   return null;
