@@ -97,7 +97,7 @@
 .puv-shadow-army { gap:12px; }
 .puv-shadow-intro, .puv-shadow-disclaimer { color:var(--muted); font-size:.8125rem; margin:0; }
 .puv-shadow-mission-list { display:grid; gap:10px; }
-.puv-shadow-mission { border:1px solid var(--line); border-radius:12px; padding:12px; display:grid; gap:10px; background:color-mix(in srgb, var(--panel) 78%, var(--accent) 22%); }
+.puv-shadow-mission { border:1px solid var(--line); border-radius:12px; padding:12px; display:grid; gap:10px; background:var(--panel); }
 .puv-shadow-mission-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
 .puv-shadow-mission-top h4 { font-size:.9rem; }
 .puv-shadow-mission-top small { display:block; color:var(--muted); margin-top:3px; }
