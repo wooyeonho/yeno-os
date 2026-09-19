@@ -11,6 +11,7 @@ import {atomicWrite,openStore,acquireRuntimeLock,digest,uid,now} from './lib/sto
 import {acquireContainerLease} from './lib/container-lease.mjs';
 import {ProjectError,projectNameKey,planProjectImport,validateProjectFields,resolveProject,projectRegistryDocument,projectBriefDocument,addMilestone,setMilestoneCompletion,removeMilestone} from './lib/projects.mjs';
 import {projectUniverseSummary} from './lib/project-universe.mjs';
+import {driveStatus} from './lib/drive-status.mjs';
 import {SourceError,validateSourceFields,planSourceImport,resolveSource,sourceRegistryDocument,sourceBriefDocument} from './lib/sources.mjs';
 import {operatingBriefDocument} from './lib/operations.mjs';
 import {exportBackup} from './lib/backup.mjs';
@@ -1204,6 +1205,7 @@ export function createYenoServer(options={}) {
        Object.assign(allowed,{'/icon-192.png':'icon-192.png','/icon-512.png':'icon-512.png','/device-connect.mjs':'device-connect.mjs'});
        Object.assign(allowed,{'/growth-view.mjs':'growth-view.mjs'});
        Object.assign(allowed,{'/living-core-view.mjs':'living-core-view.mjs','/living-core.css':'living-core.css'});
+       Object.assign(allowed,{'/project-universe-view.mjs':'project-universe-view.mjs','/project-universe.css':'project-universe.css','/project-universe-model.mjs':'project-universe-model.mjs'});
        const filename=allowed[url.pathname];if(!filename)throw new HttpError(404,'Not found');const file=path.join(ROOT,'public',filename);if(!fs.existsSync(file))throw new HttpError(404,'UI not available');const contentTypes={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.png':'image/png'};res.writeHead(200,{'Content-Type':contentTypes[path.extname(file)]??'application/octet-stream'});if(req.method==='HEAD')return res.end();return fs.createReadStream(file).pipe(res);
      }
      const recipientMatch=url.pathname.match(/^\/api\/hankki\/checkins\/([a-f0-9-]+)$/);
@@ -1375,6 +1377,10 @@ export function createYenoServer(options={}) {
      if(req.method==='GET'&&url.pathname==='/api/readiness')return respond(res,200,readinessState(req,principal,versioned));
      if(req.method==='GET'&&url.pathname==='/api/self-test'){const payload=selfTestState();if(payload.history.some((item,i)=>item.durableReload?.matched&&!s.selfTests[i].durableReload))save();return respond(res,200,payload);}
      if(req.method==='GET'&&url.pathname==='/api/autopilot')return respond(res,200,autopilotState());
+     // BLACKHOLE Drive read model (UI Slice 2, issue #25): a safe projection
+     // over the existing quest-ranking engine (decide.mjs/motivation.mjs) -
+     // never a second scoring algorithm. See drive-status.mjs.
+     if(req.method==='GET'&&url.pathname==='/api/drives/status')return respond(res,200,driveStatus(s,now()));
      if(req.method==='GET'&&url.pathname==='/api/research')return respond(res,200,researchState());
      if(req.method==='GET'&&url.pathname==='/api/bots')return respond(res,200,botStatus(s,profiles));
      if(req.method==='GET'&&url.pathname==='/api/projects')return respond(res,200,{projects:s.projects});

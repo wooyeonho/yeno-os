@@ -14,11 +14,29 @@ declare module '*world-view.mjs' {
   export function createWorldView(options: {load: () => Promise<unknown>; submit: () => Promise<void>}): {update(overview: unknown, canRun: boolean): Promise<void>; reset(): void};
 }
 declare module '*living-core-view.mjs' {
-  export function createLivingCoreView(options: {root: HTMLElement; onNavigate?: (id: string) => void}): {
+  export function createLivingCoreView(options: {root: HTMLElement; onNavigate?: (id: string, projectId?: string | null) => void}): {
     updateState(state: unknown, online: boolean): void;
     reset(): void;
     destroy(): void;
   };
+}
+declare module '*project-universe-view.mjs' {
+  export function createProjectUniverseView(options: {
+    root: HTMLElement;
+    onOpenProject?: (id: string) => void;
+    onBack?: () => void;
+    onNavigate?: (target: string, payload?: {projectId?: string}) => void;
+    onMilestoneAction?: (action: string, payload: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  }): {
+    updateState(next: Record<string, unknown>): void;
+    reset(): void;
+    destroy(): void;
+  };
+}
+declare module '*project-universe-model.mjs' {
+  export function projectUniverseListModel(projects: unknown[] | undefined, jobs: unknown[] | undefined): Record<string, unknown>;
+  export function projectUniverseDetailModel(project: Record<string, unknown>, universe: Record<string, unknown>): Record<string, unknown>;
+  export function projectReasonSentence(project: Record<string, unknown>, universe: Record<string, unknown>): string | null;
 }
 declare module '*live-voice-client.mjs' {
   export type LiveVoiceEvent =

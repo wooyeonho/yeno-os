@@ -54,7 +54,12 @@ function sentenceFor(core, visualState) {
 function missionCardHTML(core) {
   if (!core?.missionGoal) return `<article class="living-mission empty"><span class="eyebrow">현재 미션</span><p>진행 중인 미션 없음</p></article>`;
   const goal = core.missionGoal.length > 60 ? `${core.missionGoal.slice(0, 60)}…` : core.missionGoal;
-  return `<button type="button" class="living-mission" data-living-action="navigate" data-id="quests"><span class="eyebrow">현재 미션</span><p>${esc(goal)}</p>${core.focusProjectName ? `<small>${esc(core.focusProjectName)}</small>` : ''}</button>`;
+  // UI Slice 2 (issue #25): when this mission is real evidence tied to a
+  // real project (focusProjectId), the card opens that project's Universe
+  // detail directly - otherwise it falls back to the existing goal/quest
+  // surface exactly as before.
+  const target = core.focusProjectId ? `data-id="project-universe" data-project-id="${esc(core.focusProjectId)}"` : 'data-id="quests"';
+  return `<button type="button" class="living-mission" data-living-action="navigate" ${target}><span class="eyebrow">현재 미션</span><p>${esc(goal)}</p>${core.focusProjectName ? `<small>${esc(core.focusProjectName)}</small>` : ''}</button>`;
 }
 
 function signalRowHTML(core) {
@@ -68,11 +73,15 @@ function projectOrbitHTML(projects) {
   if (!active.length) return `<div class="living-orbit empty"><span class="eyebrow">프로젝트</span><p>진행 중인 프로젝트 없음</p></div>`;
   const shown = active.slice(0, 4);
   const rest = active.length - shown.length;
+  // UI Slice 2 (issue #25): each node opens that exact project's real
+  // Universe detail (data-project-id), not the generic list - tapping a
+  // specific project should go straight to it, not make the owner find it
+  // again in a list they just tapped it out of.
   const nodes = shown.map(p => {
     const label = p.name.length > 10 ? `${p.name.slice(0, 10)}…` : p.name;
-    return `<button type="button" class="living-orbit-node" data-living-action="navigate" data-id="projects" title="${esc(p.name)}">${esc(label)}</button>`;
+    return `<button type="button" class="living-orbit-node" data-living-action="navigate" data-id="project-universe" data-project-id="${esc(p.id)}" title="${esc(p.name)}">${esc(label)}</button>`;
   }).join('');
-  const more = rest > 0 ? `<button type="button" class="living-orbit-node living-orbit-more" data-living-action="navigate" data-id="projects">+${rest}</button>` : '';
+  const more = rest > 0 ? `<button type="button" class="living-orbit-node living-orbit-more" data-living-action="navigate" data-id="project-universe">+${rest}</button>` : '';
   return `<div class="living-orbit"><span class="eyebrow">프로젝트</span><div class="living-orbit-row">${nodes}${more}</div></div>`;
 }
 
@@ -116,7 +125,9 @@ export function createLivingCoreView({root, onNavigate = () => {}}) {
     const button = event.target.closest?.('[data-living-action]');
     if (!button || !root.contains(button)) return;
     if (button.dataset.livingAction === 'voice') onNavigate('voice');
-    else if (button.dataset.livingAction === 'navigate') onNavigate(button.dataset.id);
+    // The optional second projectId argument is additive: every existing
+    // caller that only reads the first argument keeps working unchanged.
+    else if (button.dataset.livingAction === 'navigate') onNavigate(button.dataset.id, button.dataset.projectId ?? null);
   }
   root.addEventListener('click', handleClick);
 

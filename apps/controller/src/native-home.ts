@@ -7,20 +7,25 @@
 // This never builds a second voice system: the voice CTA activates the
 // EXISTING native Live Voice toggle button by dispatching a real click on
 // it, so every safety check native-live-voice-view.ts already enforces
-// (online/emergencyStop/busy/disabled) still applies unchanged. Project
-// Orbit/mission/memory taps open the existing advanced-tools drawer (the
-// only native "deeper" surface today) until Slices 2/5 add their own real
-// drill-down screens.
+// (online/emergencyStop/busy/disabled) still applies unchanged.
+//
+// UI Slice 2 (issue #25): Project Orbit/mission taps now open the real
+// native Projects destination (showProjectsView) instead of falling back
+// to the advanced-tools drawer - the owner must never have to open 고급
+// 도구 to reach Project Universe. quests/memory taps still open the
+// advanced-tools drawer until their own drill-down screens (Slice 5+) land.
 export function createNativeHomeNavigation({
   liveVoiceRoot,
   toolsDrawerSelector = '.tools-drawer',
   doc = document,
   showJobsView,
+  showProjectsView,
 }: {
   liveVoiceRoot: HTMLElement;
   toolsDrawerSelector?: string;
   doc?: Document;
   showJobsView: () => void;
+  showProjectsView: (projectId?: string) => void;
 }) {
   function activateVoice() {
     liveVoiceRoot.scrollIntoView({block: 'center', behavior: 'smooth'});
@@ -33,9 +38,10 @@ export function createNativeHomeNavigation({
     details.open = true;
     details.scrollIntoView({block: 'start', behavior: 'smooth'});
   }
-  function navigate(id: string) {
+  function navigate(id: string, projectId?: string | null) {
     if (id === 'voice') { activateVoice(); return; }
-    if (id === 'quests' || id === 'projects' || id === 'memory') { openAdvancedTools(); return; }
+    if (id === 'project-universe') { showProjectsView(projectId ?? undefined); return; }
+    if (id === 'quests' || id === 'memory') { openAdvancedTools(); return; }
     if (id === 'control') { showJobsView(); return; }
   }
   return {navigate, activateVoice, openAdvancedTools};

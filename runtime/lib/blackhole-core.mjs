@@ -309,6 +309,10 @@ export function coreHomeSummary(state) {
     activity: full.activity,
     missionGoal: full.mission?.goal ?? null,
     focusProjectName: full.focusProject?.name ?? null,
+    // Additive (UI Slice 2, issue #25): the real project ID behind
+    // focusProjectName, so Home can link straight to that project's
+    // Universe detail instead of only displaying its name.
+    focusProjectId: full.focusProject?.id ?? null,
     dominantDriveId: full.dominantDriveId,
     dominantDriveName: full.dominantDriveName,
     dominantDriveWorldName: full.dominantDriveWorldName,

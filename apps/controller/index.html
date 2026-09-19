@@ -8,6 +8,7 @@
 <div id="workspace" class="view-studio" hidden>
 <nav class="native-nav" aria-label="블랙홀 화면">
 <button type="button" data-native-view="studio" aria-pressed="true"><span>홈</span></button>
+<button type="button" data-native-view="projects" aria-pressed="false"><span>프로젝트</span></button>
 <button type="button" data-native-view="world" aria-pressed="false"><span>God Eye</span></button>
 <button type="button" data-native-view="jobs" aria-pressed="false"><span>작업</span></button>
 </nav>
@@ -29,6 +30,10 @@
 <details class="tools-drawer"><summary><span>고급 도구</span><small>For-AI · 제작 · 프로젝트 · 설정</small></summary><section id="native-studio" aria-label="고급 도구"></section></details>
 </div>
 
+<section id="tab-projects" class="page-panel" hidden>
+<div class="page-title"><div><span class="eyebrow">BLACKHOLE / PROJECTS</span><h1>프로젝트 유니버스</h1><p class="muted">마일스톤·현재 작업·자료·기억·성과·확인이 필요한 항목을 한 화면에서 확인합니다.</p></div></div>
+<div id="project-universe-root"></div>
+</section>
 <section id="tab-world" class="page-panel" hidden>
 <div class="section-heading"><div><span class="eyebrow">BLACKHOLE / WORLD</span><h2>God Eye</h2><p class="muted">USGS 지진과 NASA 자연재해를 출처별로 확인합니다.</p></div><button id="world-refresh" class="secondary compact" type="button" disabled>새로 조회</button></div>
 <div class="world-bar"><span id="world-status" role="status">첫 조회 대기</span><label>최소 규모 <select id="world-magnitude"><option value="2.5">M 2.5</option><option value="4.5">M 4.5</option><option value="6">M 6.0</option></select></label></div>

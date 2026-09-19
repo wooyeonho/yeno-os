@@ -9,6 +9,7 @@
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/living-core.css">
+  <link rel="stylesheet" href="/project-universe.css">
   <link rel="stylesheet" href="/studio.css">
   <link rel="stylesheet" href="/cockpit.css">
   <link rel="stylesheet" href="/code.css">
@@ -30,7 +31,8 @@
         <button class="nav" data-tab="studio"><span>✦</span> 운영실</button>
         <button class="nav" data-tab="research"><span>⌕</span> 문제의 답 · EUREKA</button>
         <button class="nav" data-tab="world"><span>◎</span> 세계 현황</button>
-        <button class="nav" data-tab="projects"><span>▤</span> 프로젝트 <span id="project-count" class="count">—</span></button>
+        <button class="nav" data-tab="project-universe"><span>◐</span> 프로젝트 유니버스</button>
+        <button class="nav" data-tab="projects"><span>▤</span> 프로젝트 편집 <span id="project-count" class="count">—</span></button>
         <button class="nav" data-tab="sources"><span>▧</span> 자료 <span id="source-count" class="count">—</span></button>
         <button class="nav" data-tab="memory"><span>◈</span> 기억 <span id="memory-count" class="count">—</span></button>
         <button class="nav" data-tab="recovery"><span>↶</span> 복구</button>
@@ -93,6 +95,10 @@
         <div id="world-detail" class="panel" hidden></div><div id="world-list" class="world-list"></div>
         <p class="muted world-footnote">조회 결과는 작업 이력에 문서로 보존됩니다. 위치 권한과 AI 키는 필요하지 않습니다. 자료는 지연·수정될 수 있으며 개인 안전 판정이나 긴급 경보를 제공하지 않습니다.</p>
         <p class="muted">관측: <a href="https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php" target="_blank" rel="noopener noreferrer">USGS</a> · 지도: <a href="https://www.naturalearthdata.com/about/terms-of-use/" target="_blank" rel="noopener noreferrer">Natural Earth</a></p>
+      </section>
+      <section id="tab-project-universe" class="tab-panel" hidden>
+        <div class="section-heading"><div><h2>프로젝트 유니버스</h2><p class="muted">한 프로젝트를 열어 마일스톤·현재 작업·자료·기억·성과·확인이 필요한 항목을 한 화면에서 확인합니다.</p></div></div>
+        <div id="project-universe-root"></div>
       </section>
       <section id="tab-projects" class="tab-panel" hidden>
         <div class="section-heading project-heading"><div><h2>한곳에서 이어가는 프로젝트</h2><p class="muted">목표와 다음 작업을 보관하고, 다시 시작할 때 필요한 문서를 만듭니다.</p></div><button id="add-project" class="button primary" disabled>프로젝트 추가</button></div>

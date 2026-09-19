@@ -10,6 +10,8 @@ const {createVoiceView} = await import('/voice-view.mjs');
 const {createResearchView} = await import('/research-view.mjs');
 const {createGrowthView} = await import('/growth-view.mjs');
 const {createLivingCoreView} = await import('/living-core-view.mjs');
+const {createProjectUniverseView} = await import('/project-universe-view.mjs');
+const {projectUniverseListModel,projectUniverseDetailModel} = await import('/project-universe-model.mjs');
 const {connectBrowser,enableInstall} = await import('/web-client.mjs');
 const $ = (id) => document.getElementById(id);
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -69,7 +71,47 @@ const requestId=()=>crypto.randomUUID();
 const autopilotView=createAutopilotView({root:$('autopilot-root'),notify,onNavigate:tab=>showTab(tab),onCapabilityAction:async(action,payload)=>{const result=await durableMutation(`/api/capabilities/${action}`,payload);await refresh(true);return result;},onControl:async enabled=>{await durableMutation('/api/autopilot',{enabled});await refresh(true);},onOpenJob:()=>{showTab('control');void refresh(true);},onOpenArtifact:id=>perform(()=>openArtifact(id))});
 const growthView=createGrowthView({root:$('growth-root'),onNavigate:tab=>showTab(tab),storage:requestStorage});
 function renderGrowth() {growthView.updateState(current,questData);}
-const livingCoreView=createLivingCoreView({root:$('living-core-root'),onNavigate:tab=>showTab(tab)});
+const livingCoreView=createLivingCoreView({root:$('living-core-root'),onNavigate:(tab,projectId)=>{showTab(tab);if(tab==='project-universe'&&projectId)void openProjectUniverse(projectId);}});
+const projectUniverseView=createProjectUniverseView({root:$('project-universe-root'),onOpenProject:id=>void openProjectUniverse(id),onBack:()=>{projectUniverseOpenId=null;projectUniverseView.updateState(projectUniverseListModelForCurrentState());},onNavigate:(target,payload)=>{showTab(target);if(target==='sources'&&payload?.projectId){const card=[...document.querySelectorAll('[data-project-edit]')].find(button=>button.dataset.projectEdit===payload.projectId)?.closest('article');card?.scrollIntoView({block:'center'});}},onMilestoneAction:(action,payload)=>projectMilestoneAction(action,payload)});
+let projectUniverseOpenId=null;
+function projectUniverseListModelForCurrentState(){return projectUniverseListModel(current?.projects,current?.jobs);}
+async function openProjectUniverse(projectId){
+  projectUniverseOpenId=projectId;showTab('project-universe');
+  projectUniverseView.updateState({screen:'detail',detail:null,loading:true,notice:null});
+  try{
+    const project=(current?.projects||[]).find(p=>p.id===projectId);
+    if(!project)throw new Error('프로젝트를 찾을 수 없습니다.');
+    const universe=await api(`/api/projects/${encodeURIComponent(projectId)}/universe`);
+    if(projectUniverseOpenId!==projectId)return;
+    projectUniverseView.updateState({screen:'detail',detail:projectUniverseDetailModel(project,universe),loading:false,notice:null});
+  }catch(error){
+    if(projectUniverseOpenId!==projectId)return;
+    projectUniverseView.updateState({screen:'detail',detail:null,loading:false,notice:friendly(error.message)});
+  }
+}
+async function reloadProjectUniverseDetail(projectId){
+  const project=(current?.projects||[]).find(p=>p.id===projectId);
+  if(!project)return null;
+  const universe=await api(`/api/projects/${encodeURIComponent(projectId)}/universe`);
+  return projectUniverseDetailModel(project,universe);
+}
+async function projectMilestoneAction(action,payload){
+  const project=(current?.projects||[]).find(p=>p.id===payload.projectId);
+  if(!project)throw new Error('프로젝트를 찾을 수 없습니다.');
+  const revision=project.version;
+  try{
+    if(action==='add')await api(`/api/projects/${encodeURIComponent(payload.projectId)}/milestones`,{requestId:requestId(),revision,text:payload.text});
+    else if(action==='toggle')await api(`/api/projects/${encodeURIComponent(payload.projectId)}/milestones/${encodeURIComponent(payload.milestoneId)}`,{requestId:requestId(),revision,action:'toggle',completed:payload.completed});
+    else await api(`/api/projects/${encodeURIComponent(payload.projectId)}/milestones/${encodeURIComponent(payload.milestoneId)}`,{requestId:requestId(),revision,action:'remove'});
+    await refresh(true);
+    return {detail:await reloadProjectUniverseDetail(payload.projectId)};
+  }catch(error){
+    await refresh(true);
+    const detail=await reloadProjectUniverseDetail(payload.projectId);
+    if(error.status===409)return {detail,notice:'프로젝트가 변경되어 최신 정보를 다시 불러왔습니다.'};
+    throw error;
+  }
+}
 const codeView=createCodeView($('code-root'),{onAction:async(action,payload)=>{const result=await durableMutation(`/api/code/${action}`,payload);await refresh(true);return result;},onOpenArtifact:id=>perform(()=>openArtifact(id))});
 const voiceView=createVoiceView($('voice-root'),{onSend:async(text,{history}={})=>{if(otherRequests?.pending||otherStorageError){const e=new Error('상단의 같은 요청 확인으로 이전 접수를 먼저 확인하세요.');e.status=409;throw e;}const result=await durableMutation('/api/voice',{text,history:history??[]});await refresh(true);return result;},onReadResult:async job=>{const item=job.artifacts.find(a=>a.name.endsWith('.md'));if(!item)throw new Error('읽을 답변 파일이 아직 없습니다.');const r=await api(`/api/artifacts/${encodeURIComponent(item.id)}`,undefined,{raw:true});return (await r.text()).split('\n\n---\nBLACKHOLE AI 초안')[0];}});
 let otherRequests,otherStorageError;
@@ -177,7 +219,7 @@ function showTab(tab) {
   $('voice-root').hidden=tab!=='voice';
   activeTab=tab;for(const el of document.querySelectorAll('.tab-panel'))el.hidden=el.id!==`tab-${tab}`;
   for(const el of document.querySelectorAll('.nav')){el.classList.toggle('active',el.dataset.tab===tab);el.setAttribute('aria-current',el.dataset.tab===tab?'page':'false');}
-  $('page-title').textContent={code:'코드 흡수·자동 개발',voice:'자비스 음성 대화',autopilot:'자동 운영',control:'조종석',quests:'목표 실행',growth:'성장',studio:'운영실',research:'문제의 답 · EUREKA',world:'세계 현황',projects:'프로젝트',sources:'자료',memory:'기억',recovery:'복구',settings:'능력·설정'}[tab];
+  $('page-title').textContent={code:'코드 흡수·자동 개발',voice:'자비스 음성 대화',autopilot:'자동 운영',control:'조종석',quests:'목표 실행',growth:'성장',studio:'운영실',research:'문제의 답 · EUREKA',world:'세계 현황','project-universe':'프로젝트 유니버스',projects:'프로젝트 편집',sources:'자료',memory:'기억',recovery:'복구',settings:'능력·설정'}[tab];
   if(tab==='quests' || tab==='growth')void refreshQuests(true);
   if(tab==='studio')void studioView.refresh();
   if(tab==='research')void researchView.refresh();
@@ -194,6 +236,7 @@ function render(s) {
   $('events-list').innerHTML=(s.events||[]).slice(0,12).map(e=>`<li><time>${esc(date(e.at || e.createdAt))}</time>${esc(e.text || e.message)}</li>`).join('') || '<li class="muted">아직 실행 기록이 없습니다.</li>';
   $('memory-count').textContent=(s.memories||[]).length;renderMemories();
   renderProjects();renderSources();renderQuests();
+  if(activeTab==='project-universe'&&!projectUniverseOpenId)projectUniverseView.updateState(projectUniverseListModelForCurrentState());
   $('snapshots-list').innerHTML=(s.snapshots||[]).map(sn=>`<article class="snapshot-item"><div><strong>${esc(sn.label)}</strong><small>${esc(date(sn.createdAt))}</small></div><button class="button subtle" data-restore="${esc(sn.id)}">이 시점으로</button></article>`).join('') || '<div class="empty">기억과 설정을 저장해 두면 이곳에서 돌아갈 수 있어요.</div>';
   $('concurrency').value=s.concurrency;
   $('module-settings').innerHTML=Object.entries(moduleInfo).map(([key,[name,desc]])=>`<div class="setting-row"><div><h3>${name}</h3><p>${desc}</p></div><input class="switch" type="checkbox" role="switch" aria-label="${name}" data-module="${key}" ${s.modules?.[key]?'checked':''} ${key==='ai'&&!s.ai?.configured?'disabled':''}></div>`).join('');
@@ -636,7 +679,7 @@ $('disconnect').addEventListener('click',disconnect);$('disconnect-mobile').addE
 $('reconnect').addEventListener('click',()=>refresh(true));
 document.addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
-  if(b.dataset.tab)showTab(b.dataset.tab);
+  if(b.dataset.tab){if(b.dataset.tab==='project-universe'){projectUniverseOpenId=null;projectUniverseView.updateState(projectUniverseListModelForCurrentState());}showTab(b.dataset.tab);}
   if(b.dataset.close)$(b.dataset.close).close();
   if(b.dataset.example && !b.disabled){$('command').value=b.dataset.example;$('command-type').value='command';$('command').focus();}
   if(b.dataset.quick && !b.disabled)void submitCommand('/api/jobs',{type:b.dataset.quick});
