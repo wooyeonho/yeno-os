@@ -1194,6 +1194,7 @@ export function createYenoServer(options={}) {
    const semanticGate=browserSemanticGate(job,pending.semanticVerification,pending.semanticIndependence);
    const finalGate=pending.deterministic.verified&&semanticGate.status==='verified';
    job.browser={...(job.browser??{}),status:finalGate?'completed':'blocked',provider:pending.provider,model:pending.model,providerOutcome:pending.providerOutcome,evidenceClass:pending.evidenceClass??'SANDBOX_SYNTHETIC',snapshotRevision:pending.snapshot.revision,artifactRef:artifactId,artifactHash:pending.artifact.sha256,deterministicVerification:pending.deterministic,semanticVerification:pending.semanticVerification?{...pending.semanticVerification,independence:pending.semanticIndependence}:semanticGate,sourceIntake:{status:sourceStatus,readingStatus:'partial',decision:'pending',sourceId,reason:sourceReason},capabilityInboxId:null,restartState:'settled',cancellationState:'active'};
+   try { const admitted=admitBrowserCapability(s.capabilityInbox,job,{at:now()}); s.capabilityInbox=admitted.inbox; job.browser.capabilityInboxId=admitted.result.id; event(`Kirby Browser capability inbox ${admitted.result.alreadyAdmitted?'reused':'created'}: ${admitted.result.id}`); } catch (error) { if (!(error instanceof CapabilityInboxError)) throw error; event(`Kirby Browser capability promotion held: ${error.code}`); }
    delete job.browserPending;
    job.step=3;job.status=finalGate?'completed':'failed';
    if(!pending.deterministic.verified)job.error='browser_deterministic_'+pending.deterministic.reasons.join(',');
