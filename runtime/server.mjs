@@ -214,7 +214,7 @@ export function createYenoServer(options={}) {
      if(duplicate)throw new HttpError(409,'동일 공개 URL·목표의 Browser 작업이 이미 존재합니다.',{jobId:duplicate.id});
      const job=newJob({type:'browser',title:body.title?requiredText(body.title,160):'공개 URL 읽기 · Browser Harness',text:goal},{browserExecution:true});
      job.browserRequest={goal,sourceUrl,successCriterion,createdAt:now()};
-     job.browser={status:'queued',provider:'typesafe-jev',model:null,providerOutcome:'not_started',snapshotRevision:null,selectedOperation:null,targetIndex:null,actionEvidence:[],artifactRef:null,artifactHash:null,deterministicVerification:null,semanticVerification:null,sourceIntake:{status:'pending',readingStatus:'unread',decision:'pending',sourceId:null},restartState:'created',cancellationState:'active'};
+     job.browser={status:'queued',commandId:body.requestId,provider:'typesafe-jev',model:null,providerOutcome:'not_started',snapshotRevision:null,selectedOperation:null,targetIndex:null,actionEvidence:[],artifactRef:null,artifactHash:null,deterministicVerification:null,semanticVerification:null,sourceIntake:{status:'pending',readingStatus:'unread',decision:'pending',sourceId:null},restartState:'created',cancellationState:'active'};
      touch(job);return job;
    }
  // The only path to a real provider request. Routing provenance already on
