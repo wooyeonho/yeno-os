@@ -170,7 +170,7 @@ export function planBrowserAction({snapshot, draft, independentOutcome = null}) 
   }
   if (action.operation === 'DONE') {
     if (!object(independentOutcome) || independentOutcome.status !== 'verified') fail('done_requires_independent_verification');
-    if (!Array.isArray(independentOutcome.evidenceRefs) || independentOutcome.evidenceRefs.length > MAX_EVIDENCE_REFS || independentOutcome.evidenceRefs.some(ref => !nonEmpty(ref, 200))) fail('invalid_done_evidence');
+    if (!Array.isArray(independentOutcome.evidenceRefs) || independentOutcome.evidenceRefs.length < 1 || independentOutcome.evidenceRefs.length > MAX_EVIDENCE_REFS || independentOutcome.evidenceRefs.some(ref => !nonEmpty(ref, 200))) fail('invalid_done_evidence');
     return {version: BROWSER_DECISION_VERSION, action, dispatchAllowed: false, requiresOwnerApproval: false, independentlyVerified: true, evidenceRefs: [...independentOutcome.evidenceRefs]};
   }
   if (['SCROLL_UP', 'SCROLL_DOWN', 'WAIT'].includes(action.operation)) {
