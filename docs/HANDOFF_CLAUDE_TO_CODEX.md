@@ -12,10 +12,10 @@ codex (원본)
          └─ blackhole/grok-provider-adapter-claude-20260920 (PR #34, CI green)
              └─ blackhole/single-ledger-intake-claude-20260920 (PR #35, CI green — run #105 f13d4cd)
                  └─ blackhole/canonical-intake-import-claude-20260920 (PR #36, CI green — run #105 id 35513051558, f13d4cd)
-                     └─ blackhole/r2-verify-shadow-ui-claude-20260920 (PR #37, CI: run #106 id 35513941919, head d236f71 — 이 세션 종료 시점 in_progress, 아직 conclusion 미확정)
+                     └─ blackhole/r2-verify-shadow-ui-claude-20260920 (PR #37, CI green — run #106 id 35513941919, head d236f71, conclusion:success 실제 조회 완료)
 ```
 
-PR #33/#34/#35/#36 모두 실제로 존재하고 CI green임을 이번 세션에서 재확인했다(문서 속 과거 관측을 재사용하지 않음). PR #37이 최신이며 아직 CI 결과가 완전히 확정되지 않았다 — **통과했다고 가정하지 않는다.**
+PR #33/#34/#35/#36/#37 전부 실제로 존재하고 exact-head CI green임을 이번 세션에서 재확인했다(문서 속 과거 관측을 재사용하지 않음).
 
 ## 2. 이번 세션에서 실제로 한 일
 
@@ -29,14 +29,14 @@ PR #33/#34/#35/#36 모두 실제로 존재하고 CI green임을 이번 세션에
 | 항목 | 상태 |
 |---|---|
 | PR #33/#34/#35/#36 CI | 실제 재조회함 — green |
-| PR #37 CI | 이 문서 작성 시점 **in_progress** — conclusion 확인 전. 다음 세션이 반드시 재확인해야 함 |
+| PR #37 CI | **실제 조회 완료** — run #106(id 35513941919), head `d236f71`, `conclusion:success`. 아티팩트 `sha256:e51a362106dba3347abc7db36a947de0748178527c563799edc4be673ede941b` |
 | `npm run verify:mobile`(실제 Chromium) | 이 원격 샌드박스에서 `#pair-screen` 타임아웃 — R2 브랜치와 수정 전 PR #36 head 양쪽에서 동일 재현되어 사전 존재 환경 한계로 확인(회귀 아님). 실기기 검증은 여전히 별도 필요 |
 | Android/APK | 변경 없음 → 새 APK 없음(의도적) |
 | production/merge/결제/외부 게시 | 전혀 없음 |
 
 ## 4. 다음 단일 행동 (즉시 실행 가능)
 
-**PR #37의 exact-head CI(run id 35513941919, head `d236f71`) conclusion을 실제로 조회하고, green이면 Issue #25에 §J 형식 보고를 게시한 뒤 R3(실제 폰 사용 흐름 1건: 명령 접수→job→artifact→검증→조회→앱 종료/재접속→같은 결과→stop→명시적 resume, `phone-acceptance.test.mjs`와의 실제 연결 확인)로 진행한다. red면 PR #37 범위 안에서만 원인을 조사해 수정한다.**
+**PR #37은 exact-head CI green으로 확정됐고 Issue #25에 §J 형식 보고를 게시했다. 다음은 R3(실제 폰 사용 흐름 1건: 명령 접수→job→artifact→검증→조회→앱 종료/재접속→같은 결과→stop→명시적 resume)로 진행 — 이미 `phone-acceptance.test.mjs`가 다루는 흐름에 이번 R1/R2에서 추가된 소스 검색·Shadow Army UI가 실제로 맞물리는지 별도 slice로 검사한다.**
 
 ```
 git checkout blackhole/r2-verify-shadow-ui-claude-20260920
