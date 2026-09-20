@@ -28,7 +28,7 @@ const INPUT_FIELDS = Object.freeze([
 const SECRET_VALUE = /(?:sk-[A-Za-z0-9_-]{12,}|xai-[A-Za-z0-9_-]{12,}|nvapi-[A-Za-z0-9_-]{12,}|AIza[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._-]{12,})/;
 const SECRET_ASSIGNMENT = /(?:api[_ -]?key|password|passwd|secret|token|authorization|credential)\s*[:=]\s*\S+/i;
 const JAILBREAK = /\bjailbreak\b|탈옥|재탈옥|guardrail.{0,24}(?:bypass|evasion)|safety.{0,24}(?:bypass|override)|안전.{0,12}우회|정책.{0,12}우회/i;
-const EVASION = /(?:ad|keyword|creative|moderation|platform|policy).{0,28}(?:bypass|circumvent|evad|우회)|광고.{0,18}우회|소재.{0,18}우회|플랫폼.{0,18}우회/i;
+const EVASION = /(?:(?:ad|keyword|creative|moderation|platform|policy).{0,28}(?:bypass|circumvent|evad|우회)|(?:bypass|circumvent|evad|우회).{0,28}(?:ad|keyword|creative|moderation|platform|policy)|광고.{0,18}우회|소재.{0,18}우회|플랫폼.{0,18}우회)/i;
 const CREDENTIAL_EXFILTRATION = /(?:steal|dump|extract|exfiltrat|leak).{0,36}(?:api[_ -]?key|token|password|secret|credential)|(?:api[_ -]?key|token|password|secret).{0,36}(?:훔치|탈취|빼내|유출)/i;
 const PROMPT_INJECTION = /prompt injection|ignore (?:all|any|the|previous) instructions|system prompt|tool poisoning|rug pull|프롬프트 인젝션|도구 오염|지시 무시/i;
 const EXTERNAL_EFFECT = /\b(?:publish|post|send|pay|payment|login|subscribe|upload|delete)\b|게시|발행|발송|결제|로그인|구독|업로드|삭제/i;
