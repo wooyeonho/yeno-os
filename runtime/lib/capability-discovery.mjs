@@ -1,3 +1,4 @@
+import { reviewCapabilityIntake } from './agent-security-intake.mjs';
 import crypto from 'node:crypto';
 import {publicQuest} from './quests.mjs';
 import {validateCapabilities, initialCapabilities, importCapability} from './capabilities.mjs';
@@ -244,4 +245,16 @@ export function qualifyCandidate(candidate, {manifest = null, emergencyStop = fa
   const eligible = blockers.length === 0;
   const action = !eligible ? 'blocked' : candidate.origin === 'active' ? 'reuse' : 'acquire_with_owner_approval';
   return {version: DISCOVERY_VERSION, id: candidate?.id ?? null, engine: candidate?.engine ?? null, origin: candidate?.origin ?? null, hash, risk, approvalRequired, eligible, action, checks, blockers};
+}
+
+
+// External references pass through the same Kirby checks plus the security
+// intake gate. This is pure qualification: no fetch, import, activation,
+// model call or execution is performed here.
+export function qualifyExternalCandidate(candidate, {manifest = null, intake, emergencyStop = false} = {}) {
+  const security = reviewCapabilityIntake(intake);
+  const base = qualifyCandidate(candidate, {manifest, emergencyStop});
+  const blockers = [...base.blockers, ...security.blockers.map(reason => 'security:' + reason)];
+  const eligible = base.eligible && security.status === 'candidate';
+  return {...base, security, eligible, action: eligible ? base.action : 'blocked', blockers};
 }
