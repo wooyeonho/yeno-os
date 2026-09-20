@@ -105,3 +105,4 @@ export function browserBenchmarkStatus({env = process.env, at} = {}) {
     providerConfigured: env.YENO_JEV_OFFICIAL_ENDPOINT_CONFIRMED === 'true' && typeof env.YENO_JEV_MODEL === 'string' && env.YENO_JEV_MODEL.length > 0
   };
 }
+// Benchmark output remains synthetic until live acceptance is recorded.
