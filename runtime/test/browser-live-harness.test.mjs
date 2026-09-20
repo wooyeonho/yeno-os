@@ -44,7 +44,8 @@ async function setup(t, options = {}) {
 
 test('sandbox browser route creates a durable job, source draft and phone-readable result only after both gates', async t => {
   const h = await setup(t,{browserHarnessAdapter:adapter});
-  const queued = await h.post('/api/browser/harness',{goal:'공개 페이지 제목·본문·링크 읽기',sourceUrl:PUBLIC});
+  const commandId = randomUUID();
+  const queued = await h.post('/api/browser/harness',{requestId:commandId,goal:'공개 페이지 제목·본문·링크 읽기',sourceUrl:PUBLIC});
   assert.equal(queued.status,201,JSON.stringify(queued.body));
   const job = await h.wait(queued.body.jobId);
   assert.equal(job.status,'completed',job.error);
@@ -56,6 +57,8 @@ test('sandbox browser route creates a durable job, source draft and phone-readab
   assert.equal(phone.status,200);
   assert.equal(phone.body.job.id,job.id);
   assert.equal(phone.body.browser.artifactHash,job.browser.artifactHash);
+  // The phone's durable command id must survive the job lifecycle and readback.
+  assert.equal(phone.body.browser.commandId,commandId);
 });
 
 test('no adapter stays unavailable and deterministic output cannot become a verified result', async t => {
