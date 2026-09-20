@@ -7,6 +7,7 @@ import {initialCodeWorkshop,validateCodeWorkshop,disableCodeForRestore} from './
 import {validateCodeJob} from './code-jobs.mjs';
 import {validateRouting} from './brain-routing.mjs';
 import {initialCapabilities,validateCapabilities,validateCapabilityRequest,capabilityInputSha256,disableAllCapabilitiesForRestore} from './capabilities.mjs';
+import {initialCapabilityInbox,validateCapabilityInbox} from './capability-inbox.mjs';
 import {validateWorldSnapshot} from './world.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -65,7 +66,7 @@ function memories(value) {
   }
 }
 function validateState(state) {
-  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop', 'selfTests', 'runtimeBoots', 'deviceAcceptances', 'outcomeConnectors', 'outcomeReadings', 'outcomeEvidence', 'blackholeCore', 'memoryEvents', 'memorySyncOutbox', 'jevShadowLog', 'grokQuarantined', 'grokMultiAgentApproval'], STATE_KEYS);
+  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop', 'selfTests', 'runtimeBoots', 'deviceAcceptances', 'outcomeConnectors', 'outcomeReadings', 'outcomeEvidence', 'capabilityInbox', 'blackholeCore', 'memoryEvents', 'memorySyncOutbox', 'jevShadowLog', 'grokQuarantined', 'grokMultiAgentApproval'], STATE_KEYS);
   if (Object.hasOwn(state, 'runtimeBoots')) validateBootRecords(state.runtimeBoots);
   if (Object.hasOwn(state, 'deviceAcceptances')) validateDeviceAcceptances(state.deviceAcceptances);
   if (Object.hasOwn(state, 'outcomeConnectors')) validateConnectors(state.outcomeConnectors);
@@ -74,6 +75,8 @@ function validateState(state) {
   if(!Object.hasOwn(state,'autopilot'))state.autopilot=initialAutopilot();
   if(!Object.hasOwn(state,'capabilities'))state.capabilities=initialCapabilities();
   validateCapabilities(state.capabilities);
+  if(!Object.hasOwn(state,'capabilityInbox'))state.capabilityInbox=initialCapabilityInbox();
+  validateCapabilityInbox(state.capabilityInbox);
  if(!Object.hasOwn(state,'codeWorkshop'))state.codeWorkshop=initialCodeWorkshop();
  validateCodeWorkshop(state.codeWorkshop);
  for(const job of state.jobs){validateCodeJob(job,state.codeWorkshop);validateRepositoryJob(job);validateJobEvidence(job);}
