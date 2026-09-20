@@ -54,6 +54,8 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Build and verify frontend
         run: npm run build
+      - name: Generate platform icon assets
+        run: npm run tauri -- icon src-tauri/icons/source.svg
       - name: Build unsigned Windows NSIS installer
         run: npm run tauri -- build --ci --target x86_64-pc-windows-msvc --bundles nsis
       - name: Collect Windows artifacts and hashes
