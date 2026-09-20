@@ -196,8 +196,8 @@ export function validateBrowserJob(job) {
   validatePublicHttpsUrl(request.sourceUrl);
   if (request.successCriterion !== undefined && !nonEmpty(request.successCriterion, 2000)) fail('invalid_browser_success_criterion');
   if (!['queued','running','paused','completed','failed','cancelled'].includes(job.status)) fail('invalid_browser_job_status');
-  if (job.browser?.snapshotRevision !== undefined && (!Number.isInteger(job.browser.snapshotRevision) || job.browser.snapshotRevision < 0)) fail('invalid_browser_snapshot_revision');
-  if (job.browser?.artifactHash !== undefined && !/^[a-f0-9]{64}$/i.test(job.browser.artifactHash)) fail('invalid_browser_artifact_hash');
+  if (job.browser?.snapshotRevision !== undefined && job.browser.snapshotRevision !== null && (!Number.isInteger(job.browser.snapshotRevision) || job.browser.snapshotRevision < 0)) fail('invalid_browser_snapshot_revision');
+  if (job.browser?.artifactHash !== undefined && job.browser.artifactHash !== null && !/^[a-f0-9]{64}$/i.test(job.browser.artifactHash)) fail('invalid_browser_artifact_hash');
   return true;
 }
 export function browserHarnessStatus({adapterConfigured = false, provider = null} = {}) {
