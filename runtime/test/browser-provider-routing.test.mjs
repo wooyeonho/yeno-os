@@ -57,5 +57,5 @@ test('unavailable/selected route invariants and tamper checks are strict', () =>
   assert.throws(() => validateBrowserDecisionRoute({...unavailable, provider: 'xai'}), /unavailable_route_must_not_select/);
   const liveShape = routeBrowserDecision({env: configured, at: AT});
   assert.throws(() => validateBrowserDecisionProviderSnapshot({...liveShape, providers: liveShape.providers.slice(0, 2)}), /invalid_provider_snapshot/);
-  assert.throws(() => typesafeJevDecisionStatus({...configured, YENO_JEV_MODEL: 'bad model'}), /./, 'the status must remain safe even if invalid model is supplied');
+  assert.equal(typesafeJevDecisionStatus({...configured, YENO_JEV_MODEL: 'bad model'}).status, 'unavailable');
 });
