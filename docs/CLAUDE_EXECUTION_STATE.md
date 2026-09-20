@@ -233,3 +233,24 @@ git checkout blackhole/homunculus-heartbeat-claude-20260920
 npm test
 ```
 
+## 16. STAGE 4 + STAGE 5 실제 감사 결과 — 이미 배선·시험되어 있다 (코드 변경 없음, 추측 아닌 실제 확인)
+
+지시 §2에 따라 STAGE 4로 넘어가기 전 실제 코드 상태를 먼저 감사했다. **AGENTS.md의 2026-09-15 항목들이 "배선 없음"이라고 적어 둔 이후, 이 저장소에서 이미 실제로 배선이 진행됐다** — 문서의 과거 기록을 새 사실로 가정하지 않고 코드를 직접 읽어 확인했다.
+
+- **STAGE 4(멀티 프로바이더 라우터)**: `runtime/lib/model-router.mjs`(순수 정책, 7개 시험 재확인 pass)는 `runtime/lib/brain-routing.mjs`를 통해 **이미 실제 job 배정에 배선돼 있다** — `server.mjs`가 `routeAgentJob`/`transportAuthority`/`callTransportFor`/`settleRouting`을 import해 일반 agent job 생성(line 119)과 Gemini Live 실시간 음성 세션 오픈(line 1345) 양쪽에서 실제로 호출한다. `DECLARED_BRAIN_POOL`은 `env.YENO_BRAIN_POOL`(소유자 선언, 미설정 시 빈 배열)에서만 오므로 기존 단일 provider 설정(`legacyConfig`) 동작은 변경되지 않았다 — 순수 추가·opt-in. `readiness.mjs`의 `modelRouter` 항목이 이미 실제 `routedJobs`/`liveEvidence`로 이 배선의 실사용 여부를 정직하게 보고한다. **결론: STAGE 4의 핵심 요구(실제 provider 상태·failover·CI 합성 전송만)는 이미 충족돼 있다.** 코드 변경 없음.
+- **STAGE 5(커비 능력 레지스트리 일반화)**: `runtime/lib/closed-loop.mjs`의 `kirbyStage()`가 이미 `capability-discovery.mjs`의 `requiredCapability`/`discoverCapability`/`qualifyCandidate`/`projectInput`을 import해 사용하고 있다 — 예전 고정 표(`ARCHETYPE_CAPABILITY`)는 `LEGACY_ARCHETYPE_CAPABILITY`로 이름이 바뀌어 `legacyCapabilityId`라는 부가 참조 필드로만 남아 있고, 실제 격차 판정 경로는 이미 일반화된 증거 기반 탐색이다. **결론: capability-discovery.mjs의 AGENTS.md 항목이 예고했던 "PR #15 merge 후 배선"이 이미 실제로 일어났다.** 코드 변경 없음.
+
+이 두 항목은 새 코드·새 시험이 필요 없다 — 실제 상태를 정직하게 기록하는 것 자체가 이 단계의 완료 조건("실제 상태 확인")을 만족한다.
+
+## 17. STAGE 6 실제 감사 결과 — GitHub 계열만 구현됨, 나머지 원천은 대부분 owner 승인 경계(외부 계정 연결)에 걸림
+
+`runtime/lib/ecosystem.mjs`(공개 GitHub topic 검색 6개, README·LICENSE·SKILL.md만 읽음)와 `runtime/lib/discovery.mjs`(고정된 GitHub Releases 피드 워처)만 실제로 존재한다. 지시가 나열한 9개 원천(GitHub Trending·공식 문서·Releases·Product Hunt·Reddit·X·Threads·Instagram·MCP Registry·공개 논문) 중 **GitHub 계열(2개)만 구현돼 있고 나머지 7개는 코드가 전혀 없다.**
+
+Product Hunt·Reddit·X·Threads·Instagram은 전부 실제 API 키/OAuth 앱 등록 또는 계정 연결이 필요하다 — 지시 자체가 "외부 계정 연결"을 owner 승인 필수 항목으로 명시했으므로, 이 5개 원천을 실제로 붙이는 작업은 이 세션이 임의로 진행하지 않는다. 반면 **MCP Registry(공개, 인증 불필요, GitHub topic 검색과 동일한 성격)와 공개 논문(예: arXiv 공개 API, 인증 불필요)은 계정 연결 없이 안전하게 추가할 수 있는 후보**다.
+
+### BLOCKER
+Product Hunt/Reddit/X/Threads/Instagram 연동: owner의 명시적 계정 연결·API 키 발급 승인 필요(지시의 owner 승인 경계). 전체 작업은 멈추지 않는다 — MCP Registry/공개 논문처럼 승인이 필요 없는 원천 확장이 다음 안전한 개발 조각이다.
+
+### NEXT SINGLE ACTION
+지시 §2("승인이 필요 없는 다음 개발·테스트·문서·sandbox 단계는 계속 진행한다")에 따라, 계정 연결이 필요 없는 MCP Registry 공개 카탈로그 읽기를 `ecosystem.mjs`와 동일한 읽기 전용·미설치·미실행 원칙으로 별도 slice로 설계·구현한다.
+
