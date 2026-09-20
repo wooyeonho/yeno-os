@@ -206,6 +206,7 @@ export function browserHarnessStatus({adapterConfigured = false, provider = null
 export function typesafeJevProviderStatus(env = process.env) {
   const fields = ['YENO_JEV_BASE_URL','YENO_JEV_API_KEY','YENO_JEV_MODEL'];
   const missing = fields.filter(key => typeof env[key] !== 'string' || !env[key].trim());
+  if (env.YENO_JEV_OFFICIAL_ENDPOINT_CONFIRMED !== 'true') missing.push('YENO_JEV_OFFICIAL_ENDPOINT_CONFIRMED');
   return {provider:'typesafe-jev', status:missing.length ? 'unavailable' : 'configured', missing:missing.map(key => key.replace(/^YENO_JEV_/, '').toLowerCase()), reason:missing.length ? 'official endpoint or credential not configured' : null};
 }
 export async function runSandboxBrowserHarness({goal, sourceUrl, resolveHost, fetchPublicPage, decisionProvider, executeAction, signal, maxActions = MAX_ACTIONS} = {}) {
