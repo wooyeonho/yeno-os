@@ -158,5 +158,5 @@ export function sourceSearchKey(value) {
 }
 export function sourceMatches(source, query) {
   const key = sourceSearchKey(query);
-  return !key || [source.id, source.title, source.url, source.canonicalUrl, source.summary, source.application, ...sourceReferenceNames(source)].some(value => sourceSearchKey(value).includes(key));
+  return !key || [source.id, source.title, source.url, source.canonicalUrl, source.sourceLocator, source.summary, source.application, ...(source.aliases ?? []), ...sourceReferenceNames(source)].some(value => sourceSearchKey(value).includes(key));
 }

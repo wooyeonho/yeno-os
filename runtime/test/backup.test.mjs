@@ -21,7 +21,7 @@ function fixture(t) {
   state.events.push({ id: crypto.randomUUID(), at, text: 'A completed operation.' });
   const project = { id: crypto.randomUUID(), name: 'YENO', repositoryUrl: 'https://github.com/wooyeonho/yeno-os', summary: '개인 운영체제', nextAction: '복구 검증', status: 'active', version: 1, createdAt: at, updatedAt: at, milestones: [] };
   state.projects.push(project);
-  state.sources.push({ id: crypto.randomUUID(), url: 'https://nodejs.org/api/crypto.html', canonicalUrl: 'https://nodejs.org/api/crypto.html', title: 'Node crypto', projectId: project.id, readingStatus: 'read', decision: 'candidate', summary: 'AES GCM', application: '암호화 백업', riskNotes: '원문 라이선스와 민감 정보 보관 조건 확인 필요', version: 1, createdAt: at, updatedAt: at });
+  state.sources.push({ id: crypto.randomUUID(), url: 'https://nodejs.org/api/crypto.html', canonicalUrl: 'https://nodejs.org/api/crypto.html', sourceLocator: null, title: 'Node crypto', projectId: project.id, readingStatus: 'read', decision: 'candidate', implementationStatus: 'idea', entityType: 'UNRESOLVED', origin: 'user', aliases: [], summary: 'AES GCM', application: '암호화 백업', riskNotes: '원문 라이선스와 민감 정보 보관 조건 확인 필요', version: 1, createdAt: at, updatedAt: at });
   const job = { id: jobId, title: '문서 만들기', type: 'document', input: '실제 입력', status: 'completed', step: 3, totalSteps: 3, createdAt: at, updatedAt: at, error: null, version: 4, artifacts: [{ id: artifactId, name: 'document.md' }], projectId: project.id, sourceId: state.sources[0].id, sourceReport: true, normalized: '실제 입력', inputSha256: digest('실제 입력') };
   state.jobs.push(job);
   state.artifacts[artifactId] = { id: artifactId, name: 'document.md', filename: `${artifactId}.md`, sha256: digest(content), bytes: content.length, jobId };

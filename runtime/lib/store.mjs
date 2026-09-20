@@ -14,7 +14,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {assertStandaloneDirectory} from './container-lease.mjs';
 import {validateProjectRegistry} from './projects.mjs';
-import {validateSourceRegistry} from './sources.mjs';
+import {validateSourceRegistry,migrateLegacySource} from './sources.mjs';
 import {initializeRequestLedger,validateRequestLedger} from './request-ledger.mjs';
 import {initialDiscovery,validateDiscovery} from './discovery.mjs';
 import {initialEcosystem,validateEcosystem} from './ecosystem.mjs';
@@ -123,7 +123,7 @@ export function openStore(directory) {
  fs.mkdirSync(directory,{recursive:true,mode:0o700});
  const file=path.join(directory,'state.json');
  let state, recovered=false;
- const decode = file => {const envelope=JSON.parse(fs.readFileSync(file,'utf8')); if(digest(envelope.payload)!==envelope.sha256)throw new Error('checksum mismatch'); const data=JSON.parse(envelope.payload); if(!Array.isArray(data.jobs)||!Array.isArray(data.memories)||!Array.isArray(data.snapshots)||!Array.isArray(data.events)||!data.modules||!data.requests||!data.artifacts||!Number.isInteger(data.revision))throw new Error('invalid state schema');if(Object.hasOwn(data,'projects'))validateProjectRegistry(data.projects);if(Object.hasOwn(data,'sources'))validateSourceRegistry(data.sources,data.projects??[]);if(Object.hasOwn(data,'discovery'))validateDiscovery(data.discovery);if(Object.hasOwn(data,'ecosystem'))validateEcosystem(data.ecosystem);for(const job of data.jobs){if(job.worldSnapshot)validateWorldSnapshot(job.worldSnapshot);if(job.type==='world'&&job.step>=2&&!job.worldSnapshot)throw new Error('missing world checkpoint');if(job.agentJournal)validateAgentJournal(job.agentJournal);if(job.routing!==undefined)validateRouting(job.routing);validateBotAssignment(job);validateShadowAssignment(job);}initializeQuestCollections(data);sanitizeEnrollmentReceipts(data);validateRequestLedger(data);return data;};
+ const decode = file => {const envelope=JSON.parse(fs.readFileSync(file,'utf8')); if(digest(envelope.payload)!==envelope.sha256)throw new Error('checksum mismatch'); const data=JSON.parse(envelope.payload); if(!Array.isArray(data.jobs)||!Array.isArray(data.memories)||!Array.isArray(data.snapshots)||!Array.isArray(data.events)||!data.modules||!data.requests||!data.artifacts||!Number.isInteger(data.revision))throw new Error('invalid state schema');if(Object.hasOwn(data,'projects'))validateProjectRegistry(data.projects);if(Object.hasOwn(data,'sources')){for(const source of data.sources)migrateLegacySource(source);validateSourceRegistry(data.sources,data.projects??[]);}if(Object.hasOwn(data,'discovery'))validateDiscovery(data.discovery);if(Object.hasOwn(data,'ecosystem'))validateEcosystem(data.ecosystem);for(const job of data.jobs){if(job.worldSnapshot)validateWorldSnapshot(job.worldSnapshot);if(job.type==='world'&&job.step>=2&&!job.worldSnapshot)throw new Error('missing world checkpoint');if(job.agentJournal)validateAgentJournal(job.agentJournal);if(job.routing!==undefined)validateRouting(job.routing);validateBotAssignment(job);validateShadowAssignment(job);}initializeQuestCollections(data);sanitizeEnrollmentReceipts(data);validateRequestLedger(data);return data;};
  if(fs.existsSync(file)) {try{state=decode(file);}catch{try{state=decode(`${file}.bak`);recovered=true;}catch{throw new Error('Both state and backup are unreadable. Original data has been preserved.');}}}
  else if(fs.existsSync(`${file}.bak`)){state=decode(`${file}.bak`);recovered=true;}
  else state=initialState();

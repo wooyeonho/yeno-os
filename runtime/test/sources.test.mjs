@@ -117,12 +117,16 @@ test('source migration preserves legacy records and rejects corrupt registries w
     projectId: null, ...reviewed, version: 2,
     createdAt: '2026-09-09T00:00:00.000Z', updatedAt: '2026-09-09T01:00:00.000Z',
   };
+  // `registered` intentionally mimics a pre-single-ledger-intake legacy
+  // record (no sourceLocator/aliases/entityType/implementationStatus/origin)
+  // - migrateLegacySource() backfills these honest defaults on every load.
+  const migrated = { ...registered, sourceLocator: null, aliases: [], entityType: 'UNRESOLVED', implementationStatus: 'idea', origin: 'user' };
   opened.state.sources.push(registered);
   opened.save();
   // save() runs the event-driven Living Core heartbeat, so blackholeCore
   // advances (heartbeatCount/lastHeartbeatAt/heartbeatLog) independently of
   // this migration; compare against the real post-heartbeat value.
-  assert.deepEqual(openStore(dir).state, { ...legacy, requestLedger, revision: 38, sources: [registered], blackholeCore: opened.state.blackholeCore });
+  assert.deepEqual(openStore(dir).state, { ...legacy, requestLedger, revision: 38, sources: [migrated], blackholeCore: opened.state.blackholeCore });
   for (const sources of [
     null, {}, [null], [{ ...registered, summary: null }], [{ ...registered, extra: true }],
     [{ ...registered, id: 'not-an-id' }], [{ ...registered, version: 0 }],
@@ -143,7 +147,7 @@ test('source migration preserves legacy records and rejects corrupt registries w
   await writeFile(`${filename}.bak`, envelope({ ...legacy, sources: [registered] }));
   const recovered = openStore(dir);
   assert.equal(recovered.recovered, true);
-  assert.deepEqual(recovered.state.sources, [registered]);
+  assert.deepEqual(recovered.state.sources, [migrated]);
   assert.deepEqual(recovered.state.memories, legacy.memories);
 });
 
@@ -370,6 +374,7 @@ test('source lists stay under document input bounds and briefs retain full revie
     canonicalUrl: `https://example.com/${'x'.repeat(2020)}`, projectId: null,
     ...reviewed, summary: '설'.repeat(8000), application: '적'.repeat(8000), riskNotes: '쟁'.repeat(4000),
     id: randomUUID(), version: 1,
+    sourceLocator: null, aliases: [], entityType: 'UNRESOLVED', implementationStatus: 'idea', origin: 'user',
   };
   const sources = Array.from({ length: 61 }, () => ({ ...source, id: randomUUID() }));
   const list = sourceRegistryDocument(sources);
