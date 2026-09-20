@@ -111,7 +111,7 @@ function browserJobHTML(job) {
   const status = JOB_STATUS_LABEL[job.status] || job.status || '상태 없음';
   const deterministic = job.deterministic ? BROWSER_VERIFICATION_LABEL[job.deterministic] || job.deterministic : '결정론적 검증 대기';
   const semantic = job.semantic ? BROWSER_VERIFICATION_LABEL[job.semantic] || job.semantic : '내용 검증 대기';
-  const intake = [job.readingStatus, job.decision].filter(Boolean).join(' · ');
+  const intake = [job.readingStatus ? (READING_LABEL[job.readingStatus] || job.readingStatus) : null, job.decision ? (DECISION_LABEL[job.decision] || job.decision) : null].filter(Boolean).join(' · ');
   const source = job.sourceUrl ? esc(truncate(job.sourceUrl, 90)) : '공개 URL 없음';
   return `<li class="puv-browser-job" data-browser-status="${esc(job.status || 'queued')}">
     <div class="puv-browser-job-top"><strong>${esc(truncate(job.goal, 92))}</strong><span class="puv-status puv-status-${esc(job.status || 'queued')}">${esc(status)}</span></div>
