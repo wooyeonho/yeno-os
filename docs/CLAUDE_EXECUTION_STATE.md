@@ -159,7 +159,7 @@ APK 없음(backend+web only). 개발자 워커 CI 아티팩트: push 후 실제 
 ### BLOCKER
 없음.
 
-## 14. BLACKHOLE CONTINUOUS EXECUTION DIRECTIVE — STAGE 0(기준 감사) + STAGE 2(Homunculus Heartbeat)
+## 14. BLACKHOLE CONTINUOUS EXECUTION DIRECTIVE — STAGE 0(기준 감사) + STAGE 2(Homunculus Heartbeat) (PR #39)
 
 소유자의 "BLACKHOLE CONTINUOUS EXECUTION DIRECTIVE v1"(15단계 연속 실행, owner 승인 필요 항목 외에는 진행 여부를 묻지 않음)을 받아 STAGE 0부터 순서대로 진행한다.
 
@@ -184,7 +184,7 @@ APK 없음(backend+web only). 개발자 워커 CI 아티팩트: push 후 실제 
 - `node --test test/homunculus-heartbeat.test.mjs`(신규 10개): 전부 pass.
 - `node --test test/blackhole-core-server.test.mjs`(기존 10개 + 신규 2개 = 12개): 전부 pass. 신규 2개는 실제 HTTP 왕복으로 검사 — (a) `POST /api/autopilot`→`POST /api/control stop`→`POST /api/control resume` 전체를 거치며 `autonomyMode`가 paused→active→emergency_stopped→**paused**(자동으로 active 복귀하지 않음, 서버가 emergency stop 시 autopilot을 강제 비활성화하고 resume이 재활성화하지 않는 실제 동작과 일치)로 전이함을 확인. (b) `POST /api/quests`로 만든 실제 소유자 quest가 `GET /api/core`의 `currentQuest.id`로 나타나고 `currentGoalId`는 `null`(synthesis 없음)이며, `openStore()`로 실제 재시작을 시뮬레이션해도 `currentQuestId`/`currentGoalId`가 동일하게 보존됨을 확인.
 - `npm test`(전체 973개 = 기존 961 + 이번 신규 12개): 943 pass · 23 fail · 7 skip — 실패 목록을 이름 단위로 대조해 §13의 기존 23개(QuickJS/WASM code-workshop 관련 22개 + `scripts/native-config.test.mjs`의 `URLPattern is not defined` 1개)와 정확히 동일함을 확인. 신규 실패 0개.
-- exact-head CI(developer-worker): 이 checkpoint 커밋을 포함해 push 후 실제 조회 결과를 아래 §15/§Issue에 기록(placeholder 아님 — push 직후 재조회).
+- exact-head CI(developer-worker): push 직후 실제 조회 — run #111(`id:35520824481`), head `1976776`, `status:in_progress`(조회 시점). PR #39 오픈, `subscribe_pr_activity` 등록 완료 — 완료 결과는 추정하지 않고 실제 webhook/재조회로 확정해 Issue #25에 기록한다. 지시 §2의 "CI pending → 기록하고 승인 필요 없는 다음 단계를 계속 진행"에 따라 STAGE 3 준비를 계속한다.
 
 ### STRUCTURAL/SYNTHETIC/LIVE/PHYSICAL
 STRUCTURAL·SYNTHETIC: 위 자동 시험. LIVE: 해당 없음(provider 호출 없음). PHYSICAL: 해당 없음(`apps/controller` 미변경, 새 APK 없음).

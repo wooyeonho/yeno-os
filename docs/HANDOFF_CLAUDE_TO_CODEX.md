@@ -13,7 +13,7 @@ codex (원본)
              └─ blackhole/single-ledger-intake-claude-20260920 (PR #35, CI green — run #105 f13d4cd)
                  └─ blackhole/canonical-intake-import-claude-20260920 (PR #36, CI green — run #105 id 35513051558, f13d4cd)
                      └─ blackhole/r2-verify-shadow-ui-claude-20260920 (PR #37, Draft/Open/mergeable_state:clean, head a57d6dd — CI green for its code content: run #106 id 35513941919, head d236f71, conclusion:success 실제 조회 완료)
-                         └─ blackhole/homunculus-heartbeat-claude-20260920 (신규 stacked 브랜치, STAGE 2 — Draft PR은 이 커밋 push 직후 오픈, 번호는 §Issue 보고에 실제 기록)
+                         └─ blackhole/homunculus-heartbeat-claude-20260920 (PR #39, Draft, STAGE 2 — push 후 실제 오픈, subscribe_pr_activity 등록 완료)
 ```
 
 PR #33/#34/#35/#36/#37 전부 실제로 존재하고 exact-head CI green임을 이번 세션에서 재확인했다(문서 속 과거 관측을 재사용하지 않음). PR #37은 여전히 Draft/Open/미병합이며 그 정확한 head(`a57d6dd6fe8a1c9caf9423e4c53797443589a100`) 위에 STAGE 2 브랜치를 새로 쌓았다.
