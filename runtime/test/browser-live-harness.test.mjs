@@ -4,10 +4,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {start} from '../runtime/server.mjs';
-import {openStore} from '../runtime/lib/store.mjs';
-import {buildSemanticVerdict, parseSemanticVerdictDraft} from '../runtime/lib/semantic-verification.mjs';
-import {runSandboxBrowserHarness} from '../runtime/lib/browser-harness.mjs';
+import {start} from '../server.mjs';
+import {openStore} from '../lib/store.mjs';
+import {buildSemanticVerdict, parseSemanticVerdictDraft} from '../lib/semantic-verification.mjs';
+import {runSandboxBrowserHarness} from '../lib/browser-harness.mjs';
 
 const token = 'synthetic-browser-owner-token';
 const PUBLIC = 'https://example.com/docs';
