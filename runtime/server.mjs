@@ -78,6 +78,7 @@ import {BotError,planProjectBots,botBlockReason,botCanStart,botStatus,botDocumen
 import {ShadowArmyError,planShadowMission,shadowJobFromSpec,shadowDependenciesMet,shadowDependencyFailed,shadowBlockReason,verifyShadowArtifacts,verifyFailureSummary,missionStatus,missionsForQuest} from './lib/shadow-army.mjs';
 import {SemanticVerificationError,parseSemanticVerdictDraft,buildSemanticVerdict,semanticVerificationPrompt,renderSemanticVerdictReport} from './lib/semantic-verification.mjs';
 import {JEV_ENGINE_VERSION,JEV_CALIBRATION_VERSION,JEV_SHADOW_LOG_CAP,evaluateDecisions,buildShadowDispatchRequest,buildVerifierEscalateRequest,shadowDispatchLogEntry,calibrateShadowLog} from './lib/jev.mjs';
+import {GrokAdapterError,GROK_PROVIDER,GROK_MAX_MULTI_AGENT_COUNT,grokStatus,validateGrokStatus,validateGrokMultiAgentApproval,grokCapabilityReport} from './lib/grok-adapter.mjs';
 function publicSnapshot(snapshot){const {data,...out}=snapshot;return out;}
 const examples=['세계 현황','흡수 현황','자율 점검','자율 임무: 공식 자료를 읽고 다음 개선 초안을 만들어줘','운영 브리핑','운영 현황','기억해: 이번 주에는 YENO 한 프로젝트에 집중한다','찾아줘: YENO','문서 만들어: YENO의 첫 목표는 기억과 실행이다','프로젝트 목록','프로젝트 브리핑: 프로젝트 이름','프로젝트 작업: 프로젝트 이름 | 준비할 작업','자료 목록','자료 브리핑: 자료 ID','개선 후보: 자료 ID','진단해','개선점 찾아줘'];
 
@@ -99,7 +100,12 @@ export function createYenoServer(options={}) {
  // asserted. Falls back to primary (same provider, but still a separate
  // job/journal/execution context that never sees the builder's own
  // conversation) when no real alternate is configured.
- const semanticVerifierConfig=()=>(profiles.grok.ready&&profiles.grok.provider!==agentSettings.provider)?profiles.grok:agentSettings;
+ // xAI Grok Provider Adapter: a quarantined Grok must never actually be
+ // selected for anything, not merely reported as unhealthy - the owner's
+ // quarantine flag is checked at the exact same call site real readiness
+ // already is, so the fallback to the primary provider is the same real
+ // path a plain not-ready grok already takes.
+ const semanticVerifierConfig=()=>(profiles.grok.ready&&!s.grokQuarantined&&profiles.grok.provider!==agentSettings.provider)?profiles.grok:agentSettings;
  const configFor=job=>job.botAssignment?profiles[job.botAssignment.profile]:job.shadowAssignment?.role==='semanticVerifier'?semanticVerifierConfig():job.selectedProvider?agentConfigForProvider(env,job.selectedProvider):agentSettings;
  // Owner-declared Brain Pool (YENO_BRAIN_POOL). Invalid declarations refuse to start.
  const DECLARED_BRAIN_POOL=declaredBrainPool(env);
@@ -214,6 +220,24 @@ export function createYenoServer(options={}) {
    const successes=jobs.flatMap(job=>job.agentJournal.calls).filter(call=>call.status==='settled');
    return {...entry,successfulCalls:successes.length,lastSuccessfulAt:successes.map(call=>call.at).sort().at(-1)??null};
  });}
+ // xAI Grok Provider Adapter (issue #25): status is computed fresh on every
+ // call from real, already-known evidence only - the same real
+ // profiles.grok (provider-config-engine's own configured/ready/missing
+ // summary) and the same real agentUsage() the deterministic dailyCallLimit
+ // gate already reads. No network health-check call is made; "real" here
+ // means never fabricated from configuration alone, exactly like every
+ // other honesty check in this file.
+ function grokStatusResponse(){
+   // agentProfiles()'s own top-level grok object has its {valid,missing} pair
+   // stripped (agentConfig()'s public contract - see provider-config-engine.mjs);
+   // the real per-provider missing-reasons list still exists in its own
+   // providers[] breakdown, keyed by provider id. Read it from there rather
+   // than re-deriving it, so this never drifts from the one real computation.
+   const missing=profiles.grok.providers.find(entry=>entry.provider===GROK_PROVIDER)?.missing??['invalidConfiguration'];
+   const status=grokStatus({profile:{ready:profiles.grok.ready,dailyCallLimit:profiles.grok.dailyCallLimit,missing},usage:agentUsage(s.jobs),quarantined:s.grokQuarantined});
+   validateGrokStatus(status);
+   return {...status,provider:profiles.grok.provider,configured:profiles.grok.ready,capabilities:grokCapabilityReport(),multiAgentApproval:s.grokMultiAgentApproval};
+ }
  function studioMutation(body){
    if(body.action==='checkin.recipientRespond'||['checkin.invite','checkin.revoke'].includes(body.action))throw new HttpError(400,'안부 응답 링크 전용 경로를 사용하세요.');
    if(s.emergencyStop&&!isStudioSafetyAction(s.studio,body)&&!['place.archive','chapter.archive'].includes(body.action))throw new HttpError(409,'전체 멈춤을 먼저 해제하세요.');
@@ -1485,6 +1509,42 @@ export function createYenoServer(options={}) {
        if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required for outcome connector administration');
        return respond(res,200,{connectors:s.outcomeConnectors??[],readings:s.outcomeReadings??[],evidence:s.outcomeEvidence??[]});
      }
+     // xAI Grok Provider Adapter (issue #25): read-only status is available to
+     // any authenticated principal (owner or device), exactly like
+     // providerStatus()/`GET /api/state` already are - it discloses no
+     // credential, only the same honest ready/missing/usage evidence.
+     if(req.method==='GET'&&url.pathname==='/api/providers/grok/status')return respond(res,200,grokStatusResponse());
+     if(req.method==='POST'&&url.pathname==='/api/providers/grok/quarantine'){
+       if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required for Grok provider administration');
+       const b=await body(req);
+       const result=await mutation(req,url,b,()=>{
+         if(typeof b.quarantined!=='boolean')throw new HttpError(400,'quarantined must be a boolean');
+         s.grokQuarantined=b.quarantined;
+         event(b.quarantined?'Grok provider quarantined by owner.':'Grok provider quarantine released by owner.');
+         return {status:200,payload:grokStatusResponse()};
+       },{required:true,safetyAction:true});
+       return respond(res,result.status,result.payload);
+     }
+     // Multi-agent Grok above its default agent count only ever runs with a
+     // real, durable, owner-issued approval record on file - never a
+     // request-supplied flag. Emergency stop blocks new approvals like any
+     // other AI-adjacent owner mutation; an approval already on file is
+     // read-only evidence and survives emergency stop the same way any other
+     // durable record does.
+     if(req.method==='POST'&&url.pathname==='/api/providers/grok/multi-agent-approval'){
+       if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required for Grok provider administration');
+       const b=await body(req);
+       const result=await mutation(req,url,b,()=>{
+         if(s.emergencyStop)throw new HttpError(409,'전체 멈춤을 먼저 해제하세요.');
+         if(!Number.isSafeInteger(b.agentCount)||b.agentCount<1||b.agentCount>GROK_MAX_MULTI_AGENT_COUNT)throw new HttpError(400,`agentCount must be an integer from 1 to ${GROK_MAX_MULTI_AGENT_COUNT}`);
+         const approval={requestId:b.requestId,approvedAgentCount:b.agentCount,approvedAt:now()};
+         validateGrokMultiAgentApproval(approval);
+         s.grokMultiAgentApproval=approval;
+         event(`Grok multi-agent use approved by owner for up to ${b.agentCount} agents.`);
+         return {status:200,payload:{approval:s.grokMultiAgentApproval}};
+       },{required:true,safetyAction:false});
+       return respond(res,result.status,result.payload);
+     }
      const ownerRevoke=url.pathname.match(/^\/api\/devices\/([^/]+)\/revoke$/);
      if(req.method==='POST'&&ownerRevoke){
        if(versioned||principal.kind!=='pairing')throw new HttpError(403,'Owner pairing credential required for device administration');
@@ -1754,7 +1814,7 @@ export function createYenoServer(options={}) {
        throw new HttpError(404,'Not found');
      },{required:versioned||!!principal.web,safetyAction:url.pathname==='/api/code/disable'||url.pathname==='/api/capabilities/disable'||(url.pathname==='/api/studio'&&isStudioSafetyAction(s.studio,b))||(url.pathname==='/api/bots'&&b.action==='stop')||(url.pathname==='/api/commands'&&/^(?:봇|자동)\s*운영\s*중지$/.test(b.text??''))||(url.pathname==='/api/control'&&b.action==='stop')||(['/api/discovery','/api/ecosystem','/api/autopilot'].includes(url.pathname)&&b.enabled===false)});
      respond(res,result.status,result.payload);
-   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof RepositoryPatchError||error instanceof CodeWorkshopError||error instanceof CodeSandboxError||error instanceof CapabilityError||error instanceof ResearchError||error instanceof WebSessionError||error instanceof ProductionCapacityError||error instanceof StudioError||error instanceof VideoError||error instanceof ForAiError||error instanceof QuestError||error instanceof BotError||error instanceof ShadowArmyError||error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError||error instanceof RequestLedgerError;if(!known&&process.env.YENO_DEBUG_ERRORS)console.error(error);respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
+   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof RepositoryPatchError||error instanceof CodeWorkshopError||error instanceof CodeSandboxError||error instanceof CapabilityError||error instanceof ResearchError||error instanceof WebSessionError||error instanceof ProductionCapacityError||error instanceof StudioError||error instanceof VideoError||error instanceof ForAiError||error instanceof QuestError||error instanceof BotError||error instanceof ShadowArmyError||error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError||error instanceof RequestLedgerError||error instanceof GrokAdapterError;if(!known&&process.env.YENO_DEBUG_ERRORS)console.error(error);respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
  });
  server.requestTimeout=15000;server.headersTimeout=10000;
  server.on('upgrade',(req,socket,head)=>{

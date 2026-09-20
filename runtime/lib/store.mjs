@@ -22,6 +22,7 @@ import {validateAgentJournal} from './agent.mjs';
 import {validateBotAssignment} from './project-bots.mjs';
 import {validateShadowAssignment} from './shadow-army.mjs';
 import {validateJevShadowLog} from './jev.mjs';
+import {validateGrokMultiAgentApproval} from './grok-adapter.mjs';
 import {validateQuestState} from './quests.mjs';
 import {emptyStudio,validateStudio} from './studio.mjs';
 import {initialAutopilot,validateAutopilot,validateAutopilotJob} from './autopilot.mjs';
@@ -43,7 +44,7 @@ export function atomicWrite(file, content) {
 export function initialState() {
  return {revision:0, emergencyStop:false, concurrency:1,
  modules:{memory:true,documents:true,diagnostics:true,ai:false},
- jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), capabilities:initialCapabilities(), codeWorkshop:initialCodeWorkshop(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem(), blackholeCore:initialCoreState(), memoryEvents:[], memorySyncOutbox:[], jevShadowLog:[]};
+ jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), capabilities:initialCapabilities(), codeWorkshop:initialCodeWorkshop(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem(), blackholeCore:initialCoreState(), memoryEvents:[], memorySyncOutbox:[], jevShadowLog:[], grokQuarantined:false, grokMultiAgentApproval:null};
 }
 function initializeQuestCollections(state) {
  // Missing collections identify older stores. Present malformed data must fail
@@ -91,6 +92,13 @@ function initializeQuestCollections(state) {
  // migration above - this log is pure bounded telemetry, never authority.
  if(!Object.hasOwn(state,'jevShadowLog'))state.jevShadowLog=[];
  validateJevShadowLog(state.jevShadowLog);
+ // xAI Grok Provider Adapter: a store predating this slice gets the honest
+ // defaults (not quarantined, no multi-agent approval on file) - additive,
+ // same migration idiom as every field above.
+ if(!Object.hasOwn(state,'grokQuarantined'))state.grokQuarantined=false;
+ if(typeof state.grokQuarantined!=='boolean')throw new Error('Invalid grokQuarantined flag');
+ if(!Object.hasOwn(state,'grokMultiAgentApproval'))state.grokMultiAgentApproval=null;
+ validateGrokMultiAgentApproval(state.grokMultiAgentApproval);
  return state;
 }
 function sanitizeEnrollmentReceipts(state) {
