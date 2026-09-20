@@ -1170,13 +1170,49 @@ export function createYenoServer(options={}) {
    if(!proposals.length)proposals.push('현재 저장된 실패·재시작·취소 증거가 부족합니다. 변경의 효과를 주장할 수 없습니다. 실제 작업 5건과 사용자의 수정 이유를 먼저 모읍니다.');
    return `# YENO 경험 기반 개선 후보\n\n작성 시각: ${now()}\n\n## 실제 관측\n- 누적 작업: ${s.jobs.length}\n- 실패: ${failures.length}\n- 취소: ${cancelled}\n- 보존된 재시작 정지 기록: ${restarts.length}\n\n## 개선 후보\n${proposals.map((p,i)=>`${i+1}. ${p}`).join('\n\n')}\n\n## 적용 조건\n후보 생성만 수행했습니다. 코드·권한·예산·프롬프트를 자동 변경하지 않았습니다. 분리된 사본에서 같은 입력으로 비교하고 연호님이 적용 여부를 결정해야 합니다.\n`;
  }
+ function prepareBrowserExecution(job,result){
+   if(!result||typeof result!=='object'||!result.snapshot||!result.artifact||!Array.isArray(result.actionEvidence))throw new BrowserHarnessError('invalid_browser_result');
+   const deterministic=deterministicBrowserVerification({snapshot:result.snapshot,artifact:result.artifact,actionEvidence:result.actionEvidence,providerOutcome:result.providerOutcome??'settled'});
+   job.browserPending={snapshot:structuredClone(result.snapshot),artifact:structuredClone(result.artifact),actionEvidence:structuredClone(result.actionEvidence),deterministic,semanticVerification:result.semanticVerification??null,semanticIndependence:result.semanticIndependence??null,provider:typeof result.provider==='string'?result.provider:'typesafe-jev',model:typeof result.model==='string'?result.model:null,providerOutcome:result.providerOutcome??'settled'};
+   job.browser={...(job.browser??{}),status:'running',provider:job.browserPending.provider,model:job.browserPending.model,providerOutcome:job.browserPending.providerOutcome,snapshotRevision:result.snapshot.revision,selectedOperation:result.action?.operation??null,targetIndex:result.action?.targetIndex??null,actionEvidence:structuredClone(result.actionEvidence),deterministicVerification:deterministic,restartState:'active'};
+ }
+ function browserSemanticGate(job,semantic,independence){
+   if(!semantic)return {status:'blocked',reason:'semantic_verification_unavailable'};
+   try{validateSemanticVerdict(semantic);}catch(error){return {status:'blocked',reason:'semantic_verdict_invalid'};}
+   if(semantic.builderJobId!==job.id||semantic.verifierJobId===job.id)return {status:'blocked',reason:'semantic_verifier_not_independent'};
+   if(!['independent-model','independent-context'].includes(independence))return {status:'blocked',reason:'semantic_independence_unreported'};
+   if(semantic.verdict!=='pass')return {status:'blocked',reason:'semantic_'+semantic.verdict};
+   return {status:'verified',reason:null};
+ }
+ function finalizeBrowserJob(job){
+   const pending=job.browserPending;if(!pending)throw new BrowserHarnessError('browser_result_missing');
+   const artifactId=writeArtifact(job,pending.artifact.content,'browser-'+job.id.slice(0,8)+'.md','text/markdown; charset=utf-8');
+   const sourceFields={requestId:'browser:'+job.id,url:pending.artifact.url,title:pending.artifact.title,readingStatus:'partial',decision:'pending',implementationStatus:'scoped',entityType:'REF',origin:'assistant',summary:'공개 HTTPS 페이지의 제한된 제목·본문·링크 snapshot 초안. 원문 전체와 사실관계는 아직 검토하지 않았다.',application:job.browserRequest.goal,riskNotes:'자동 게시·로그인·결제·메시지·자격증명 입력 없음. 저작권·개인정보·약관은 소유자 검토 전이며 candidate로 승격하지 않는다.'};
+   let sourceId=null,sourceStatus='draft',sourceReason=null;
+   try{const source=addSource(sourceFields);sourceId=source.id;}catch(error){sourceStatus='blocked';sourceReason='source_intake_'+String(error.message).slice(0,160);}
+   const semanticGate=browserSemanticGate(job,pending.semanticVerification,pending.semanticIndependence);
+   const finalGate=pending.deterministic.verified&&semanticGate.status==='verified';
+   job.browser={...(job.browser??{}),status:finalGate?'completed':'blocked',provider:pending.provider,model:pending.model,providerOutcome:pending.providerOutcome,snapshotRevision:pending.snapshot.revision,artifactRef:artifactId,artifactHash:pending.artifact.sha256,deterministicVerification:pending.deterministic,semanticVerification:pending.semanticVerification?{...pending.semanticVerification,independence:pending.semanticIndependence}:semanticGate,sourceIntake:{status:sourceStatus,readingStatus:'partial',decision:'pending',sourceId,reason:sourceReason},restartState:'settled',cancellationState:'active'};
+   delete job.browserPending;
+   job.step=3;job.status=finalGate?'completed':'failed';
+   if(!pending.deterministic.verified)job.error='browser_deterministic_'+pending.deterministic.reasons.join(',');
+   else if(!finalGate)job.error='browser_semantic_'+semanticGate.reason;
+   event(finalGate?'Browser Harness result passed both verification gates.':'Browser Harness result retained but final verification gate is blocked.');
+ }
  async function runStep(job,generation){
    const valid=()=>!closed&&job.status==='running'&&generations.get(job.id)===generation;
    if(!valid())return;
    try{
      if(job.step===0){job.normalized=job.input.normalize('NFC').replace(/\r\n?/g,'\n').trim();job.inputSha256=digest(job.input);job.step=1;}
      else if(job.step===1){
-       if(job.type==='world'){
+       if(job.type==='browser'){
+         const controller=new AbortController();controllers.set(job.id,controller);
+         try{
+           if(typeof options.browserHarnessAdapter!=='function')throw new BrowserHarnessError('browser_harness_unavailable');
+           const result=await options.browserHarnessAdapter({job,signal:controller.signal,resolveHost:options.browserResolveHost,fetchPublicPage:options.browserFetch,decisionProvider:options.browserDecisionProvider,executeAction:options.browserExecuteAction});
+           if(!valid())return;prepareBrowserExecution(job,result);
+         }finally{if(controllers.get(job.id)===controller)controllers.delete(job.id);}
+       }else if(job.type==='world'){
          const controller=new AbortController();controllers.set(job.id,controller);
          try {
            const previous=latestWorldJob(s.jobs)?.worldSnapshot;
@@ -1234,9 +1270,11 @@ export function createYenoServer(options={}) {
        }
        else {const draft=await aiDraft(job);if(!valid())return;job.draft=`# ${job.title}\n\n${draft}\n\n---\nAI 생성 초안 · 모델: ${aiModel}\n외부 사실 검증이나 도구 실행은 하지 않았습니다.\n입력 SHA-256: ${job.inputSha256}\n`;}
        job.step=2;
-     }else if(job.step===2){writeArtifact(job,job.draft,`${job.repositoryTask?'repository-patch':job.researchRequest?'research-answer':job.type}-${job.id.slice(0,8)}.${job.repositoryTask?'json':'md'}`,job.repositoryTask?'application/json':undefined);if(job.type==='forai'&&job.productionEvidence){writeArtifact(job,JSON.stringify(job.productionEvidence,null,2),`forai-evidence-${job.id.slice(0,8)}.json`,'application/json');}if(job.autopilot?.kind==='forai')writeArtifact(job,JSON.parse(job.input).content,`research-page-${job.autopilot.parentJobId.slice(0,8)}.html`,'text/html; charset=utf-8');if(job.type==='code'&&job.codeOutput)writeArtifact(job,job.codeOutput,`code-${job.codeTask.mode==='run'?'result':'source'}-${job.id.slice(0,8)}.json`,'application/json');delete job.draft;delete job.productionEvidence;delete job.codeOutput;job.step=3;job.status=(job.type==='code'&&job.codeCheckpoint?.passed===false)||(job.type==='verify'&&job.verifyResult?.verified===false)||(job.semanticVerifyRequest&&job.semanticVerdict?.verdict!=='pass')?'failed':'completed';if(job.type==='verify'&&job.status==='failed')job.error=verifyFailureSummary(job.verifyResult);if(job.semanticVerifyRequest&&job.status==='failed')job.error=`semantic_${job.semanticVerdict?.verdict==='uncertain'?'uncertain':'fail'}: ${(job.semanticVerdict?.summary??'no verdict recorded').slice(0,200)}`;event(`Job completed and output verified: ${job.title}`);if(job.shadowAssignment?.role==='semanticVerifier'&&job.status==='completed')advanceMissionFromVerify(job);}
+     }else if(job.step===2){
+       if(job.type==='browser'){finalizeBrowserJob(job);touch(job);save();return;}
+       writeArtifact(job,job.draft,`${job.repositoryTask?'repository-patch':job.researchRequest?'research-answer':job.type}-${job.id.slice(0,8)}.${job.repositoryTask?'json':'md'}`,job.repositoryTask?'application/json':undefined);if(job.type==='forai'&&job.productionEvidence){writeArtifact(job,JSON.stringify(job.productionEvidence,null,2),`forai-evidence-${job.id.slice(0,8)}.json`,'application/json');}if(job.autopilot?.kind==='forai')writeArtifact(job,JSON.parse(job.input).content,`research-page-${job.autopilot.parentJobId.slice(0,8)}.html`,'text/html; charset=utf-8');if(job.type==='code'&&job.codeOutput)writeArtifact(job,job.codeOutput,`code-${job.codeTask.mode==='run'?'result':'source'}-${job.id.slice(0,8)}.json`,'application/json');delete job.draft;delete job.productionEvidence;delete job.codeOutput;job.step=3;job.status=(job.type==='code'&&job.codeCheckpoint?.passed===false)||(job.type==='verify'&&job.verifyResult?.verified===false)||(job.semanticVerifyRequest&&job.semanticVerdict?.verdict!=='pass')?'failed':'completed';if(job.type==='verify'&&job.status==='failed')job.error=verifyFailureSummary(job.verifyResult);if(job.semanticVerifyRequest&&job.status==='failed')job.error=`semantic_${job.semanticVerdict?.verdict==='uncertain'?'uncertain':'fail'}: ${(job.semanticVerdict?.summary??'no verdict recorded').slice(0,200)}`;event(`Job completed and output verified: ${job.title}`);if(job.shadowAssignment?.role==='semanticVerifier'&&job.status==='completed')advanceMissionFromVerify(job);}
      touch(job);save();
-   }catch(error){if(!valid())return;const hold=(job.botAssignment||job.shadowAssignment)&&error instanceof AgentError&&({daily_call_limit:'dailyBudget',previous_call_outcome_unknown:'outcomeUnknown',project_scope_changed:'projectChanged'}[error.code]);job.status=hold?'paused':'failed';if(hold)job.pauseReason=hold;job.error=job.type==='agent'?(error instanceof AgentError||error instanceof ResearchError||error instanceof SemanticVerificationError?error.message:'Agent execution stopped or failed; inspect preserved checkpoints.'):job.type==='ai'?(String(error.message).startsWith('AI provider')?error.message:'AI request failed or timed out; no provider response details retained.'):String(error.message).slice(0,300);touch(job);event(`Job failed: ${job.title}`);save();}
+   }catch(error){if(!valid())return;const hold=(job.botAssignment||job.shadowAssignment)&&error instanceof AgentError&&({daily_call_limit:'dailyBudget',previous_call_outcome_unknown:'outcomeUnknown',project_scope_changed:'projectChanged'}[error.code]);job.status=hold?'paused':'failed';if(hold)job.pauseReason=hold;job.error=job.type==='agent'?(error instanceof AgentError||error instanceof ResearchError||error instanceof SemanticVerificationError?error.message:'Agent execution stopped or failed; inspect preserved checkpoints.'):job.type==='browser'?String(error.message).slice(0,300):job.type==='ai'?(String(error.message).startsWith('AI provider')?error.message:'AI request failed or timed out; no provider response details retained.'):String(error.message).slice(0,300);touch(job);event(`Job failed: ${job.title}`);save();}
    if(valid()){const timer=setTimeout(()=>runStep(job,generation),250);timer.unref();}
  }
  function bearer(req){const supplied=req.headers.authorization;if(typeof supplied!=='string'||!supplied.startsWith('Bearer '))return null;return supplied.slice(7);}
@@ -1891,7 +1929,7 @@ export function createYenoServer(options={}) {
        throw new HttpError(404,'Not found');
      },{required:versioned||!!principal.web,safetyAction:url.pathname==='/api/code/disable'||url.pathname==='/api/capabilities/disable'||(url.pathname==='/api/studio'&&isStudioSafetyAction(s.studio,b))||(url.pathname==='/api/bots'&&b.action==='stop')||(url.pathname==='/api/commands'&&/^(?:봇|자동)\s*운영\s*중지$/.test(b.text??''))||(url.pathname==='/api/control'&&b.action==='stop')||(['/api/discovery','/api/ecosystem','/api/autopilot'].includes(url.pathname)&&b.enabled===false)});
      respond(res,result.status,result.payload);
-   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof RepositoryPatchError||error instanceof CodeWorkshopError||error instanceof CodeSandboxError||error instanceof CapabilityError||error instanceof ResearchError||error instanceof WebSessionError||error instanceof ProductionCapacityError||error instanceof StudioError||error instanceof VideoError||error instanceof ForAiError||error instanceof QuestError||error instanceof BotError||error instanceof ShadowArmyError||error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError||error instanceof RequestLedgerError||error instanceof GrokAdapterError;if(!known&&process.env.YENO_DEBUG_ERRORS)console.error(error);respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
+   }catch(error){if(res.headersSent){res.destroy();return;}const known=error instanceof RepositoryPatchError||error instanceof CodeWorkshopError||error instanceof CodeSandboxError||error instanceof CapabilityError||error instanceof ResearchError||error instanceof WebSessionError||error instanceof ProductionCapacityError||error instanceof StudioError||error instanceof VideoError||error instanceof ForAiError||error instanceof QuestError||error instanceof BotError||error instanceof ShadowArmyError||error instanceof HttpError||error instanceof ProjectError||error instanceof SourceError||error instanceof DeviceAdminError||error instanceof RequestLedgerError||error instanceof GrokAdapterError||error instanceof BrowserHarnessError;if(!known&&process.env.YENO_DEBUG_ERRORS)console.error(error);respond(res,known?error.status:500,{error:known?error.message:'Internal runtime error; original data preserved.',...(known?error.extra:{})});}
  });
  server.requestTimeout=15000;server.headersTimeout=10000;
  server.on('upgrade',(req,socket,head)=>{
