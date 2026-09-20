@@ -78,10 +78,11 @@ function requiredText(value,maximum=80000){if(typeof value!=='string'||!value.tr
 import {publicJob} from './lib/job-view.mjs';
 import {BotError,planProjectBots,botBlockReason,botCanStart,botStatus,botDocument} from './lib/project-bots.mjs';
 import {ShadowArmyError,planShadowMission,shadowJobFromSpec,shadowDependenciesMet,shadowDependencyFailed,shadowBlockReason,verifyShadowArtifacts,verifyFailureSummary,missionStatus,missionsForQuest} from './lib/shadow-army.mjs';
-import {SemanticVerificationError,parseSemanticVerdictDraft,buildSemanticVerdict,semanticVerificationPrompt,renderSemanticVerdictReport} from './lib/semantic-verification.mjs';
+import {SemanticVerificationError,parseSemanticVerdictDraft,buildSemanticVerdict,validateSemanticVerdict,semanticVerificationPrompt,renderSemanticVerdictReport} from './lib/semantic-verification.mjs';
 import {JEV_ENGINE_VERSION,JEV_CALIBRATION_VERSION,JEV_SHADOW_LOG_CAP,evaluateDecisions,buildShadowDispatchRequest,buildVerifierEscalateRequest,shadowDispatchLogEntry,calibrateShadowLog} from './lib/jev.mjs';
 import {GrokAdapterError,GROK_PROVIDER,GROK_MAX_MULTI_AGENT_COUNT,grokStatus,validateGrokStatus,validateGrokMultiAgentApproval,grokCapabilityReport} from './lib/grok-adapter.mjs';
 import {browserDecisionStatus,indexedDomDecisionInput,planBrowserAction} from './lib/browser-decision.mjs';
+import {BrowserHarnessError,browserHarnessStatus,deterministicBrowserVerification,typesafeJevProviderStatus,validatePublicHttpsUrl} from './lib/browser-harness.mjs';
 function publicSnapshot(snapshot){const {data,...out}=snapshot;return out;}
 const examples=['세계 현황','흡수 현황','자율 점검','자율 임무: 공식 자료를 읽고 다음 개선 초안을 만들어줘','운영 브리핑','운영 현황','기억해: 이번 주에는 YENO 한 프로젝트에 집중한다','찾아줘: YENO','문서 만들어: YENO의 첫 목표는 기억과 실행이다','프로젝트 목록','프로젝트 브리핑: 프로젝트 이름','프로젝트 작업: 프로젝트 이름 | 준비할 작업','자료 목록','자료 브리핑: 자료 ID','개선 후보: 자료 ID','진단해','개선점 찾아줘'];
 
@@ -162,7 +163,7 @@ export function createYenoServer(options={}) {
    }catch(error){releaseLock();throw error;}
  }
  event('YENO runtime started.');store.save('runtime_started');
- function state(){return {repositoryDevelopment:{patchDrafting:true,runnerConnected:false,automaticDeployment:false,modelCallsPerPlan:1},growth:growthState(),codeWorkshop:codeState(),autopilot:autopilotState(),bots:botStatus(s,profiles),core:coreHomeSummary(s),jev:{engineVersion:JEV_ENGINE_VERSION,calibrationVersion:JEV_CALIBRATION_VERSION,authorizesDispatch:false,recentShadowDecisions:s.jevShadowLog.slice(-20),calibration:calibrateShadowLog(s.jevShadowLog)},name:'YENO OS',version:VERSION,apiVersion:API_VERSION,requestTracking:{retained:Object.keys(s.requestLedger).length,capacity:REQUEST_LEDGER_MAX_ENTRIES,cached:Object.keys(s.requests).length,cacheMaxBytes:REQUEST_CACHE_MAX_BYTES},revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,draftConfigured:!!aiEndpoint,model:agentSettings.ready?agentSettings.model:aiEndpoint?aiModel:null},agent:{providers:providerStatus(),configured:agentSettings.ready,provider:agentSettings.provider,model:agentSettings.model||null,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs),automaticReviews:agentSettings.ready&&agentSettings.auto&&s.modules.ai&&(s.discovery.enabled||s.ecosystem.enabled)&&!s.emergencyStop,tools:AGENT_TOOLS.map(tool=>tool.name),developmentExecution:false,assignedJavaScriptCoding:true},discovery:{...s.discovery,repositories:DISCOVERY_REPOS},ecosystem:publicEcosystem(s.ecosystem),jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,world:worldOverview(s.jobs),browserDecision:browserDecisionStatus(),capabilities:{worldEarthquakes:true,projectBots:true,localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,scheduledSourceDiscovery:true,boundedAgentLoop:true,ecosystemDiscovery:true,skillEvidenceIntake:true,developerWorker:false,javascriptWorker:true,externalCodeExecution:true,voiceConversation:true,autonomousProduction:true,diagnostics:true,evolution:'tested-javascript-versions',ai:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
+ function state(){return {repositoryDevelopment:{patchDrafting:true,runnerConnected:false,automaticDeployment:false,modelCallsPerPlan:1},growth:growthState(),codeWorkshop:codeState(),autopilot:autopilotState(),bots:botStatus(s,profiles),core:coreHomeSummary(s),jev:{engineVersion:JEV_ENGINE_VERSION,calibrationVersion:JEV_CALIBRATION_VERSION,authorizesDispatch:false,recentShadowDecisions:s.jevShadowLog.slice(-20),calibration:calibrateShadowLog(s.jevShadowLog)},name:'YENO OS',version:VERSION,apiVersion:API_VERSION,requestTracking:{retained:Object.keys(s.requestLedger).length,capacity:REQUEST_LEDGER_MAX_ENTRIES,cached:Object.keys(s.requests).length,cacheMaxBytes:REQUEST_CACHE_MAX_BYTES},revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,draftConfigured:!!aiEndpoint,model:agentSettings.ready?agentSettings.model:aiEndpoint?aiModel:null},agent:{providers:providerStatus(),configured:agentSettings.ready,provider:agentSettings.provider,model:agentSettings.model||null,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs),automaticReviews:agentSettings.ready&&agentSettings.auto&&s.modules.ai&&(s.discovery.enabled||s.ecosystem.enabled)&&!s.emergencyStop,tools:AGENT_TOOLS.map(tool=>tool.name),developmentExecution:false,assignedJavaScriptCoding:true},discovery:{...s.discovery,repositories:DISCOVERY_REPOS},ecosystem:publicEcosystem(s.ecosystem),jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,world:worldOverview(s.jobs),browserDecision:browserDecisionStatus(),browserHarness:browserHarnessStatus({adapterConfigured:typeof options.browserHarnessAdapter==='function',provider:typesafeJevProviderStatus(env)}),capabilities:{worldEarthquakes:true,projectBots:true,localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,scheduledSourceDiscovery:true,boundedAgentLoop:true,ecosystemDiscovery:true,skillEvidenceIntake:true,developerWorker:false,javascriptWorker:true,externalCodeExecution:true,voiceConversation:true,autonomousProduction:true,diagnostics:true,evolution:'tested-javascript-versions',ai:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
  // A failed filesystem write leaves its outcome uncertain. Retain its request
  // identity in memory, but never acknowledge a cached receipt or expose that
  // state through the API until the complete state has been persisted again.
@@ -175,17 +176,18 @@ export function createYenoServer(options={}) {
  function controlEcosystem(enabled){if(enabled&&s.emergencyStop)throw new HttpError(409,'전체 멈춤을 해제한 뒤 흡수를 시작하세요.');ecosystem.setEnabled(enabled);event(`Ecosystem intake ${enabled?'enabled':'disabled'}; no installation or model call.`);return {status:200,payload:{ecosystem:publicEcosystem(s.ecosystem)}};}
  function controlDiscovery(enabled){if(enabled&&s.emergencyStop)throw new HttpError(409,'Release emergency stop before enabling source discovery');discovery.setEnabled(enabled);event(`Official source discovery ${enabled?'enabled':'disabled'}; no model or coding execution.`);return {status:200,payload:{discovery:structuredClone(s.discovery)}};}
  const touch=job=>{job.updatedAt=now();job.version++;};
- const moduleFor=type=>['document','world','video','forai','capability','code'].includes(type)?'documents':['ai','agent'].includes(type)?'ai':'diagnostics';
+ const moduleFor=type=>['document','world','video','forai','capability','code','browser'].includes(type)?'documents':['ai','agent'].includes(type)?'ai':'diagnostics';
  function requireModule(name){if(!s.modules[name])throw new HttpError(409,`${name} module is disabled`);}
  const localResearchCompletion=job=>{const assistant=job.agentJournal?.history?.findLast(message=>message.role==='assistant');return job.type==='agent'&&!!job.researchRequest&&job.step===2&&typeof job.draft==='string'&&job.draft.trim().length>0&&job.callLimit===1&&job.agentJournal?.calls?.length===1&&job.agentJournal.calls[0].status==='settled'&&typeof assistant?.content==='string'&&assistant.content.trim().length>0&&Array.isArray(assistant.toolCalls)&&assistant.toolCalls.length===0;};
  const jobModule=job=>job.type==='code'&&['generate','repair'].includes(job.codeTask?.mode)?'ai':moduleFor(job.type);
- function newJob(body,{questExecution=false,capabilityExecution=false,codeExecution=false}={}){
+ function newJob(body,{questExecution=false,capabilityExecution=false,codeExecution=false,browserExecution=false}={}){
    // The UI advertises AI when the bounded primary provider is configured.
    // Prefer its persisted budget and stop controls even if legacy credentials
    // remain configured. Only legacy-only installations use the old adapter.
-   const type=body.type==='ai'&&agentSettings.ready?'agent':body.type;if(!['document','diagnostics','evolution','ai','agent','world','video','forai','capability','code'].includes(type))throw new HttpError(422,'Unsupported job type');
+   const type=body.type==='ai'&&agentSettings.ready?'agent':body.type;if(!['document','diagnostics','evolution','ai','agent','world','video','forai','capability','code','browser'].includes(type))throw new HttpError(422,'Unsupported job type');
    if(type==='code'&&!codeExecution)throw new HttpError(422,'코드 작업 경로를 사용하세요.');
    if(type==='capability'&&!capabilityExecution)throw new HttpError(422,'기능 실행 경로에서 검증한 입력이 필요합니다.');
+   if(type==='browser'&&!browserExecution)throw new HttpError(422,'브라우저 작업은 안전한 Browser Harness 경로를 사용하세요.');
    const routed=type==='agent'?routeJob({taskClass:body.taskClass??'tool-use',pinnedProvider:body.provider??null}):null;
    const jobConfig=routed?routed.config:body.provider?agentConfigForProvider(env,body.provider):agentSettings;
    if(type==='agent'&&!jobConfig.ready)throw new HttpError(409,'선택한 모델의 API 키·모델 이름·하루 호출 상한 연결이 필요합니다. 자율 점검에서 연결 상태를 확인하세요.');
@@ -203,6 +205,18 @@ export function createYenoServer(options={}) {
    if(project)job.projectId=project.id;
    s.jobs.unshift(job);event(`Job queued: ${title}`);return job;
  }
+   function browserHarnessJob(body){
+     const allowed=['requestId','goal','sourceUrl','successCriterion','title'];
+     if(!body.requestId||Object.keys(body).some(key=>!allowed.includes(key)))throw new HttpError(400,'Browser Harness requires requestId, goal and sourceUrl only.');
+     const goal=requiredText(body.goal,1200),sourceUrl=validatePublicHttpsUrl(body.sourceUrl);
+     const successCriterion=body.successCriterion===undefined?'제목·본문·공개 링크를 보존하고 결정론·의미 검증 근거를 남긴다.':requiredText(body.successCriterion,2000);
+     const duplicate=s.jobs.find(job=>job.type==='browser'&&job.browserRequest?.sourceUrl===sourceUrl&&job.browserRequest?.goal===goal&&['queued','running','paused'].includes(job.status));
+     if(duplicate)throw new HttpError(409,'동일 공개 URL·목표의 Browser 작업이 이미 존재합니다.',{jobId:duplicate.id});
+     const job=newJob({type:'browser',title:body.title?requiredText(body.title,160):'공개 URL 읽기 · Browser Harness',text:goal},{browserExecution:true});
+     job.browserRequest={goal,sourceUrl,successCriterion,createdAt:now()};
+     job.browser={status:'queued',provider:'typesafe-jev',model:null,providerOutcome:'not_started',snapshotRevision:null,selectedOperation:null,targetIndex:null,actionEvidence:[],artifactRef:null,artifactHash:null,deterministicVerification:null,semanticVerification:null,sourceIntake:{status:'pending',readingStatus:'unread',decision:'pending',sourceId:null},restartState:'created',cancellationState:'active'};
+     touch(job);return job;
+   }
  // The only path to a real provider request. Routing provenance already on
  // the job is re-checked against live state right before sending; the outcome
  // is read back from the durable call receipts (unknown -> owner review).
