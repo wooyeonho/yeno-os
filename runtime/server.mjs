@@ -76,6 +76,7 @@ function requiredText(value,maximum=80000){if(typeof value!=='string'||!value.tr
 import {publicJob} from './lib/job-view.mjs';
 import {BotError,planProjectBots,botBlockReason,botCanStart,botStatus,botDocument} from './lib/project-bots.mjs';
 import {ShadowArmyError,planShadowMission,shadowJobFromSpec,shadowDependenciesMet,shadowDependencyFailed,shadowBlockReason,verifyShadowArtifacts,verifyFailureSummary,missionStatus,missionsForQuest} from './lib/shadow-army.mjs';
+import {SemanticVerificationError,parseSemanticVerdictDraft,buildSemanticVerdict,semanticVerificationPrompt,renderSemanticVerdictReport} from './lib/semantic-verification.mjs';
 import {JEV_ENGINE_VERSION,JEV_CALIBRATION_VERSION,JEV_SHADOW_LOG_CAP,evaluateDecisions,buildShadowDispatchRequest,buildVerifierEscalateRequest,shadowDispatchLogEntry,calibrateShadowLog} from './lib/jev.mjs';
 function publicSnapshot(snapshot){const {data,...out}=snapshot;return out;}
 const examples=['세계 현황','흡수 현황','자율 점검','자율 임무: 공식 자료를 읽고 다음 개선 초안을 만들어줘','운영 브리핑','운영 현황','기억해: 이번 주에는 YENO 한 프로젝트에 집중한다','찾아줘: YENO','문서 만들어: YENO의 첫 목표는 기억과 실행이다','프로젝트 목록','프로젝트 브리핑: 프로젝트 이름','프로젝트 작업: 프로젝트 이름 | 준비할 작업','자료 목록','자료 브리핑: 자료 ID','개선 후보: 자료 ID','진단해','개선점 찾아줘'];
@@ -92,7 +93,14 @@ export function createYenoServer(options={}) {
  const supabaseMemoryConfig=loadSupabaseMemoryConfig(env);
  const supabaseMemoryAdapter=createSupabaseAdapter(supabaseMemoryConfig,{transport:options.memorySupabaseTransport});
  const obsidianMemoryConfig=loadObsidianConfig(env);
- const configFor=job=>job.botAssignment?profiles[job.botAssignment.profile]:job.selectedProvider?agentConfigForProvider(env,job.selectedProvider):agentSettings;
+ // Independent semantic verification (issue #25): prefer a genuinely
+ // different, actually-ready provider (grok) over the builder's own
+ // primary provider when one exists - real provider diversity, never
+ // asserted. Falls back to primary (same provider, but still a separate
+ // job/journal/execution context that never sees the builder's own
+ // conversation) when no real alternate is configured.
+ const semanticVerifierConfig=()=>(profiles.grok.ready&&profiles.grok.provider!==agentSettings.provider)?profiles.grok:agentSettings;
+ const configFor=job=>job.botAssignment?profiles[job.botAssignment.profile]:job.shadowAssignment?.role==='semanticVerifier'?semanticVerifierConfig():job.selectedProvider?agentConfigForProvider(env,job.selectedProvider):agentSettings;
  // Owner-declared Brain Pool (YENO_BRAIN_POOL). Invalid declarations refuse to start.
  const DECLARED_BRAIN_POOL=declaredBrainPool(env);
  // Router in the real path: every model-backed job is routed here and carries
@@ -762,9 +770,13 @@ export function createYenoServer(options={}) {
      pushJevLog(shadowDispatchLogEntry({at:now(),job,response,realDecision:(blocked||budget)?'hold':'dispatch'}));
    }catch(error){event(`JEV shadow-mode 관찰 실패(실제 배정에는 영향 없음): ${error.message}`);}
  }
- function recordJevVerifierEscalate(job){
+ // `verifyResult` defaults to the deterministic verifier's own field, but a
+ // caller may pass an equivalent {verified} shape for a different real
+ // completed job (the semantic verifier) - JEV observes either one exactly
+ // the same way, in Shadow Mode only, with zero effect on the real result.
+ function recordJevVerifierEscalate(job,verifyResult=job.verifyResult){
    try{
-     const request=buildVerifierEscalateRequest({verifyJob:job,verifyResult:job.verifyResult,emergencyStop:s.emergencyStop});
+     const request=buildVerifierEscalateRequest({verifyJob:job,verifyResult,emergencyStop:s.emergencyStop});
      const response=evaluateDecisions(request,now());
      event(`JEV shadow-mode 관찰(실질 권한 없음, engine ${JEV_ENGINE_VERSION}/${JEV_CALIBRATION_VERSION}): verifierEscalate=${response.answers.verifierEscalate} (${response.decisionStatus.verifierEscalate}, confidence ${response.confidence.verifierEscalate})`);
    }catch(error){event(`JEV shadow-mode 관찰 실패(실제 검증에는 영향 없음): ${error.message}`);}
@@ -923,7 +935,7 @@ export function createYenoServer(options={}) {
      if(active()>=s.concurrency)break;
      if(job.status!=='queued'||!botCanStart(job,s,controllers))continue;
      if(job.type==='code'&&s.jobs.some(other=>other.id!==job.id&&other.type==='code'&&other.status==='running'))continue;
-     const blocked=job.botAssignment?botBlockReason(job,s,profiles):job.shadowAssignment?shadowBlockReason(job,s,agentSettings):null;
+     const blocked=job.botAssignment?botBlockReason(job,s,profiles):job.shadowAssignment?shadowBlockReason(job,s,configFor(job)):null;
      const lastAssistant=job.agentJournal?.history.findLast(m=>m.role==='assistant');
      const budget=(job.botAssignment||job.shadowAssignment)&&job.step<2&&(!lastAssistant||lastAssistant.toolCalls.length>0)&&agentUsage(s.jobs).attempts>=configFor(job).dailyCallLimit;
      if(job.shadowAssignment&&job.type==='agent')recordJevShadowDispatch(job,blocked,budget);
@@ -980,6 +992,76 @@ export function createYenoServer(options={}) {
      job.agentJournal.history=[{role:'user',content:prompt}];save();
    }
    return bundle;
+ }
+ // Reads one already-real, already-checksummed artifact's own bytes back -
+ // the same defense-in-depth (path confined to the artifacts dir, SHA-256
+ // re-verified) storedResearchBundle already applies to its own evidence
+ // file. Never trusts the in-memory artifact record alone.
+ function readArtifactContent(artifactId){
+   const item=s.artifacts[artifactId];
+   if(!item)throw new SemanticVerificationError('artifact_missing');
+   const file=path.join(dataDir,'artifacts',item.filename);
+   if(path.dirname(file)!==path.join(dataDir,'artifacts'))throw new SemanticVerificationError('artifact_path_invalid');
+   const bytes=fs.readFileSync(file);
+   if(digest(bytes)!==item.sha256)throw new SemanticVerificationError('artifact_checksum_mismatch');
+   return bytes.toString('utf8');
+ }
+ // Independent semantic verification (issue #25): builds the real,
+ // bounded-context prompt lazily, once, right before the single real model
+ // call - exactly like prepareResearch does for a research job's evidence
+ // packet, because the builder's real artifact does not exist yet at
+ // mission-planning time. Reads only what the mission's SEMANTIC VERIFIER
+ // INPUT section allows: goal, successCriterion (both already real fields on
+ // this job's own shadowAssignment - never re-derived), the builder's own
+ // artifact content, bounded scout/researcher excerpts, and the
+ // deterministic verifier's own real result. Never the builder's
+ // agentJournal/history/reasoning.
+ function prepareSemanticVerification(job){
+   // Shadow jobs (unlike a normally-created agent job) never get agentJournal
+   // pre-seeded at creation - runAgent would otherwise lazily default it to
+   // job.input, which is only ever this job's durable pointer record here,
+   // never a real prompt. Seed the same real config runAgent itself will use.
+   if(!job.agentJournal)job.agentJournal={provider:configFor(job).provider,model:configFor(job).model,calls:[],history:[]};
+   if(job.agentJournal.calls.length)return; // prompt already committed on a prior attempt
+   const req=job.semanticVerifyRequest;
+   const builder=s.jobs.find(j=>j.id===req.builderJobId);
+   const verifyJob=s.jobs.find(j=>j.id===req.verifierJobId);
+   if(!builder||!verifyJob||builder.status!=='completed'||verifyJob.status!=='completed')throw new SemanticVerificationError('subject_not_ready');
+   const builderArtifactId=builder.artifacts?.[0]?.id;
+   if(!builderArtifactId)throw new SemanticVerificationError('builder_artifact_missing');
+   const builderArtifact=readArtifactContent(builderArtifactId);
+   const supportJobs=(builder.shadowAssignment?.dependsOnJobIds??[]).map(id=>s.jobs.find(j=>j.id===id)).filter(Boolean);
+   const supportingExcerpts=supportJobs.map(supportJob=>supportJob.artifacts?.[0]?.id).filter(Boolean).map(readArtifactContent);
+   const prompt=semanticVerificationPrompt({
+     goal:job.shadowAssignment.goal, successCriterion:job.shadowAssignment.successCriterion, builderArtifact,
+     deterministicResult:`검증 ${verifyJob.verifyResult?.verified?'통과':'불합격'} (완료 상태·산출물 존재·모델 호출 정산만 확인, 내용 품질은 판단하지 않음)`,
+     supportingExcerpts,
+   });
+   job.agentJournal.history=[{role:'user',content:prompt}];save();
+ }
+ // Turns the model's raw draft into the strict persisted verdict. Every
+ // provenance field is injected from real, already-known server state -
+ // the model's own output is parsed for nothing but verdict/confidence/
+ // criteria/summary (see semantic-verification.mjs's module header). A
+ // malformed/inconsistent draft throws SemanticVerificationError, which
+ // propagates to runStep's existing catch-all exactly like any other agent
+ // failure - fail closed, no new recovery path, bounded raw evidence
+ // preserved in job.error.
+ function finalizeSemanticVerdict(job,draft,at){
+   const parsed=parseSemanticVerdictDraft(draft);
+   const req=job.semanticVerifyRequest;
+   const builder=s.jobs.find(j=>j.id===req.builderJobId);
+   const supportJobs=(builder.shadowAssignment?.dependsOnJobIds??[]).map(id=>s.jobs.find(j=>j.id===id)).filter(Boolean);
+   const artifactRefs=[builder,...supportJobs].map(subject=>subject.artifacts?.[0]?.id).filter(Boolean).slice(0,8);
+   const verdict=buildSemanticVerdict({draft:parsed,missionId:req.missionId,plannerQuestId:req.plannerQuestId,builderJobId:req.builderJobId,verifierJobId:req.verifierJobId,artifactRefs,provider:job.agentJournal.provider,model:job.agentJournal.model,at});
+   // Independence is read back from the two jobs' own real recorded
+   // provider - never the plan-time intention - so a config change between
+   // planning and execution (or the test harness's own synthetic-only
+   // primary) is reported honestly rather than assumed.
+   const independence=(builder.agentJournal?.provider&&builder.agentJournal.provider!==job.agentJournal.provider)?'independent-model':'independent-context';
+   job.semanticVerdict=verdict;job.semanticIndependence=independence;
+   recordJevVerifierEscalate(job,{verified:verdict.verdict==='pass'});
+   return renderSemanticVerdictReport(verdict,independence);
  }
  function researchAnswer(job,draft,bundle){
    const cited=researchCitationIds(draft);
@@ -1077,14 +1159,14 @@ export function createYenoServer(options={}) {
        else if(job.type==='agent'){
          const controller=new AbortController();controllers.set(job.id,controller);
          const timeout=setTimeout(()=>controller.abort(),Math.max(1,Math.min(90000,job.deadlineAt?Date.parse(job.deadlineAt)-Date.now():90000)));
-         try {const bundle=job.researchRequest?await prepareResearch(job,controller.signal,valid):null;if(!valid())return;const draft=await transportAgent(job,controller.signal);if(!valid())return;job.draft=job.repositoryTask?JSON.stringify(parseRepositoryPatch(draft,job.repositoryTask)):bundle?researchAnswer(job,draft,bundle):draft;}
+         try {const bundle=job.researchRequest?await prepareResearch(job,controller.signal,valid):null;if(!valid())return;if(job.semanticVerifyRequest)prepareSemanticVerification(job);if(!valid())return;const draft=await transportAgent(job,controller.signal);if(!valid())return;job.draft=job.repositoryTask?JSON.stringify(parseRepositoryPatch(draft,job.repositoryTask)):job.semanticVerifyRequest?finalizeSemanticVerdict(job,draft,now()):bundle?researchAnswer(job,draft,bundle):draft;}
          finally{clearTimeout(timeout);if(controllers.get(job.id)===controller)controllers.delete(job.id);}
        }
        else {const draft=await aiDraft(job);if(!valid())return;job.draft=`# ${job.title}\n\n${draft}\n\n---\nAI 생성 초안 · 모델: ${aiModel}\n외부 사실 검증이나 도구 실행은 하지 않았습니다.\n입력 SHA-256: ${job.inputSha256}\n`;}
        job.step=2;
-     }else if(job.step===2){writeArtifact(job,job.draft,`${job.repositoryTask?'repository-patch':job.researchRequest?'research-answer':job.type}-${job.id.slice(0,8)}.${job.repositoryTask?'json':'md'}`,job.repositoryTask?'application/json':undefined);if(job.type==='forai'&&job.productionEvidence){writeArtifact(job,JSON.stringify(job.productionEvidence,null,2),`forai-evidence-${job.id.slice(0,8)}.json`,'application/json');}if(job.autopilot?.kind==='forai')writeArtifact(job,JSON.parse(job.input).content,`research-page-${job.autopilot.parentJobId.slice(0,8)}.html`,'text/html; charset=utf-8');if(job.type==='code'&&job.codeOutput)writeArtifact(job,job.codeOutput,`code-${job.codeTask.mode==='run'?'result':'source'}-${job.id.slice(0,8)}.json`,'application/json');delete job.draft;delete job.productionEvidence;delete job.codeOutput;job.step=3;job.status=(job.type==='code'&&job.codeCheckpoint?.passed===false)||(job.type==='verify'&&job.verifyResult?.verified===false)?'failed':'completed';if(job.type==='verify'&&job.status==='failed')job.error=verifyFailureSummary(job.verifyResult);event(`Job completed and output verified: ${job.title}`);if(job.type==='verify'&&job.status==='completed')advanceMissionFromVerify(job);}
+     }else if(job.step===2){writeArtifact(job,job.draft,`${job.repositoryTask?'repository-patch':job.researchRequest?'research-answer':job.type}-${job.id.slice(0,8)}.${job.repositoryTask?'json':'md'}`,job.repositoryTask?'application/json':undefined);if(job.type==='forai'&&job.productionEvidence){writeArtifact(job,JSON.stringify(job.productionEvidence,null,2),`forai-evidence-${job.id.slice(0,8)}.json`,'application/json');}if(job.autopilot?.kind==='forai')writeArtifact(job,JSON.parse(job.input).content,`research-page-${job.autopilot.parentJobId.slice(0,8)}.html`,'text/html; charset=utf-8');if(job.type==='code'&&job.codeOutput)writeArtifact(job,job.codeOutput,`code-${job.codeTask.mode==='run'?'result':'source'}-${job.id.slice(0,8)}.json`,'application/json');delete job.draft;delete job.productionEvidence;delete job.codeOutput;job.step=3;job.status=(job.type==='code'&&job.codeCheckpoint?.passed===false)||(job.type==='verify'&&job.verifyResult?.verified===false)||(job.semanticVerifyRequest&&job.semanticVerdict?.verdict!=='pass')?'failed':'completed';if(job.type==='verify'&&job.status==='failed')job.error=verifyFailureSummary(job.verifyResult);if(job.semanticVerifyRequest&&job.status==='failed')job.error=`semantic_${job.semanticVerdict?.verdict==='uncertain'?'uncertain':'fail'}: ${(job.semanticVerdict?.summary??'no verdict recorded').slice(0,200)}`;event(`Job completed and output verified: ${job.title}`);if(job.shadowAssignment?.role==='semanticVerifier'&&job.status==='completed')advanceMissionFromVerify(job);}
      touch(job);save();
-   }catch(error){if(!valid())return;const hold=(job.botAssignment||job.shadowAssignment)&&error instanceof AgentError&&({daily_call_limit:'dailyBudget',previous_call_outcome_unknown:'outcomeUnknown',project_scope_changed:'projectChanged'}[error.code]);job.status=hold?'paused':'failed';if(hold)job.pauseReason=hold;job.error=job.type==='agent'?(error instanceof AgentError||error instanceof ResearchError?error.message:'Agent execution stopped or failed; inspect preserved checkpoints.'):job.type==='ai'?(String(error.message).startsWith('AI provider')?error.message:'AI request failed or timed out; no provider response details retained.'):String(error.message).slice(0,300);touch(job);event(`Job failed: ${job.title}`);save();}
+   }catch(error){if(!valid())return;const hold=(job.botAssignment||job.shadowAssignment)&&error instanceof AgentError&&({daily_call_limit:'dailyBudget',previous_call_outcome_unknown:'outcomeUnknown',project_scope_changed:'projectChanged'}[error.code]);job.status=hold?'paused':'failed';if(hold)job.pauseReason=hold;job.error=job.type==='agent'?(error instanceof AgentError||error instanceof ResearchError||error instanceof SemanticVerificationError?error.message:'Agent execution stopped or failed; inspect preserved checkpoints.'):job.type==='ai'?(String(error.message).startsWith('AI provider')?error.message:'AI request failed or timed out; no provider response details retained.'):String(error.message).slice(0,300);touch(job);event(`Job failed: ${job.title}`);save();}
    if(valid()){const timer=setTimeout(()=>runStep(job,generation),250);timer.unref();}
  }
  function bearer(req){const supplied=req.headers.authorization;if(typeof supplied!=='string'||!supplied.startsWith('Bearer '))return null;return supplied.slice(7);}

@@ -20,6 +20,7 @@ import { validateEcosystem } from './ecosystem.mjs';
 import { validateAgentJournal, recoverAgentJournals } from './agent.mjs';
 import {validateBotAssignment} from './project-bots.mjs';
 import {validateShadowAssignment} from './shadow-army.mjs';
+import {validateSemanticVerdict, validateIndependenceLabel} from './semantic-verification.mjs';
 import {validateJevShadowLog} from './jev.mjs';
 import {validateQuestState} from './quests.mjs';
 import {emptyStudio,validateStudio} from './studio.mjs';
@@ -38,7 +39,7 @@ const MAGIC = Buffer.from('YENOBK1\n');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const HASH = /^[a-f0-9]{64}$/;
 const STATE_KEYS = ['revision', 'emergencyStop', 'concurrency', 'modules', 'jobs', 'memories', 'snapshots', 'events', 'requests', 'artifacts', 'devices', 'projects', 'sources'];
-const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'shadowAssignment', 'verifyRequest', 'verifyResult', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt', 'productionEvidence', 'studioSeriesId', 'studioChapterId', 'researchRequest', 'researchEvidenceId', 'autopilot', 'capabilityRequest', 'codeTask', 'codeCheckpoint', 'codeOutput', 'voiceConversation', 'repositoryTask', 'developerEvidence', 'routing', 'selfTestId'];
+const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'shadowAssignment', 'verifyRequest', 'verifyResult', 'semanticVerifyRequest', 'semanticVerdict', 'semanticIndependence', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt', 'productionEvidence', 'studioSeriesId', 'studioChapterId', 'researchRequest', 'researchEvidenceId', 'autopilot', 'capabilityRequest', 'codeTask', 'codeCheckpoint', 'codeOutput', 'voiceConversation', 'repositoryTask', 'developerEvidence', 'routing', 'selfTestId'];
 const fail = message => { throw new Error(`Backup: ${message}`); };
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = (value, min, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value) && value >= min && value <= max;
@@ -130,6 +131,10 @@ function validateState(state) {
     validateBotAssignment(job);
     validateShadowAssignment(job);
     if (Object.hasOwn(job, 'verifyResult') && (job.type !== 'verify' || (job.verifyResult !== null && (!record(job.verifyResult) || typeof job.verifyResult.verified !== 'boolean')))) fail('invalid verify result');
+    if (Object.hasOwn(job, 'semanticVerdict') && !Object.hasOwn(job, 'semanticVerifyRequest')) fail('invalid semantic verify pairing');
+    if (Object.hasOwn(job, 'semanticVerifyRequest') && job.type !== 'agent') fail('invalid semantic verify job type');
+    if (Object.hasOwn(job, 'semanticVerdict')) { try { validateSemanticVerdict(job.semanticVerdict); } catch { fail('invalid semantic verdict'); } }
+    if (Object.hasOwn(job, 'semanticIndependence')) { if (!Object.hasOwn(job, 'semanticVerdict')) fail('invalid semantic independence pairing'); try { validateIndependenceLabel(job.semanticIndependence); } catch { fail('invalid semantic independence label'); } }
     timestamp(job.createdAt); timestamp(job.updatedAt);
     if (Date.parse(job.updatedAt) < Date.parse(job.createdAt)) fail('invalid job timestamp order');
     if (job.status === 'completed' && (job.step !== 3 || job.artifacts.length === 0)) fail('invalid completed job');
