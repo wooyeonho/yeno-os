@@ -15,7 +15,7 @@ import {
   validateBrowserJob,
   validatePublicHttpsUrl,
   validateResolvedAddresses,
-} from './browser-harness.mjs';
+} from '../lib/browser-harness.mjs';
 
 const PUBLIC = 'https://example.com/docs';
 const publicAddresses = ['93.184.216.34'];
