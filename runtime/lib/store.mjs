@@ -8,6 +8,7 @@ import {validateDeviceAcceptances} from './device-evidence.mjs';
 import {validateConnectors,validateReadings} from './outcome-connector.mjs';
 import {validateOutcomeEvidences} from './outcome-verification.mjs';
 import {initialCapabilities,validateCapabilities,validateCapabilityRequest,capabilityInputSha256,disableAllCapabilitiesForRestore} from './capabilities.mjs';
+import {initialCapabilityInbox,validateCapabilityInbox} from './capability-inbox.mjs';
 import {validateWorldSnapshot} from './world.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -45,7 +46,7 @@ export function atomicWrite(file, content) {
 export function initialState() {
  return {revision:0, emergencyStop:false, concurrency:1,
  modules:{memory:true,documents:true,diagnostics:true,ai:false},
- jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), capabilities:initialCapabilities(), codeWorkshop:initialCodeWorkshop(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem(), blackholeCore:initialCoreState(), memoryEvents:[], memorySyncOutbox:[], jevShadowLog:[], grokQuarantined:false, grokMultiAgentApproval:null};
+ jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), capabilities:initialCapabilities(), capabilityInbox:initialCapabilityInbox(), codeWorkshop:initialCodeWorkshop(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem(), blackholeCore:initialCoreState(), memoryEvents:[], memorySyncOutbox:[], jevShadowLog:[], grokQuarantined:false, grokMultiAgentApproval:null};
 }
 function initializeQuestCollections(state) {
  // Missing collections identify older stores. Present malformed data must fail
@@ -56,6 +57,8 @@ function initializeQuestCollections(state) {
  if(!Object.hasOwn(state,'autopilot'))state.autopilot=initialAutopilot();
  if(!Object.hasOwn(state,'capabilities'))state.capabilities=initialCapabilities();
  validateCapabilities(state.capabilities);
+ if(!Object.hasOwn(state,'capabilityInbox'))state.capabilityInbox=initialCapabilityInbox();
+ validateCapabilityInbox(state.capabilityInbox);
  if(!Object.hasOwn(state,'codeWorkshop'))state.codeWorkshop=initialCodeWorkshop();
  validateCodeWorkshop(state.codeWorkshop);
  for(const job of state.jobs){validateCodeJob(job,state.codeWorkshop);validateRepositoryJob(job);validateJobEvidence(job);}
