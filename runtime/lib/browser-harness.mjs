@@ -16,6 +16,7 @@ import {
   validateIndexedDomSnapshot,
   planBrowserAction,
 } from './browser-decision.mjs';
+import {typesafeJevDecisionStatus} from './browser-provider-routing.mjs';
 
 export const BROWSER_HARNESS_VERSION = 1;
 export const BROWSER_HARNESS_STATUS = 'sandbox-contract';
@@ -203,12 +204,7 @@ export function validateBrowserJob(job) {
 export function browserHarnessStatus({adapterConfigured = false, provider = null} = {}) {
   return {version: BROWSER_HARNESS_VERSION, status: adapterConfigured ? 'sandbox-ready' : BROWSER_HARNESS_STATUS, liveProvider: provider?.status === 'configured', liveBrowserHarness: adapterConfigured, externalActions: false, credentialInput: false, allowedOperations: [...ALLOWED_SANDBOX_OPERATIONS], limitations: adapterConfigured ? ['public HTTPS only','read-only action allowlist','no credentials, JS, shell, upload or side effects'] : ['sandbox transport not configured','TypeSafe Jev endpoint/credential not configured']};
 }
-export function typesafeJevProviderStatus(env = process.env) {
-  const fields = ['YENO_JEV_BASE_URL','YENO_JEV_API_KEY','YENO_JEV_MODEL'];
-  const missing = fields.filter(key => typeof env[key] !== 'string' || !env[key].trim());
-  if (env.YENO_JEV_OFFICIAL_ENDPOINT_CONFIRMED !== 'true') missing.push('YENO_JEV_OFFICIAL_ENDPOINT_CONFIRMED');
-  return {provider:'typesafe-jev', status:missing.length ? 'unavailable' : 'configured', missing:missing.map(key => key.replace(/^YENO_JEV_/, '').toLowerCase()), reason:missing.length ? 'official endpoint or credential not configured' : null};
-}
+export const typesafeJevProviderStatus = typesafeJevDecisionStatus;
 export async function runSandboxBrowserHarness({goal, sourceUrl, resolveHost, fetchPublicPage, decisionProvider, executeAction, signal, maxActions = MAX_ACTIONS} = {}) {
   if (typeof fetchPublicPage !== 'function') fail('browser_harness_unavailable');
   if (typeof decisionProvider !== 'function') fail('jev_provider_unavailable');
