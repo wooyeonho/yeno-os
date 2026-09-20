@@ -15,7 +15,7 @@ export const BROWSER_DECISION_TASK = 'browser-decision';
 export const BROWSER_TYPED_PROVIDER = 'typesafe-jev';
 export const GENERIC_DECISION_PROVIDERS = Object.freeze(['openai', 'anthropic', 'gemini', 'xai', 'moonshot', 'nvidia']);
 export const BROWSER_DECISION_STATES = Object.freeze(['configured', 'unavailable', 'invalid']);
-const ISO = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$/;
+const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 const URL_MAX = 2000;
 const ROUTE_FIELDS = Object.freeze(['version', 'task', 'provider', 'model', 'status', 'typedDecision', 'authorizesCall', 'reason', 'observedAt']);
 
