@@ -117,3 +117,19 @@
   .puv-shadow-verification { align-items:flex-start; flex-direction:column; }
   .puv-shadow-verification strong { text-align:left; }
 }
+
+/* Browser Harness UI (stacked after the phone-command correlation slice).
+   This is a read-only projection of state.jobs. It shows no invented live
+   browser/provider availability and never exposes command UUIDs. */
+.puv-browser-harness { gap:10px; margin-bottom:12px; }
+.puv-browser-intro { color:var(--muted); font-size:.8125rem; margin:0; }
+.puv-browser-job-list { display:grid; gap:8px; list-style:none; padding:0; margin:0; }
+.puv-browser-job { border:1px solid var(--line); border-radius:10px; padding:10px; display:grid; gap:5px; background:var(--panel); }
+.puv-browser-job-top { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+.puv-browser-job-top strong { min-width:0; overflow-wrap:anywhere; font-size:.84rem; }
+.puv-browser-job-source, .puv-browser-job-intake, .puv-browser-job-hash { color:var(--muted); font-size:.75rem; overflow-wrap:anywhere; margin:0; }
+.puv-browser-job-verification { display:flex; flex-wrap:wrap; gap:6px 12px; font-size:.75rem; }
+.puv-browser-job-verification span:first-child { color:var(--accent); }
+@media(max-width:480px) {
+  .puv-browser-job-top { flex-direction:column; }
+}
