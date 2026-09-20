@@ -1,9 +1,9 @@
 // BLACKHOLE Browser Harness benchmark — synthetic evidence only.
 //
-This module measures deterministic policy behavior in a bounded local suite.
-It never calls a provider, opens Chrome, fetches the network, or claims
-semantic quality. A result with evidenceClass SANDBOX_SYNTHETIC is a
-regression signal, not live browser acceptance.
+// This module measures deterministic policy behavior in a bounded local suite.
+// It never calls a provider, opens Chrome, fetches the network, or claims
+// semantic quality. A result with evidenceClass SANDBOX_SYNTHETIC is a
+// regression signal, not live browser acceptance.
 import {
   buildBrowserArtifact,
   deterministicBrowserVerification,
