@@ -13,6 +13,7 @@ import {ProjectError,projectNameKey,planProjectImport,validateProjectFields,reso
 import {projectUniverseSummary} from './lib/project-universe.mjs';
 import {driveStatus} from './lib/drive-status.mjs';
 import {SourceError,validateSourceFields,planSourceImport,resolveSource,sourceRegistryDocument,sourceBriefDocument,sourceBucket,SOURCE_BUCKETS,planRequiredIntakeSeed} from './lib/sources.mjs';
+import {planCanonicalProjectIntake,CANONICAL_PROJECT_INTAKE} from './lib/canonical-intake.mjs';
 import {sourceMatches} from './public/source-reference-labels.mjs';
 import {operatingBriefDocument} from './lib/operations.mjs';
 import {exportBackup} from './lib/backup.mjs';
@@ -862,6 +863,13 @@ export function createYenoServer(options={}) {
    s.sources.push(...created);
    if(created.length)event(`Required intake seeded: ${created.length} topic/reference source(s) registered (${created.map(source=>source.title).join(', ')}).`);
    return {sources:created,createdCount:created.length};
+ }
+ function importCanonicalProjectIntake(){
+   const planned=planCanonicalProjectIntake(s.sources);
+   const created=planned.map(fields=>sourceRecord(fields));
+   s.sources.push(...created);
+   if(created.length)event(`Canonical project intake: ${created.length} registered (${created.map(source=>source.title).join(', ')}).`);
+   return {sources:created,createdCount:created.length,reusedCount:CANONICAL_PROJECT_INTAKE.length-created.length,totalCount:CANONICAL_PROJECT_INTAKE.length};
  }
  function sourceDocumentJob(source,content,title){const job=newJob({type:'document',text:content,title:title.slice(0,160),...(source?.projectId?{projectId:source.projectId}:{})});job.sourceReport=true;if(source)job.sourceId=source.id;return publicJob(job);}
  function takeSnapshot(label){const snapshot={id:uid(),label:label?requiredText(label,160):'수동 저장',createdAt:now(),data:structuredClone({memories:s.memories,settings:{concurrency:s.concurrency,modules:s.modules}})};s.snapshots.unshift(snapshot);event(`Snapshot created: ${snapshot.label}`);return snapshot;}
@@ -1787,6 +1795,10 @@ export function createYenoServer(options={}) {
        if(url.pathname==='/api/sources')return {status:201,payload:{source:addSource(b)}};
        if(url.pathname==='/api/sources/import')return {status:201,payload:importSources(b)};
        if(url.pathname==='/api/sources/seed-required-intake')return {status:201,payload:seedRequiredIntake()};
+       if(url.pathname==='/api/sources/import-canonical-intake'){
+         if(!b.requestId||Object.keys(b).some(key=>key!=='requestId'))throw new HttpError(400,'Canonical intake requires requestId only.');
+         return {status:201,payload:importCanonicalProjectIntake()};
+       }
        const sourceUpdate=url.pathname.match(/^\/api\/sources\/([a-f0-9-]+)\/update$/);
        if(sourceUpdate)return {status:200,payload:{source:updateSource(sourceUpdate[1],b)}};
        if(url.pathname==='/api/jobs')return {status:201,payload:{job:publicJob(newJob(b))}};

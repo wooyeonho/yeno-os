@@ -158,5 +158,12 @@ export function sourceSearchKey(value) {
 }
 export function sourceMatches(source, query) {
   const key = sourceSearchKey(query);
-  return !key || [source.id, source.title, source.url, source.canonicalUrl, source.sourceLocator, source.summary, source.application, ...(source.aliases ?? []), ...sourceReferenceNames(source)].some(value => sourceSearchKey(value).includes(key));
+  if (!key) return true;
+  if (sourceSearchKey(source.id) === key) return true;
+  // Aliases and recovered reference names are whole alternate names, not text
+  // fragments: they must match exactly, or a short parent code like "B02"
+  // would falsely match every child alias that has it as a prefix ("B02-1",
+  // "B02-2", ...), and canonical codes would no longer resolve uniquely.
+  if ([...(source.aliases ?? []), ...sourceReferenceNames(source)].some(name => sourceSearchKey(name) === key)) return true;
+  return [source.title, source.url, source.canonicalUrl, source.sourceLocator, source.summary, source.application].some(value => sourceSearchKey(value).includes(key));
 }
