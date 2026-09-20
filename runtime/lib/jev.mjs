@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import {SHADOW_ROLES} from './shadow-army.mjs';
 
 // BLACKHOLE JEV v0 (issue #25 §4.6 / §5.1) — pure typed decision contract only.
 //
@@ -268,7 +269,7 @@ export function validateJevShadowLog(log) {
     if (typeof entry.at !== 'string' || !ISO.test(entry.at)) fail('jevShadowLog 항목의 at은 ISO 8601이어야 합니다.');
     if (typeof entry.jobId !== 'string' || !entry.jobId) fail('jevShadowLog 항목의 jobId가 잘못되었습니다.');
     if (!uuid(entry.missionId)) fail('jevShadowLog 항목의 missionId가 잘못되었습니다.');
-    if (!['scout', 'researcher', 'builder', 'verifier'].includes(entry.role)) fail('jevShadowLog 항목의 role이 잘못되었습니다.');
+    if (!SHADOW_ROLES.includes(entry.role)) fail('jevShadowLog 항목의 role이 잘못되었습니다.');
     if (![...JEV_QUESTIONS.shadowDispatch.options, null].includes(entry.jevAnswer)) fail('jevShadowLog 항목의 jevAnswer가 잘못되었습니다.');
     if (typeof entry.jevConfidence !== 'number' || entry.jevConfidence < 0 || entry.jevConfidence > 1) fail('jevShadowLog 항목의 jevConfidence는 0~1이어야 합니다.');
     if (!DECISION_STATUSES.includes(entry.jevStatus)) fail('jevShadowLog 항목의 jevStatus가 잘못되었습니다.');

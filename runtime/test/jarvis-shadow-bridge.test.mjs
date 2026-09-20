@@ -98,10 +98,10 @@ test('POST /api/shadow-army/missions links Jarvis Quest -> real Shadow Army, blo
   assert.equal(genericDecision.status, 409, 'a Quest already connected to a live Shadow mission must not launch a second generic job');
 
   const before = h.disk().jobs.filter(job => job.shadowAssignment?.plannerQuestId === quest.id);
-  assert.equal(before.length, 4);
+  assert.equal(before.length, 5, 'scout, researcher, builder, deterministic verifier and semantic verifier');
   await h.restart();
   const after = h.disk().jobs.filter(job => job.shadowAssignment?.plannerQuestId === quest.id);
-  assert.equal(after.length, 4, 'restart keeps the same four linked real jobs');
+  assert.equal(after.length, 5, 'restart keeps the same five linked real jobs');
   assert.equal(new Set(after.map(job => job.shadowAssignment.plannerQuestId)).size, 1);
   const linkedAfterRestart = await h.get(`/api/quests/${quest.id}/shadow-missions`);
   assert.equal(linkedAfterRestart.status, 200);

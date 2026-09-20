@@ -19,11 +19,20 @@ import {planShadowMission, shadowJobFromSpec, shadowDependenciesMet, shadowDepen
 // dependency resolution, verification, milestone, memory event) is real.
 const MODEL_ENV = {YENO_AGENT_PROVIDER: 'openai', YENO_OPENAI_API_KEY: 'synthetic-openai-key', YENO_OPENAI_MODEL: 'synthetic-openai', YENO_AGENT_DAILY_CALL_LIMIT: '20'};
 const ok = text => new Response(JSON.stringify({choices: [{finish_reason: 'stop', message: {content: text, tool_calls: []}}], usage: {prompt_tokens: 30, completion_tokens: 20}}), {headers: {'Content-Type': 'application/json'}});
+// A real synthetic-transport pass verdict for the fifth (semantic verifier)
+// job in the pipeline - distinguished from a worker-role call only by its
+// own real system prompt (never by job id/order), exactly how a real
+// provider would only ever see the request it was actually sent.
+const SEMANTIC_PASS_VERDICT = JSON.stringify({verdict: 'pass', confidence: 0.9, criteria: [{criterion: '목표 충족', status: 'met', reason: '산출물이 목표와 성공 기준을 실제로 다룸', evidenceRefs: ['builder-artifact']}], summary: '목표를 실제로 달성함'});
 
 async function setup(t, {env = MODEL_ENV} = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'blackhole-shadow-army-')), token = 'synthetic-shadow-army-owner-token';
   const modelCalls = [];
-  const agentFetch = async (url, req) => { modelCalls.push({url, body: JSON.parse(req.body)}); return ok('실제 Shadow 산출물 본문'); };
+  const agentFetch = async (url, req) => {
+    modelCalls.push({url, body: JSON.parse(req.body)});
+    const isSemantic = JSON.parse(req.body).messages.some(m => typeof m.content === 'string' && m.content.includes('independent semantic verifier'));
+    return ok(isSemantic ? SEMANTIC_PASS_VERDICT : '실제 Shadow 산출물 본문');
+  };
   let runtime = await start({host: '127.0.0.1', port: 0, dataDir: dir, token, env, agentFetch});
   const request = async (method, route, body) => { const r = await fetch(`http://127.0.0.1:${runtime.server.address().port}${route}`, {method, headers: {Authorization: `Bearer ${token}`, 'Content-Type': 'application/json'}, ...(body ? {body: JSON.stringify(body)} : {})}); return {status: r.status, body: await r.json()}; };
   const post = (route, body = {}) => request('POST', route, {requestId: randomUUID(), ...body});
@@ -47,7 +56,7 @@ test('planShadowMission is pure and rejects a bad project reference, emergency s
   assert.throws(() => planShadowMission(state, {projectId: state.projects[0].id, goal: ''}), ShadowArmyError);
   assert.throws(() => planShadowMission({...state, emergencyStop: true}, {projectId: state.projects[0].id, goal: 'g'}), ShadowArmyError);
   const plan = planShadowMission(state, {projectId: state.projects[0].id, goal: '실제 목표'});
-  assert.equal(plan.specs.length, 4);
+  assert.equal(plan.specs.length, 5);
   assert.deepEqual(plan.specs.map(s => s.role).sort(), [...SHADOW_ROLES].sort());
   const builder = plan.specs.find(s => s.role === 'builder'), verifier = plan.specs.find(s => s.role === 'verifier');
   assert.deepEqual(builder.dependsOnJobIds.sort(), plan.specs.filter(s => ['scout', 'researcher'].includes(s.role)).map(s => s.id).sort());
@@ -129,14 +138,30 @@ test('a real mission runs two independent shadows in parallel, gates the builder
   assert.equal(verifyJob.status, 'completed', JSON.stringify(verifyJob.verifyResult));
   assert.equal(verifyJob.verifyResult.verified, true);
 
+  // Deterministic PASS alone is not the final gate: the mission must not yet
+  // be 'completed' with the semantic verifier still pending real evidence.
+  const afterDeterministic = missionStatus(missionId, h.disk());
+  assert.notEqual(afterDeterministic.phase, 'completed', 'deterministic PASS alone must never complete the mission');
+
+  const semanticJob = await h.wait(mission.semantic.jobId, ['completed', 'failed']);
+  assert.equal(semanticJob.status, 'completed', semanticJob.error);
+  assert.equal(semanticJob.semanticVerdict.verdict, 'pass');
+  assert.equal(semanticJob.semanticVerdict.builderJobId, builder.jobId);
+  assert.equal(semanticJob.semanticVerdict.verifierJobId, mission.verify.jobId);
+
   const finalMission = missionStatus(missionId, h.disk());
   assert.equal(finalMission.phase, 'completed');
+  assert.equal(finalMission.semantic.verdict.verdict, 'pass');
+  assert.equal(finalMission.semantic.independence, 'independent-context', 'no alternate provider is configured in this test env - honestly labeled, never asserted as independent-model');
 
   const updatedProject = h.disk().projects.find(p => p.id === project.id);
   assert.ok(updatedProject.milestones.some(m => m.completed && m.text.includes(missionId.slice(0, 8))), 'a real completed milestone must reference this mission');
 
-  const memoryEvent = h.disk().memoryEvents.find(e => e.sourceRefs.some(ref => ref.type === 'job' && ref.id === verifyJob.id));
-  assert.ok(memoryEvent, 'a real canonical memory event must reference the real verify job');
+  // The final gate is now the semantic verifier's own completion (a
+  // deterministic PASS alone never reaches here), so the canonical memory
+  // event correctly references that job, not the deterministic verify job.
+  const memoryEvent = h.disk().memoryEvents.find(e => e.sourceRefs.some(ref => ref.type === 'job' && ref.id === semanticJob.id));
+  assert.ok(memoryEvent, 'a real canonical memory event must reference the real semantic verifier job');
   assert.equal(memoryEvent.projectId, project.id);
 });
 
@@ -229,7 +254,7 @@ test('a real restart mid-mission never duplicates work and the mission still rea
   await h.until(() => h.disk().jobs.find(j => j.id === scoutId)?.status !== 'queued', 'scout must leave queued before restart');
   await h.restart();
   const afterRestartJobs = h.disk().jobs.filter(j => j.shadowAssignment);
-  assert.equal(afterRestartJobs.length, 4, 'restart must preserve exactly the 4 real shadow jobs, never duplicate them');
+  assert.equal(afterRestartJobs.length, 5, 'restart must preserve exactly the 5 real shadow jobs (incl. the semantic verifier), never duplicate them');
   // The graceful shutdown inside restart() pauses running/queued jobs with
   // pauseReason 'shutdown' before the new instance ever boots (a real crash
   // would instead hit the boot-time 'restart' re-pause) - either way the job
@@ -247,5 +272,7 @@ test('a real restart mid-mission never duplicates work and the mission still rea
   assert.equal(builderJob.status, 'completed', builderJob.error);
   const verifyJob = await h.wait(missionResponse.body.mission.verify.jobId, ['completed', 'failed']);
   assert.equal(verifyJob.status, 'completed');
+  const semanticJob = await h.wait(missionResponse.body.mission.semantic.jobId, ['completed', 'failed']);
+  assert.equal(semanticJob.status, 'completed', semanticJob.error);
   assert.equal(missionStatus(missionId, h.disk()).phase, 'completed');
 });

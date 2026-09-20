@@ -1,5 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {validateProjectRegistry} from './projects.mjs';
+import {validateSemanticVerdict, validateIndependenceLabel} from './semantic-verification.mjs';
 
 // BLACKHOLE Real Shadow Army — Phase D, issue #25 §6 (first slice).
 //
@@ -21,7 +22,7 @@ import {validateProjectRegistry} from './projects.mjs';
 // leaf shadows (scout, researcher) feed one builder, which one verifier
 // checks. Real world missions may need more roles later; this slice does not
 // invent generic multi-role planning, only this one fixed, real shape.
-export const SHADOW_ROLES = Object.freeze(['scout', 'researcher', 'builder', 'verifier']);
+export const SHADOW_ROLES = Object.freeze(['scout', 'researcher', 'builder', 'verifier', 'semanticVerifier']);
 export const MAX_ACTIVE_MISSIONS_PER_PROJECT = 3;
 
 export class ShadowArmyError extends Error {
@@ -70,7 +71,7 @@ export function planShadowMission(state, body) {
   if (!goal) throw new ShadowArmyError(400, '목표는 1~4000자여야 합니다.');
   const successCriterion = plannerQuest?.successCriterion ?? trimmedText(body.successCriterion, 2000) ?? '실제 산출물 1개를 완성하고 검증 가능한 근거를 남긴다.';
   const missionId = randomUUID();
-  const scoutId = randomUUID(), researcherId = randomUUID(), builderId = randomUUID(), verifierId = randomUUID();
+  const scoutId = randomUUID(), researcherId = randomUUID(), builderId = randomUUID(), verifierId = randomUUID(), semanticVerifierId = randomUUID();
   // The full project record (same shape project-bots.mjs's botAssignment.context
   // already carries) - a shadow worker's tools scope to this exact clone, so a
   // trimmed context would silently break project_read/project_sources for it.
@@ -84,6 +85,17 @@ export function planShadowMission(state, body) {
       {...base, id: researcherId, role: 'researcher', dependsOnJobIds: []},
       {...base, id: builderId, role: 'builder', dependsOnJobIds: [scoutId, researcherId]},
       {...base, id: verifierId, role: 'verifier', dependsOnJobIds: [builderId]},
+      // Independent semantic verification (issue #25, Semantic Verification
+      // slice): a genuinely new fifth real job, gated on the deterministic
+      // verifier's own completion - never on the builder directly. Reusing
+      // shadowDependenciesMet/shadowDependencyFailed unchanged already gives
+      // the exact fail-closed AND-gate this needs for free: this job can
+      // only ever reach 'queued' once the deterministic verify job reaches
+      // 'completed' (which itself only happens when verified:true), and it
+      // is honestly failed (shadow_dependency_failed) if that verify job
+      // fails instead - deterministic PASS alone still does not complete
+      // the mission, only this job's own further PASS does.
+      {...base, id: semanticVerifierId, role: 'semanticVerifier', dependsOnJobIds: [verifierId], builderJobId: builderId, verifierJobId: verifierId},
     ],
   };
 }
@@ -92,11 +104,22 @@ export function planShadowMission(state, body) {
 // `type:'agent'` jobs (no new execution path); the verifier role is the one
 // genuinely new, deterministic, local job type this slice adds.
 export function shadowJobFromSpec(spec, at) {
-  const shadowAssignment = {missionId: spec.missionId, role: spec.role, dependsOnJobIds: spec.dependsOnJobIds, projectId: spec.projectId, projectVersion: spec.projectVersion, context: spec.projectContext, ...(spec.plannerQuestId ? {plannerQuestId: spec.plannerQuestId} : {})};
+  const shadowAssignment = {missionId: spec.missionId, role: spec.role, dependsOnJobIds: spec.dependsOnJobIds, projectId: spec.projectId, projectVersion: spec.projectVersion, context: spec.projectContext, goal: spec.goal, successCriterion: spec.successCriterion, ...(spec.plannerQuestId ? {plannerQuestId: spec.plannerQuestId} : {})};
   const hasDeps = spec.dependsOnJobIds.length > 0;
   const common = {id: spec.id, status: hasDeps ? 'paused' : 'queued', ...(hasDeps ? {pauseReason: 'dependencyPending'} : {}), step: 0, totalSteps: 3, createdAt: at, updatedAt: at, error: null, version: 1, artifacts: [], projectId: spec.projectId, shadowAssignment};
   if (spec.role === 'verifier') {
     return {...common, type: 'verify', title: `Shadow 검증 · ${spec.projectContext.name}`, input: JSON.stringify({missionId: spec.missionId, subjectJobIds: spec.dependsOnJobIds}), verifyRequest: {missionId: spec.missionId, subjectJobIds: spec.dependsOnJobIds}};
+  }
+  if (spec.role === 'semanticVerifier') {
+    // A single-shot, tool-free agent job (agent-engine.mjs's semanticMode) -
+    // its real prompt is built lazily at execution time from the builder's
+    // by-then-real artifact (prepareSemanticVerification in server.mjs),
+    // exactly like a research job's prompt is built from evidence that
+    // does not exist yet at planning time. `input` here is never sent to a
+    // model; it is only the durable record of which real jobs this
+    // verification is scoped to.
+    const semanticVerifyRequest = {missionId: spec.missionId, builderJobId: spec.builderJobId, verifierJobId: spec.verifierJobId, plannerQuestId: spec.plannerQuestId ?? null};
+    return {...common, type: 'agent', callLimit: 1, title: `Shadow 의미 검증 · ${spec.projectContext.name}`, input: JSON.stringify(semanticVerifyRequest), semanticVerifyRequest};
   }
   return {...common, type: 'agent', title: `Shadow ${spec.role} · ${spec.projectContext.name}`, input: (ROLE_PROMPTS[spec.role] ?? ROLE_PROMPTS.builder)(spec.goal)};
 }
@@ -105,16 +128,30 @@ export function validateShadowAssignment(job) {
   const a = job.shadowAssignment;
   if (!Object.hasOwn(job, 'shadowAssignment')) return;
   const assignmentKeys = Object.keys(a).sort().join();
-  const baseAssignmentKeys = 'context,dependsOnJobIds,missionId,projectId,projectVersion,role';
+  const baseAssignmentKeys = 'context,dependsOnJobIds,goal,missionId,projectId,projectVersion,role,successCriterion';
   const plannerAssignmentKeys = [...baseAssignmentKeys.split(','), 'plannerQuestId'].sort().join();
   if (!object(a) || ![baseAssignmentKeys, plannerAssignmentKeys].includes(assignmentKeys)) throw new Error('Invalid shadow assignment');
   if (!uuid(a.missionId) || !SHADOW_ROLES.includes(a.role) || !Array.isArray(a.dependsOnJobIds) || a.dependsOnJobIds.length > 4 || a.dependsOnJobIds.some(id => !uuid(id)) || (a.plannerQuestId !== undefined && !uuid(a.plannerQuestId))) throw new Error('Invalid shadow assignment fields');
+  if (typeof a.goal !== 'string' || !a.goal.trim() || typeof a.successCriterion !== 'string' || !a.successCriterion.trim()) throw new Error('Invalid shadow assignment goal/successCriterion');
   if (!Number.isSafeInteger(a.projectVersion) || a.projectVersion < 1) throw new Error('Invalid shadow assignment project version');
   if (!object(a.context) || a.context.id !== a.projectId || a.context.version !== a.projectVersion || !['active', 'paused'].includes(a.context.status)) throw new Error('Invalid shadow assignment context');
   validateProjectRegistry([a.context]);
   if (a.role === 'verifier') {
     if (job.type !== 'verify') throw new Error('Verifier shadow must be a verify job');
     if (!object(job.verifyRequest) || job.verifyRequest.missionId !== a.missionId || JSON.stringify(job.verifyRequest.subjectJobIds) !== JSON.stringify(a.dependsOnJobIds)) throw new Error('Invalid verify request');
+  } else if (a.role === 'semanticVerifier') {
+    // Independent semantic verification (issue #25): still an ordinary
+    // agent job, but its dependsOnJobIds must be exactly the one
+    // deterministic verify job it is actually gated on, and its own
+    // semanticVerifyRequest pointer must agree with the assignment - a
+    // tampered/mismatched link fails closed here, exactly like a verifier
+    // shadow's verifyRequest already does.
+    if (job.type !== 'agent' || job.callLimit !== 1) throw new Error('Semantic verifier shadow must be a single-call agent job');
+    const req = job.semanticVerifyRequest;
+    if (!object(req) || Object.keys(req).sort().join() !== 'builderJobId,missionId,plannerQuestId,verifierJobId') throw new Error('Invalid semantic verify request shape');
+    if (req.missionId !== a.missionId || req.verifierJobId !== a.dependsOnJobIds[0] || !uuid(req.builderJobId) || req.builderJobId === req.verifierJobId || (req.plannerQuestId ?? null) !== (a.plannerQuestId ?? null)) throw new Error('Invalid semantic verify request');
+    if (Object.hasOwn(job, 'semanticVerdict')) validateSemanticVerdict(job.semanticVerdict);
+    if (Object.hasOwn(job, 'semanticIndependence')) validateIndependenceLabel(job.semanticIndependence);
   } else if (job.type !== 'agent') throw new Error('Worker shadow must be an agent job');
 }
 
@@ -167,7 +204,7 @@ export function verifyShadowArtifacts(subjectJobs) {
   return {verified: subjects.length > 0 && subjects.every(s => s.verified), reasons: subjects.flatMap(s => s.reasons), subjects};
 }
 
-export const SHADOW_FAILURE_REASONS = Object.freeze(['dependency_failed', 'verification_rejected', 'execution_error', 'cancelled']);
+export const SHADOW_FAILURE_REASONS = Object.freeze(['dependency_failed', 'verification_rejected', 'semantic_fail', 'semantic_uncertain', 'execution_error', 'cancelled']);
 
 // Real, evidence-based failure classification (Phase D hardening, master
 // directive v2 §5.G "failure classification") - reads only the job's own
@@ -197,12 +234,20 @@ export function shadowFailureReason(job) {
   if (job.status !== 'failed') return null;
   if (job.error === 'shadow_dependency_failed') return 'dependency_failed';
   if (job.shadowAssignment.role === 'verifier' && job.verifyResult?.verified === false) return 'verification_rejected';
+  if (job.shadowAssignment.role === 'semanticVerifier' && job.semanticVerdict) return job.semanticVerdict.verdict === 'uncertain' ? 'semantic_uncertain' : 'semantic_fail';
   return 'execution_error';
 }
 
-function shadowPhase(shadows, verify) {
-  if (shadows.some(s => s.status === 'failed') || verify?.status === 'failed') return 'failed';
-  if (verify?.status === 'completed') return 'completed';
+// Independent semantic verification (issue #25) adds one more real gate
+// after the deterministic verifier: the mission is only truly 'completed'
+// once the semantic verifier job itself completes (which only happens on a
+// 'pass' verdict - see server.mjs's step===2 completion logic). A
+// deterministic PASS alone now surfaces as the new 'semantic_verifying'
+// phase, never silently as 'completed'.
+function shadowPhase(shadows, verify, semantic) {
+  if (shadows.some(s => s.status === 'failed') || verify?.status === 'failed' || semantic?.status === 'failed') return 'failed';
+  if (semantic?.status === 'completed') return 'completed';
+  if (verify?.status === 'completed' && semantic) return 'semantic_verifying';
   if (shadows.every(s => s.status === 'completed') && verify) return 'verifying';
   if (shadows.some(s => s.status === 'paused')) return 'blocked';
   if (shadows.some(s => ['queued', 'running'].includes(s.status))) return 'running';
@@ -217,17 +262,27 @@ export function missionStatus(missionId, state) {
   const jobs = (state.jobs ?? []).filter(job => job.shadowAssignment?.missionId === missionId);
   if (!jobs.length) return null;
   const verify = jobs.find(job => job.shadowAssignment.role === 'verifier') ?? null;
+  const semantic = jobs.find(job => job.shadowAssignment.role === 'semanticVerifier') ?? null;
+  const builder = jobs.find(job => job.shadowAssignment.role === 'builder') ?? null;
   const plannerQuestId = jobs.find(job => job.shadowAssignment.plannerQuestId)?.shadowAssignment.plannerQuestId ?? null;
-  const shadows = jobs.filter(job => job.shadowAssignment.role !== 'verifier').map(job => ({
+  const shadows = jobs.filter(job => !['verifier', 'semanticVerifier'].includes(job.shadowAssignment.role)).map(job => ({
     jobId: job.id, role: job.shadowAssignment.role, status: job.status, pauseReason: job.pauseReason ?? null,
     dependsOnJobIds: job.shadowAssignment.dependsOnJobIds, artifacts: (job.artifacts ?? []).map(a => ({id: a.id, name: a.name})),
     provider: job.agentJournal?.provider ?? null, model: job.agentJournal?.model ?? null,
     failureReason: shadowFailureReason(job),
   }));
   const projectId = jobs[0].projectId;
+  // Independence is read back from real evidence only (the two jobs' own
+  // recorded agentJournal.provider), never asserted from a plan-time
+  // intention - if either job has not actually made its call yet, this is
+  // honestly null rather than guessed.
+  const independence = (semantic?.agentJournal?.provider && builder?.agentJournal?.provider)
+    ? (semantic.agentJournal.provider !== builder.agentJournal.provider ? 'independent-model' : 'independent-context')
+    : null;
   return {
-    missionId, projectId, plannerQuestId, phase: shadowPhase(shadows, verify), shadows,
+    missionId, projectId, plannerQuestId, phase: shadowPhase(shadows, verify, semantic), shadows,
     verify: verify ? {jobId: verify.id, status: verify.status, pauseReason: verify.pauseReason ?? null, result: verify.verifyResult ?? null, failureReason: shadowFailureReason(verify)} : null,
+    semantic: semantic ? {jobId: semantic.id, status: semantic.status, pauseReason: semantic.pauseReason ?? null, verdict: semantic.semanticVerdict ?? null, independence, failureReason: shadowFailureReason(semantic)} : null,
   };
 }
 
