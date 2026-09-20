@@ -45,3 +45,6 @@ TypeSafe official endpoint/SDK credentials were not confirmed in this slice. Wit
 ## Phone readback
 
 `GET /api/browser/jobs/:id` returns the bounded public job state and artifact hash/reference. The artifact bytes remain behind the existing authenticated artifact route. Android/APK is not changed by this backend-only slice.
+## Phone command correlation (follow-up stacked slice)
+
+The authenticated POST accepts the durable `requestId` supplied by the phone command. The resulting browser job stores it as `browser.commandId`; `GET /api/browser/jobs/:id` returns the same value together with the bounded job projection and artifact hash. This is a correlation/readback contract, not physical Android acceptance and not a live browser/provider claim.
