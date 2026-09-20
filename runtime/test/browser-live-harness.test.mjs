@@ -57,6 +57,7 @@ test('sandbox browser route creates a durable job, source draft and phone-readab
   assert.equal(phone.status,200);
   assert.equal(phone.body.job.id,job.id);
   assert.equal(phone.body.browser.artifactHash,job.browser.artifactHash);
+  // The phone's durable command id must survive the job lifecycle and readback.
   assert.equal(phone.body.browser.commandId,commandId);
 });
 
