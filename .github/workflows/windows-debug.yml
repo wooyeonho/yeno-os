@@ -1,0 +1,83 @@
+name: Build Windows test installer
+run-name: Windows EXE · ${{ github.event_name }} · ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.sha }}
+
+on:
+  push:
+    branches: [codex, 'blackhole/**']
+    paths:
+      - 'apps/controller/**'
+      - 'runtime/public/**'
+      - '.github/workflows/windows-debug.yml'
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Source branch or commit to build
+        required: true
+        default: codex
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: yeno-windows-debug
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/controller
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.sha }}
+          persist-credentials: false
+      - name: Record source revision
+        id: source
+        working-directory: .
+        shell: bash
+        run: |
+          git rev-parse HEAD
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/controller/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Install locked frontend dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build and verify frontend
+        run: npm run build
+      - name: Build unsigned Windows NSIS installer
+        run: npm run tauri -- build --ci --target x86_64-pc-windows-msvc --bundles nsis
+      - name: Collect Windows artifacts and hashes
+        working-directory: .
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = 'build-artifacts/windows'
+          New-Item -ItemType Directory -Force -Path $output | Out-Null
+          $files = Get-ChildItem -Path 'apps/controller/src-tauri/target/x86_64-pc-windows-msvc/release/bundle' -Recurse -File -Include '*.exe','*.msi' -ErrorAction SilentlyContinue
+          if (-not $files) {
+            $files = Get-ChildItem -Path 'apps/controller/src-tauri/target/release/bundle' -Recurse -File -Include '*.exe','*.msi' -ErrorAction SilentlyContinue
+          }
+          if (-not $files) { throw 'No Windows installer artifact was produced' }
+          foreach ($file in $files) { Copy-Item $file.FullName $output -Force }
+          $rows = foreach ($file in Get-ChildItem $output -File) {
+            $hash = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            [pscustomobject]@{ name = $file.Name; bytes = $file.Length; sha256 = $hash; source = $env:GITHUB_SHA }
+          }
+          $rows | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 "$output/manifest.json"
+          Get-ChildItem $output | Select-Object Name,Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: blackhole-windows-debug-${{ steps.source.outputs.sha }}
+          path: build-artifacts/windows/
+          if-no-files-found: error
+          retention-days: 7
