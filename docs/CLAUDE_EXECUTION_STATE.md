@@ -184,7 +184,33 @@ APK 없음(backend+web only). 개발자 워커 CI 아티팩트: push 후 실제 
 - `node --test test/homunculus-heartbeat.test.mjs`(신규 10개): 전부 pass.
 - `node --test test/blackhole-core-server.test.mjs`(기존 10개 + 신규 2개 = 12개): 전부 pass. 신규 2개는 실제 HTTP 왕복으로 검사 — (a) `POST /api/autopilot`→`POST /api/control stop`→`POST /api/control resume` 전체를 거치며 `autonomyMode`가 paused→active→emergency_stopped→**paused**(자동으로 active 복귀하지 않음, 서버가 emergency stop 시 autopilot을 강제 비활성화하고 resume이 재활성화하지 않는 실제 동작과 일치)로 전이함을 확인. (b) `POST /api/quests`로 만든 실제 소유자 quest가 `GET /api/core`의 `currentQuest.id`로 나타나고 `currentGoalId`는 `null`(synthesis 없음)이며, `openStore()`로 실제 재시작을 시뮬레이션해도 `currentQuestId`/`currentGoalId`가 동일하게 보존됨을 확인.
 - `npm test`(전체 973개 = 기존 961 + 이번 신규 12개): 943 pass · 23 fail · 7 skip — 실패 목록을 이름 단위로 대조해 §13의 기존 23개(QuickJS/WASM code-workshop 관련 22개 + `scripts/native-config.test.mjs`의 `URLPattern is not defined` 1개)와 정확히 동일함을 확인. 신규 실패 0개.
-- exact-head CI(developer-worker): push 직후 실제 조회 — run #111(`id:35520824481`), head `1976776`, `status:in_progress`(조회 시점). PR #39 오픈, `subscribe_pr_activity` 등록 완료 — 완료 결과는 추정하지 않고 실제 webhook/재조회로 확정해 Issue #25에 기록한다. 지시 §2의 "CI pending → 기록하고 승인 필요 없는 다음 단계를 계속 진행"에 따라 STAGE 3 준비를 계속한다.
+- exact-head CI(developer-worker): run #111(`id:35520824481`), head `1976776`(STAGE 2 코드 커밋). **재조회 결과**: `status:completed`, `conclusion:success` — 실제 확정. PR #39 오픈, `subscribe_pr_activity` 등록 완료.
+
+## 15. STAGE 3 — Jarvis-Shadow 닫힌 고리: "정해줘"/"알아서 진행해"가 실제 Shadow Army 임무를 낸다 (PR #39에 계속 커밋)
+
+**실제 감사로 찾은 격차**: `decideAndRunQuest()`(server.mjs)는 이긴 quest가 project에 연결돼 있어도 항상 단일 일반 `type:'agent'` job(`runQuest()`)만 만들었다 — Scout/Researcher/Builder→deterministic verify→semantic verify 5-job Shadow Army 파이프라인(`shadow-army.mjs`, 이미 `jarvis-shadow-bridge.test.mjs`/`shadow-army.test.mjs`/`semantic-verification.test.mjs` 40개로 완전히 검증됨)은 오직 소유자가 `POST /api/shadow-army/missions`를 별도로 호출해야만 시작됐다. 이것이 지시가 명시한 "goal→quest→Shadow mission→Scout/Researcher/Builder→deterministic verify→semantic verify→artifact save→Memory Event save→replan"이 "정해줘" 경로에서는 끊겨 있던 지점이다.
+
+**수정(두 번째 실행 엔진 없음)**: `startShadowMission(body)`의 본문을 `dispatchShadowMission(planBody)`로 추출해 재사용 가능하게 했다(요청 검증만 `startShadowMission`에 남김). `decideAndRunQuest()`는 이긴 quest에 `projectId`가 있으면 `dispatchShadowMission({questId:top.id})`를(POST /api/shadow-army/missions와 완전히 동일한 메커니즘), 없으면 기존 `runQuest()`를 그대로 호출한다. `decide.mjs`의 기존 `hasReusableShadowMission` 필터가 이미 활성 Shadow 임무가 있는 quest를 후보에서 제외하므로 이중 배정은 구조적으로 불가능하다. `/api/voice`의 "정해줘" 응답 모양도 `outcome.kind==='shadowMission'`일 때 `missionId`/`mission`을 노출하도록 확장했다(`job` 필드는 이 경우 없음).
+
+**실제 검사**: `runtime/test/jarvis-shadow-closed-loop.test.mjs`(신규 2개, `shadow-army.test.mjs`와 동일한 합성 전송 방식) — (1) project 없는 목표와 project 있는 목표를 함께 저장 → "지금 가장 먼저 해야 할 일을 알아서 진행해" → 실제 5-job Shadow Army 임무가 project 목표에 배정됨(`job` 아님) 확인 → scout/researcher/builder/deterministic verify/semantic verify 전부 완료까지 실제로 기다림 → 실제 프로젝트 마일스톤 + 실제 Memory Event 생성 확인 → Homunculus Heartbeat(Stage 2)의 `currentQuest`가 임무 진행 중엔 이미 배정된 project 목표를 후보에서 제외하고 남은 목표를 가리킴을 확인 → 다음 "정해줘"(재계획)가 완료된 목표를 다시 실행하지 않고 남은 목표(project 없음이므로 기존 단일 job 경로)를 정확히 고름을 확인 → 재시작 후 임무·마일스톤·Memory Event·Core 상태 전부 보존 확인. (2) project 목표에 이미 활성 Shadow 임무가 있으면 "정해줘"가 두 번째 임무를 만들지 않고 정직하게 409(`선택할 수 있는 저장된 목표가 없습니다`)를 반환함을 확인.
+- 영향받는 기존 시험(변경 없이 재실행, 전부 pass): `decide.test.mjs`(10) · `jarvis-shadow-bridge.test.mjs`(3) · `shadow-army.test.mjs`(9) · `quest-api.test.mjs`(4) · `quests.test.mjs`(12) · `quest-autorun-boundary.test.mjs`(2) · `command-request.test.mjs`(10) · `voice-ui.test.mjs`(9) · `closed-loop.test.mjs`(5) · `phone-acceptance.test.mjs`(3, project 없는 목표 경로라 동작 완전히 동일).
+- `npm test`(전체 975개 = 973 + 신규 2개): **945 pass · 23 fail(이름까지 기존과 정확히 동일) · 7 skip** — 신규 실패 0개.
+- exact-head CI(developer-worker): push 후 실제 조회해 기록(placeholder 아님).
+
+### STRUCTURAL/SYNTHETIC/LIVE/PHYSICAL
+STRUCTURAL·SYNTHETIC: 위 자동 시험(합성 provider 전송). LIVE: 해당 없음. PHYSICAL: 해당 없음(`apps/controller` 미변경).
+
+### ARTIFACT/HASH
+APK 없음(backend only). CI 아티팩트 ID/해시는 push 후 실제 조회해 기록.
+
+### ROLLBACK
+`git revert`로 이 커밋을 되돌리면 `decideAndRunQuest()`가 project 유무와 무관하게 항상 단일 job을 만들던 이전 동작(STAGE 2 head)으로 정확히 복원된다. `/api/shadow-army/missions` 자체는 변경하지 않았다(내부 로직만 추출·재사용).
+
+### BLOCKER
+없음.
+
+### NEXT SINGLE ACTION
+지시 §2에 따라 재확인 없이 STAGE 4(멀티 프로바이더 라우터: OpenAI/Anthropic/Gemini/xAI Grok/Kimi/local-fallback 실제 상태 확장 — `model-router.mjs`가 AGENTS.md에 이미 순수 정책 계층으로 존재함을 먼저 실제 감사)로 진행한다.
 
 ### STRUCTURAL/SYNTHETIC/LIVE/PHYSICAL
 STRUCTURAL·SYNTHETIC: 위 자동 시험. LIVE: 해당 없음(provider 호출 없음). PHYSICAL: 해당 없음(`apps/controller` 미변경, 새 APK 없음).

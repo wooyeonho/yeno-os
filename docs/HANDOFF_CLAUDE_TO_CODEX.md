@@ -22,7 +22,11 @@ PR #33/#34/#35/#36/#37 전부 실제로 존재하고 exact-head CI green임을 �
 
 `runtime/lib/blackhole-core.mjs`에 `autonomyMode`/`currentQuestId`/`currentGoalId`/`measuredDrivePressure`/`pendingApprovalIds`/`lastReplanAt`/`lastGrowthEvidenceRef`를 추가했다. 전부 기존 `decide.mjs`(`decideQuest`)/`motivation.mjs`(`motivationStatus`)/`quests.mjs`(synthesis·outcome 레코드)의 재사용이며 새 엔진은 없다. `store.mjs`/`backup.mjs`에 동일한 backfill 마이그레이션을 배선했다. 신규 시험 12개(`homunculus-heartbeat.test.mjs` 10개 + `blackhole-core-server.test.mjs`에 추가한 실제 HTTP 왕복 2개) 전부 pass, 전체 회귀 973개 중 943 pass·23 fail(기존과 이름까지 동일)·7 skip — 신규 실패 0개. 자체 발견한 설계 결함(validateCoreState의 recompute-and-compare 과잉 검증)을 실제 테스트 실패로 잡아 참조적 일관성만 보는 방식으로 수정했다 — 자세한 경위는 §14 참고.
 
-지시(§2)에 따라 다음 단계(STAGE 3, Jarvis-to-Shadow 닫힌 고리)로 재확인 없이 자동 진행한다.
+## -1. STAGE 3 — Jarvis-Shadow 닫힌 고리 (같은 PR #39에 계속 커밋, 자세한 내용은 `docs/CLAUDE_EXECUTION_STATE.md` §15)
+
+`decideAndRunQuest()`가 project에 연결된 이긴 quest를 실제 5-job Shadow Army 임무(Scout/Researcher/Builder→deterministic verify→semantic verify, 기존 `shadow-army.mjs` 100% 재사용)로 승격시키도록 수정했다 — project 없는 quest는 기존 단일 job 경로 그대로. `runtime/test/jarvis-shadow-closed-loop.test.mjs`(신규 2개)가 "정해줘"→Shadow 임무 배정→전체 파이프라인 완료→마일스톤+Memory Event→재계획(다음 목표로 이동, 완료된 목표 재실행 안 함)→재시작 보존까지 실제 HTTP로 검증한다. 전체 회귀 975개: 945 pass·23 fail(기존과 동일)·7 skip.
+
+지시(§2)에 따라 다음 단계(STAGE 4, 멀티 프로바이더 라우터)로 재확인 없이 자동 진행한다.
 
 ## 2. 이번 세션에서 실제로 한 일
 
