@@ -134,5 +134,6 @@ test('browser job validation is additive to the existing state.jobs record', () 
 test('status is honest: no adapter or TypeSafe credentials means unavailable, never live', () => {
   assert.equal(browserHarnessStatus().liveBrowserHarness, false);
   assert.equal(typesafeJevProviderStatus({}).status, 'unavailable');
-  assert.equal(typesafeJevProviderStatus({YENO_JEV_BASE_URL: 'https://jev.example', YENO_JEV_API_KEY: 'synthetic', YENO_JEV_MODEL: 'jev'}).status, 'configured');
+  assert.equal(typesafeJevProviderStatus({YENO_JEV_BASE_URL: 'https://jev.example', YENO_JEV_API_KEY: 'synthetic', YENO_JEV_MODEL: 'jev'}).status, 'unavailable');
+  assert.equal(typesafeJevProviderStatus({YENO_JEV_BASE_URL: 'https://jev.example', YENO_JEV_API_KEY: 'synthetic', YENO_JEV_MODEL: 'jev', YENO_JEV_OFFICIAL_ENDPOINT_CONFIRMED: 'true'}).status, 'configured');
 });
