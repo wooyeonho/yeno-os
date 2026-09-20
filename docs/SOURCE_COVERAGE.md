@@ -24,6 +24,14 @@
 
 검색 성공은 기능 구현 성공이 아니다 — 위 항목은 모두 `decision:pending`, 대부분 `implementationStatus:idea`로 등록되며, 실제 구현·시험·채택은 각자 별도 slice가 필요하다.
 
+## Canonical project intake (PR #36)
+
+- 역사 레지스트리의 canonical project ID 50개(C00/C01, E01–E09, V01–V11, A01–A05, B01–B04, B04-01–B04-13)가 `runtime/lib/canonical-intake.mjs`에 보존되어 있다.
+- `POST /api/sources/import-canonical-intake`를 owner가 호출하면 기존 `state.sources` 하나에 URL 없는 `sourceLocator` 자료로 추가된다.
+- 호출 전 자동 등록은 없다. 호출 후에도 각 항목은 `readingStatus=unread`, `decision=pending`이며 구현·검토·배포 완료가 아니다.
+- 반복 호출·재시작은 같은 ID를 재사용하고, 사용자 편집을 덮어쓰지 않는다.
+- PR #36 exact-head CI는 이 문서 작성 시점에 pending이다.
+
 ## 아직 registry에 없는 것
 
 - 원본 49개 canonical project(C00~V11) 전체와 §4.3/§4.4의 나머지 intake 항목들은 이번 slice에서 import하지 않았다. `docs/CLAUDE_EXECUTION_STATE.md`의 NEXT SINGLE ACTION 참고.
