@@ -80,3 +80,24 @@ test('projectUniverseDetailModel carries through real milestone items from the p
   assert.deepEqual(detail.milestones, { completed: 1, total: 1, items: project.milestones });
   assert.match(detail.reason, /N/, 'with no linked quests, the reason still honestly falls back to the real nextAction');
 });
+
+test('projectUniverseListModel exposes only bounded Browser Harness evidence and preserves verification states', () => {
+  const model = projectUniverseListModel([], [{
+    id: 'browser-job',
+    type: 'browser',
+    status: 'completed',
+    browserRequest: {goal: '공개 페이지 읽기', sourceUrl: 'https://example.com/docs'},
+    browser: {
+      commandId: 'command-secret',
+      artifactHash: 'b'.repeat(64),
+      deterministicVerification: {status: 'verified'},
+      semanticVerification: {verdict: 'pass'},
+      sourceIntake: {readingStatus: 'partial', decision: 'pending'},
+    },
+  }]);
+  assert.equal(model.browserJobs.length, 1);
+  assert.equal(model.browserJobs[0].deterministic, 'verified');
+  assert.equal(model.browserJobs[0].semantic, 'pass');
+  assert.equal(model.browserJobs[0].readingStatus, 'partial');
+  assert.equal(model.browserJobs[0].decision, 'pending');
+});
