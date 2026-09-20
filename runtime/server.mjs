@@ -85,6 +85,7 @@ import {GrokAdapterError,GROK_PROVIDER,GROK_MAX_MULTI_AGENT_COUNT,grokStatus,val
 import {browserDecisionStatus,indexedDomDecisionInput,planBrowserAction} from './lib/browser-decision.mjs';
 import {BrowserHarnessError,browserHarnessStatus,deterministicBrowserVerification,typesafeJevProviderStatus,validatePublicHttpsUrl} from './lib/browser-harness.mjs';
 import {routeBrowserDecision,validateBrowserDecisionProviderSnapshot} from './lib/browser-provider-routing.mjs';
+import {browserBenchmarkStatus} from './lib/browser-benchmark.mjs';
 function publicSnapshot(snapshot){const {data,...out}=snapshot;return out;}
 const examples=['세계 현황','흡수 현황','자율 점검','자율 임무: 공식 자료를 읽고 다음 개선 초안을 만들어줘','운영 브리핑','운영 현황','기억해: 이번 주에는 YENO 한 프로젝트에 집중한다','찾아줘: YENO','문서 만들어: YENO의 첫 목표는 기억과 실행이다','프로젝트 목록','프로젝트 브리핑: 프로젝트 이름','프로젝트 작업: 프로젝트 이름 | 준비할 작업','자료 목록','자료 브리핑: 자료 ID','개선 후보: 자료 ID','진단해','개선점 찾아줘'];
 
@@ -1600,6 +1601,7 @@ export function createYenoServer(options={}) {
      // any authenticated principal (owner or device), exactly like
      // providerStatus()/`GET /api/state` already are - it discloses no
      // credential, only the same honest ready/missing/usage evidence.
+     if(req.method==='GET'&&url.pathname==='/api/browser/benchmark')return respond(res,200,browserBenchmarkStatus({env,at:now()}));
      if(req.method==='GET'&&url.pathname==='/api/browser/providers'){
        const snapshot=routeBrowserDecision({env,at:now()});
        validateBrowserDecisionProviderSnapshot(snapshot);
