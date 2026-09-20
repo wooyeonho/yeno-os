@@ -196,3 +196,53 @@ test('restart persistence: Core identity, mission-derived fields and heartbeat c
   assert.equal(reopened.state.blackholeCore.relationshipMemoryPointer, declared.body.memoryEvent.id);
   assert.deepEqual(reopened.state.memoryEvents.map(e => e.id), [declared.body.memoryEvent.id]);
 });
+
+// Stage 2 (Homunculus Heartbeat) — real owner routes, not unit fixtures.
+// autonomyMode must never be a second independently-settable switch: it is
+// always the real live reflection of the existing owner-gated autopilot
+// toggle and the existing emergency-stop latch.
+test('autonomyMode reflects the real owner-gated autopilot/emergency-stop routes end to end, and resume never silently re-enables autopilot', async t => {
+  const app = await setup(t);
+
+  const idle = await app.get('/api/core');
+  assert.equal(idle.body.autonomyMode, 'paused');
+
+  const enabled = await app.post('/api/autopilot', {enabled: true});
+  assert.equal(enabled.status, 200);
+  const active = await app.get('/api/core');
+  assert.equal(active.body.autonomyMode, 'active');
+
+  const stopped = await app.post('/api/control', {action: 'stop'});
+  assert.equal(stopped.status, 200);
+  const duringStop = await app.get('/api/core');
+  assert.equal(duringStop.body.autonomyMode, 'emergency_stopped');
+  assert.equal(duringStop.body.emergencyStop, true);
+
+  const resumed = await app.post('/api/control', {action: 'resume'});
+  assert.equal(resumed.status, 200);
+  const afterResume = await app.get('/api/core');
+  // Emergency stop force-disables autopilot and resume does not silently
+  // turn it back on - autonomyMode must honestly report 'paused', not 'active'.
+  assert.equal(afterResume.body.autonomyMode, 'paused');
+  assert.equal(afterResume.body.emergencyStop, false);
+});
+
+test('a real owner-authored quest becomes currentQuestId (never currentGoalId) on the Core, and survives a full store restart', async t => {
+  const app = await setup(t);
+
+  const created = await app.post('/api/quests', {
+    goal: '실제 소유자 목표: 최근 자료를 정리해 요약 문서를 만든다',
+    successCriterion: '요약 문서 1건을 실제로 저장한다',
+  });
+  assert.equal(created.status, 201);
+  const questId = created.body.quest.id;
+
+  const core = await app.get('/api/core');
+  assert.equal(core.body.currentQuest.id, questId);
+  // Owner-authored quests carry no .synthesis - never a Homunculus "goal".
+  assert.equal(core.body.currentGoalId, null);
+
+  const reopened = openStore(app.dir);
+  assert.equal(reopened.state.blackholeCore.currentQuestId, questId);
+  assert.equal(reopened.state.blackholeCore.currentGoalId, null);
+});

@@ -1,7 +1,7 @@
 # BLACKHOLE — Claude → (Codex/후속 Claude) 인수인계
 
-작성: 2026-09-20 (세션 종료 시점). `BLACKHOLE_CLAUDE_CODE_EXECUTION.md` §3의 "후속 세션용 짧은 재개 지시"를 따른다.
-Codex 인수인계를 기다리지 않고 Claude Code 단독으로 R0→R1→R2까지 실제 진행했다. 이 문서는 그 결과의 정확한 스냅샷이다.
+작성: 2026-09-20 (세션 종료 시점, STAGE 2 완료 시점으로 갱신). `BLACKHOLE_CLAUDE_CODE_EXECUTION.md` §3의 "후속 세션용 짧은 재개 지시"와 소유자의 "BLACKHOLE CONTINUOUS EXECUTION DIRECTIVE v1"(15단계 연속 실행)을 따른다.
+Codex 인수인계를 기다리지 않고 Claude Code 단독으로 R0→R1→R2, 그리고 CONTINUOUS EXECUTION DIRECTIVE의 STAGE 0→STAGE 2까지 실제 진행했다. 이 문서는 그 결과의 정확한 스냅샷이다.
 
 ## 1. PR 체인 (전부 Draft, 전부 Open, merge 없음)
 
@@ -12,10 +12,17 @@ codex (원본)
          └─ blackhole/grok-provider-adapter-claude-20260920 (PR #34, CI green)
              └─ blackhole/single-ledger-intake-claude-20260920 (PR #35, CI green — run #105 f13d4cd)
                  └─ blackhole/canonical-intake-import-claude-20260920 (PR #36, CI green — run #105 id 35513051558, f13d4cd)
-                     └─ blackhole/r2-verify-shadow-ui-claude-20260920 (PR #37, CI green — run #106 id 35513941919, head d236f71, conclusion:success 실제 조회 완료)
+                     └─ blackhole/r2-verify-shadow-ui-claude-20260920 (PR #37, Draft/Open/mergeable_state:clean, head a57d6dd — CI green for its code content: run #106 id 35513941919, head d236f71, conclusion:success 실제 조회 완료)
+                         └─ blackhole/homunculus-heartbeat-claude-20260920 (신규 stacked 브랜치, STAGE 2 — Draft PR은 이 커밋 push 직후 오픈, 번호는 §Issue 보고에 실제 기록)
 ```
 
-PR #33/#34/#35/#36/#37 전부 실제로 존재하고 exact-head CI green임을 이번 세션에서 재확인했다(문서 속 과거 관측을 재사용하지 않음).
+PR #33/#34/#35/#36/#37 전부 실제로 존재하고 exact-head CI green임을 이번 세션에서 재확인했다(문서 속 과거 관측을 재사용하지 않음). PR #37은 여전히 Draft/Open/미병합이며 그 정확한 head(`a57d6dd6fe8a1c9caf9423e4c53797443589a100`) 위에 STAGE 2 브랜치를 새로 쌓았다.
+
+## 0. STAGE 2 — Homunculus Heartbeat (이번 세션 최신 작업, 자세한 내용은 `docs/CLAUDE_EXECUTION_STATE.md` §14)
+
+`runtime/lib/blackhole-core.mjs`에 `autonomyMode`/`currentQuestId`/`currentGoalId`/`measuredDrivePressure`/`pendingApprovalIds`/`lastReplanAt`/`lastGrowthEvidenceRef`를 추가했다. 전부 기존 `decide.mjs`(`decideQuest`)/`motivation.mjs`(`motivationStatus`)/`quests.mjs`(synthesis·outcome 레코드)의 재사용이며 새 엔진은 없다. `store.mjs`/`backup.mjs`에 동일한 backfill 마이그레이션을 배선했다. 신규 시험 12개(`homunculus-heartbeat.test.mjs` 10개 + `blackhole-core-server.test.mjs`에 추가한 실제 HTTP 왕복 2개) 전부 pass, 전체 회귀 973개 중 943 pass·23 fail(기존과 이름까지 동일)·7 skip — 신규 실패 0개. 자체 발견한 설계 결함(validateCoreState의 recompute-and-compare 과잉 검증)을 실제 테스트 실패로 잡아 참조적 일관성만 보는 방식으로 수정했다 — 자세한 경위는 §14 참고.
+
+지시(§2)에 따라 다음 단계(STAGE 3, Jarvis-to-Shadow 닫힌 고리)로 재확인 없이 자동 진행한다.
 
 ## 2. 이번 세션에서 실제로 한 일
 
