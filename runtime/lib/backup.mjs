@@ -22,6 +22,7 @@ import {validateBotAssignment} from './project-bots.mjs';
 import {validateShadowAssignment} from './shadow-army.mjs';
 import {validateSemanticVerdict, validateIndependenceLabel} from './semantic-verification.mjs';
 import {validateJevShadowLog} from './jev.mjs';
+import {validateGrokMultiAgentApproval} from './grok-adapter.mjs';
 import {validateQuestState} from './quests.mjs';
 import {emptyStudio,validateStudio} from './studio.mjs';
 import {validateVideoInput} from './video.mjs';
@@ -64,7 +65,7 @@ function memories(value) {
   }
 }
 function validateState(state) {
-  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop', 'selfTests', 'runtimeBoots', 'deviceAcceptances', 'outcomeConnectors', 'outcomeReadings', 'outcomeEvidence', 'blackholeCore', 'memoryEvents', 'memorySyncOutbox', 'jevShadowLog'], STATE_KEYS);
+  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop', 'selfTests', 'runtimeBoots', 'deviceAcceptances', 'outcomeConnectors', 'outcomeReadings', 'outcomeEvidence', 'blackholeCore', 'memoryEvents', 'memorySyncOutbox', 'jevShadowLog', 'grokQuarantined', 'grokMultiAgentApproval'], STATE_KEYS);
   if (Object.hasOwn(state, 'runtimeBoots')) validateBootRecords(state.runtimeBoots);
   if (Object.hasOwn(state, 'deviceAcceptances')) validateDeviceAcceptances(state.deviceAcceptances);
   if (Object.hasOwn(state, 'outcomeConnectors')) validateConnectors(state.outcomeConnectors);
@@ -99,6 +100,12 @@ function validateState(state) {
   validateOutbox(state.memorySyncOutbox, state);
   if (!Object.hasOwn(state, 'jevShadowLog')) state.jevShadowLog = [];
   validateJevShadowLog(state.jevShadowLog);
+  // xAI Grok Provider Adapter: same additive, migration-safe backfill idiom
+  // as every field above - an older backup gets the honest defaults.
+  if (!Object.hasOwn(state, 'grokQuarantined')) state.grokQuarantined = false;
+  if (typeof state.grokQuarantined !== 'boolean') fail('invalid grokQuarantined flag');
+  if (!Object.hasOwn(state, 'grokMultiAgentApproval')) state.grokMultiAgentApproval = null;
+  validateGrokMultiAgentApproval(state.grokMultiAgentApproval);
   if (!Array.isArray(state.jobs) || !Array.isArray(state.snapshots) || !Array.isArray(state.events) || !record(state.requests) || !record(state.devices) || !record(state.artifacts)) fail('invalid state collections');
   const jobs = new Map(), references = new Set();
   for (const job of state.jobs) {
