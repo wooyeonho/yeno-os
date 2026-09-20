@@ -154,13 +154,16 @@ export function normalizeBrowserSnapshot(raw, {resolvedAddresses = null} = {}) {
   return {...validated, body, links};
 }
 export function browserDecisionInput(snapshot, goal) {
-  const normalized = normalizeBrowserSnapshot(snapshot); return indexedDomDecisionInput({snapshot: normalized, goal});
+  const normalized = normalizeBrowserSnapshot(snapshot);
+  const indexed = {url: normalized.url, title: normalized.title, revision: normalized.revision, observedAt: normalized.observedAt, elements: normalized.elements};
+  return indexedDomDecisionInput({snapshot: indexed, goal});
 }
 function safeActionPlan(snapshot, draft, independentOutcome) {
   const action = parseBrowserDecisionDraft(draft);
   const target = action.targetIndex === null ? null : snapshot.elements.find(item => item.index === action.targetIndex);
   if (action.operation === 'TYPE_TEXT' && (!target || target.sensitive || SECRET_PATTERN.test([target.role,target.name,target.label,target.ariaLabel,target.inputType].filter(Boolean).join(' ')))) fail('sensitive_target_blocked');
-  const plan = planBrowserAction({snapshot, draft: action, independentOutcome});
+  const indexed = {url: snapshot.url, title: snapshot.title, revision: snapshot.revision, observedAt: snapshot.observedAt, elements: snapshot.elements};
+  const plan = planBrowserAction({snapshot: indexed, draft: action, independentOutcome});
   if (action.operation === 'CLICK' && !target?.href) fail('click_target_must_be_public_link');
   if (action.operation === 'DONE' && (!independentOutcome || independentOutcome.status !== 'verified')) fail('done_requires_independent_evidence');
   if (action.operation === 'BLOCKED') return {version: BROWSER_HARNESS_VERSION, action, sandboxDispatchAllowed: false, reason: action.reason};
