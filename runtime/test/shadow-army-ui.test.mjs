@@ -160,3 +160,38 @@ test('projectUniverseDetailModel preserves the real shadow mission projection an
   assert.equal(projectUniverseDetailModel(project, universe).shadowMissions[0].missionId, IDs.mission);
   assert.deepEqual(projectUniverseDetailModel(project, {...universe, shadowMissions: undefined}).shadowMissions, []);
 });
+
+test('the Project Universe list renders bounded Browser Harness evidence without exposing command ids', () => {
+  const h = setup();
+  h.view.updateState({
+    screen: 'list',
+    projects: [],
+    browserJobs: [{
+      status: 'completed',
+      goal: '공개 페이지 제목·본문·링크 읽기',
+      sourceUrl: 'https://example.com/docs',
+      commandId: 'secret-command-uuid',
+      artifactHash: 'a'.repeat(64),
+      deterministic: 'verified',
+      semantic: 'pass',
+      readingStatus: 'partial',
+      decision: 'pending',
+    }],
+  });
+  const visible = h.root.textContent;
+  assert.match(visible, /Browser Harness/);
+  assert.match(visible, /공개 페이지 제목·본문·링크 읽기/);
+  assert.match(visible, /결정론적 검증 통과/);
+  assert.match(visible, /내용 검증 통과/);
+  assert.match(visible, /일부 확인 · 판단 대기/);
+  assert.doesNotMatch(visible, /secret-command-uuid/);
+  assert.match(visible, /artifact SHA-256 · a{16}…/);
+  h.close();
+});
+
+test('the Browser Harness panel keeps an honest empty state', () => {
+  const h = setup();
+  h.view.updateState({screen: 'list', projects: [], browserJobs: []});
+  assert.match(h.root.textContent, /아직 접수된 Browser 작업이 없습니다/);
+  h.close();
+});

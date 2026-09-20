@@ -6,8 +6,20 @@
 // copy of this logic.
 export function projectUniverseListModel(projects, jobs) {
   const list = projects || [], allJobs = jobs || [];
+  const browserJobs = allJobs.filter(job => job.type === 'browser').slice(-12).reverse().map(job => ({
+    status: job.status || 'queued',
+    goal: job.browserRequest?.goal || job.title || '공개 URL 읽기',
+    sourceUrl: job.browserRequest?.sourceUrl || null,
+    commandId: job.browser?.commandId || null,
+    artifactHash: job.browser?.artifactHash || null,
+    deterministic: job.browser?.deterministicVerification?.status || null,
+    semantic: job.browser?.semanticVerification?.verdict || null,
+    readingStatus: job.browser?.sourceIntake?.readingStatus || null,
+    decision: job.browser?.sourceIntake?.decision || null,
+  }));
   return {
     screen: 'list', notice: null, loading: false,
+    browserJobs,
     projects: list.filter(p => p.status !== 'archived').map(p => ({
       id: p.id, name: p.name, status: p.status,
       milestones: {completed: (p.milestones || []).filter(m => m.completed).length, total: (p.milestones || []).length},

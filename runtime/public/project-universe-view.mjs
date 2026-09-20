@@ -17,9 +17,10 @@ const date = v => { const t = typeof v === 'number' ? v : Date.parse(v); return 
 const truncate = (text, max) => { const value = String(text ?? ''); return value.length > max ? `${value.slice(0, max)}…` : value; };
 
 export const STATUS_LABEL = {active: '진행', paused: '보류', archived: '보관'};
-const READING_LABEL = {unread: '아직 안 읽음', reading: '읽는 중', read: '읽음'};
+const READING_LABEL = {unread: '아직 안 읽음', reading: '읽는 중', partial: '일부 확인', read: '읽음'};
 const DECISION_LABEL = {pending: '판단 대기', candidate: '후보', adopted: '채택', rejected: '보류'};
 const JOB_STATUS_LABEL = {queued: '대기 중', running: '진행 중', paused: '멈춤', completed: '완료', failed: '실패', cancelled: '취소됨'};
+const BROWSER_VERIFICATION_LABEL = Object.freeze({verified: '결정론적 검증 통과', rejected: '결정론적 검증 불합격', pass: '내용 검증 통과', fail: '내용 검증 불합격', uncertain: '내용 검증 불확실'});
 const MEMORY_TYPE_LABEL = {episode: '경험', decision: '결정', result: '결과', relationship: '관계', skill: '능력', source: '자료', project: '프로젝트'};
 // Shadow Army (issue #25 §D): real durable jobs already gated by
 // shadow-army.mjs's own dependsOnJobIds/callLimit/restart-safety contract.
@@ -106,10 +107,35 @@ function projectCardHTML(project) {
   </button>`;
 }
 
+function browserJobHTML(job) {
+  const status = JOB_STATUS_LABEL[job.status] || job.status || '상태 없음';
+  const deterministic = job.deterministic ? BROWSER_VERIFICATION_LABEL[job.deterministic] || job.deterministic : '결정론적 검증 대기';
+  const semantic = job.semantic ? BROWSER_VERIFICATION_LABEL[job.semantic] || job.semantic : '내용 검증 대기';
+  const intake = [job.readingStatus ? (READING_LABEL[job.readingStatus] || job.readingStatus) : null, job.decision ? (DECISION_LABEL[job.decision] || job.decision) : null].filter(Boolean).join(' · ');
+  const source = job.sourceUrl ? esc(truncate(job.sourceUrl, 90)) : '공개 URL 없음';
+  return `<li class="puv-browser-job" data-browser-status="${esc(job.status || 'queued')}">
+    <div class="puv-browser-job-top"><strong>${esc(truncate(job.goal, 92))}</strong><span class="puv-status puv-status-${esc(job.status || 'queued')}">${esc(status)}</span></div>
+    <p class="puv-browser-job-source">${source}</p>
+    <div class="puv-browser-job-verification"><span>${esc(deterministic)}</span><span>${esc(semantic)}</span></div>
+    ${intake ? `<small class="puv-browser-job-intake">자료 상태 · ${esc(intake)}</small>` : ''}
+    ${job.artifactHash ? `<small class="puv-browser-job-hash">artifact SHA-256 · ${esc(job.artifactHash.slice(0, 16))}…</small>` : ''}
+  </li>`;
+}
+
+function browserHarnessSectionHTML(state) {
+  const jobs = state.browserJobs || [];
+  return `<section class="puv-section puv-browser-harness" data-puv-surface="browser-harness">
+    <div class="puv-section-heading"><h3>Browser Harness</h3><span class="puv-progress">실제 작업 ${jobs.length}개</span></div>
+    <p class="puv-browser-intro">폰 명령과 공개 URL 결과의 현재 증거를 표시합니다. live 브라우저·Jev 연결을 추정하지 않습니다.</p>
+    ${jobs.length ? `<ul class="puv-browser-job-list">${jobs.map(browserJobHTML).join('')}</ul>` : '<p class="puv-empty-line">아직 접수된 Browser 작업이 없습니다.</p>'}
+  </section>`;
+}
+
 function listScreenHTML(state) {
   const projects = state.projects || [];
-  if (!projects.length) return `<div class="puv-empty"><span class="eyebrow">프로젝트 유니버스</span><p>등록된 프로젝트가 없습니다.</p></div>`;
-  return `<div class="puv-list" role="list">${projects.map(projectCardHTML).join('')}</div>`;
+  const browser = browserHarnessSectionHTML(state);
+  if (!projects.length) return `<div>${browser}<div class="puv-empty"><span class="eyebrow">프로젝트 유니버스</span><p>등록된 프로젝트가 없습니다.</p></div></div>`;
+  return `<div>${browser}<div class="puv-list" role="list">${projects.map(projectCardHTML).join('')}</div></div>`;
 }
 
 function milestoneItemHTML(milestone, projectId, busyId) {
