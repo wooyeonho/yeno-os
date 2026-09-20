@@ -45,7 +45,7 @@ export function typesafeJevDecisionStatus(env = process.env) {
   const endpoint = endpointStatus(env);
   if (!endpoint.valid) missing.push('YENO_JEV_BASE_URL');
   if (!nonEmpty(env.YENO_JEV_API_KEY, 4096)) missing.push('YENO_JEV_API_KEY');
-  if (!nonEmpty(env.YENO_JEV_MODEL, 160)) missing.push('YENO_JEV_MODEL');
+  if (!safeModel(env.YENO_JEV_MODEL) || !nonEmpty(env.YENO_JEV_MODEL, 160)) missing.push('YENO_JEV_MODEL');
   if (env.YENO_JEV_OFFICIAL_ENDPOINT_CONFIRMED !== 'true') missing.push('YENO_JEV_OFFICIAL_ENDPOINT_CONFIRMED');
   if (missing.length) {
     return {
