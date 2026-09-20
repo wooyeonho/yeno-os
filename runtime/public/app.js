@@ -1,6 +1,6 @@
 (async () => {
 const {createCommandRequest} = await import('/command-request.mjs');
-const {sourceMatches,sourceReferenceNames} = await import('/source-reference-labels.mjs');
+const {sourceMatches,sourceReferenceNames,sourceBucket} = await import('/source-reference-labels.mjs');
 const {sourceDestination,sourceCoverage} = await import('/absorption-routing.mjs');
 const {createWorldView} = await import('/world-view.mjs');
 const {createStudioView} = await import('/studio-view.mjs');
@@ -45,6 +45,7 @@ const names = {queued:'대기',running:'실행 중',paused:'멈춤',completed:'�
 const projectNames = {active:'진행',paused:'보류',archived:'보관'};
 const readingNames = {unread:'아직 읽지 않음',partial:'일부 확인',read:'본문 확인',unavailable:'접근 불가'};
 const decisionNames = {pending:'검토 대기',candidate:'개선 후보',deferred:'보류',rejected:'적용 제외'};
+const bucketNames = {now:'NOW · 진행 중',queued:'QUEUED · 대기',blocked:'BLOCKED · 차단',retired:'RETIRED · 종료'};
 const moduleInfo = {memory:['기억','내용을 저장하고 다시 찾습니다.'],documents:['문서','제공한 내용을 실제 문서 파일로 만듭니다.'],diagnostics:['진단·개선 제안','본체 상태와 실행 이력에서 개선 후보를 찾습니다.'],ai:['AI 작성','본체에 설정한 외부 AI로 작성합니다. 사용료가 발생할 수 있습니다.']};
 function notify(message) { $('toast').textContent=message; $('toast').hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(()=>$('toast').hidden=true,4500); }
 function friendly(message) {
@@ -106,7 +107,7 @@ async function openProjectUniverse(projectId){
     if(!project)throw new Error('프로젝트를 찾을 수 없습니다.');
     const universe=await api(`/api/projects/${encodeURIComponent(projectId)}/universe`);
     if(projectUniverseOpenId!==projectId)return;
-    projectUniverseView.updateState({screen:'detail',detail:projectUniverseDetailModel(project,universe),loading:false,notice:null});
+    projectUniverseView.updateState({screen:'detail',detail:projectUniverseDetailModel(project,universe),loading:false,notice:null,emergencyStop:current?.emergencyStop===true});
   }catch(error){
     if(projectUniverseOpenId!==projectId)return;
     projectUniverseView.updateState({screen:'detail',detail:null,loading:false,notice:friendly(error.message)});
@@ -127,7 +128,7 @@ async function projectMilestoneAction(action,payload){
     else if(action==='toggle')await api(`/api/projects/${encodeURIComponent(payload.projectId)}/milestones/${encodeURIComponent(payload.milestoneId)}`,{requestId:requestId(),revision,action:'toggle',completed:payload.completed});
     else await api(`/api/projects/${encodeURIComponent(payload.projectId)}/milestones/${encodeURIComponent(payload.milestoneId)}`,{requestId:requestId(),revision,action:'remove'});
     await refresh(true);
-    return {detail:await reloadProjectUniverseDetail(payload.projectId)};
+    return {detail:await reloadProjectUniverseDetail(payload.projectId),emergencyStop:current?.emergencyStop===true};
   }catch(error){
     await refresh(true);
     const detail=await reloadProjectUniverseDetail(payload.projectId);
@@ -259,7 +260,7 @@ function render(s) {
   $('events-list').innerHTML=(s.events||[]).slice(0,12).map(e=>`<li><time>${esc(date(e.at || e.createdAt))}</time>${esc(e.text || e.message)}</li>`).join('') || '<li class="muted">아직 실행 기록이 없습니다.</li>';
   $('memory-count').textContent=(s.memories||[]).length;renderMemories();
   renderProjects();renderSources();renderQuests();
-  if(activeTab==='project-universe'&&!projectUniverseOpenId)projectUniverseView.updateState(projectUniverseListModelForCurrentState());
+  if(activeTab==='project-universe'){if(!projectUniverseOpenId)projectUniverseView.updateState(projectUniverseListModelForCurrentState());else projectUniverseView.updateState({emergencyStop:s.emergencyStop===true});}
   $('snapshots-list').innerHTML=(s.snapshots||[]).map(sn=>`<article class="snapshot-item"><div><strong>${esc(sn.label)}</strong><small>${esc(date(sn.createdAt))}</small></div><button class="button subtle" data-restore="${esc(sn.id)}">이 시점으로</button></article>`).join('') || '<div class="empty">기억과 설정을 저장해 두면 이곳에서 돌아갈 수 있어요.</div>';
   $('concurrency').value=s.concurrency;
   $('module-settings').innerHTML=Object.entries(moduleInfo).map(([key,[name,desc]])=>`<div class="setting-row"><div><h3>${name}</h3><p>${desc}</p></div><input class="switch" type="checkbox" role="switch" aria-label="${name}" data-module="${key}" ${s.modules?.[key]?'checked':''} ${key==='ai'&&!s.ai?.configured?'disabled':''}></div>`).join('');
@@ -500,7 +501,21 @@ function canPrepareSource(source) {
 function renderSources() {
   const all=current?.sources||[], available=current?.capabilities?.sourceIntake===true;
   const query=$('source-search').value.trim().toLocaleLowerCase(), filter=$('source-filter').value, destination=$('source-destination-filter').value;
-  const sources=all.filter(source=>(destination==='all'||sourceDestination(source,current.projects).kind===destination) && (filter==='all'||source.readingStatus===filter) && sourceMatches(source,query));
+  // ALL/NOW/QUEUED/BLOCKED/AGING (BLACKHOLE §C): sourceBucket() is the exact
+  // same pure function the server's GET /api/sources?view=&aging= applies -
+  // shared, not a second reimplementation - so the tab and the API can never
+  // disagree on which bucket a source is in. AGING stays a warning checkbox
+  // layered on top of whatever bucket is chosen, never a separate hard filter.
+  const bucketFilter=$('source-bucket-filter').value, agingOnly=$('source-aging-only').checked;
+  const sources=all.filter(source=>{
+    if(destination!=='all'&&sourceDestination(source,current.projects).kind!==destination)return false;
+    if(filter!=='all'&&source.readingStatus!==filter)return false;
+    if(!sourceMatches(source,query))return false;
+    const {bucket,aging}=sourceBucket(source);
+    if(bucketFilter!=='all'&&bucket!==bucketFilter)return false;
+    if(agingOnly&&!aging)return false;
+    return true;
+  });
   const coverage=sourceCoverage(all,current?.projects||[]);
   $('source-count').textContent=all.length;
   $('source-capability-status').textContent=available?`전체 ${all.length}개 · 표시 ${sources.length}개 · 분류 대기 ${coverage.unclassifiedCount}개 · 연결/검토 확인 ${coverage.attentionCount}개`:'자료 기능 연결 필요';
@@ -509,7 +524,8 @@ function renderSources() {
     const linkIssue=source.projectId && !(current.projects||[]).some(p=>p.id===source.projectId && p.status!=='archived');
     const url=sourceURL(source.url), project=(current?.projects||[]).find(project=>project.id===source.projectId);
     const reading=readingNames[source.readingStatus]||'범위 확인 필요', decision=decisionNames[source.decision]||'판단 확인 필요';
-    return `<article class="source-card"><div class="job-top"><h3>${esc(source.title)}</h3><span class="status ${source.readingStatus==='read'?'completed':''}">${esc(reading)}</span></div>${sourceReferenceNames(source).length?`<p class="muted">원본 자료명 · ${esc(sourceReferenceNames(source).join(" · "))}</p>`:""}<p class="muted">${esc(({feature:"공통 기능",project:"기존 프로젝트",'project-review':"새 프로젝트 검토",unclassified:"분류 대기"})[route.kind])} · ${esc(route.name)} · ${esc(route.stage)}</p>${linkIssue?'<p class="source-unavailable">기존 프로젝트 연결을 확인해야 합니다. 원본 자료는 보존되어 있습니다.</p>':''}<div class="source-meta"><span class="source-decision">${esc(decision)}</span>${project?`<button class="text-button" data-source-project="${esc(project.id)}">${esc(project.name)} ↗</button>`:'<small>프로젝트 미연결</small>'}</div>${url?`<a class="text-button source-url" href="${esc(url.href)}" target="_blank" rel="noopener noreferrer">${esc(source.url)} ↗</a>`:source.sourceLocator?`<span class="muted source-url">확인된 외부 링크 없음 · 주제: ${esc(source.sourceLocator)}</span>`:`<span class="muted source-url">${esc(source.url)}</span>`}${source.aliases?.length?`<p class="muted">별칭 · ${esc(source.aliases.join(' · '))}</p>`:''}${source.readingStatus==='unavailable'?'<p class="source-unavailable">원문에 접근하지 못했습니다. 내용 확인 전에는 개선 후보로 준비하지 않습니다.</p>':''}<div class="source-note"><small>확인한 내용과 범위</small><p>${esc(source.summary||'아직 확인한 내용이 기록되지 않았습니다.')}</p></div><details class="source-review"><summary>응용 방법과 확인 사항</summary><div class="source-note"><small>YENO에 응용할 방법</small><p>${esc(source.application||'아직 정하지 않았습니다.')}</p></div><div class="source-note"><small>권리·개인정보·이용조건</small><p>${esc(source.riskNotes||'확인 기록이 없습니다.')}</p></div><small class="source-id">자료 ID · ${esc(source.id)}</small></details><div class="project-meta"><small>수정 ${esc(date(source.updatedAt||source.createdAt))}</small></div><div class="project-actions"><button class="button subtle" data-source-brief="${esc(source.id)}">브리핑 만들기</button><button class="button subtle" data-source-candidate="${esc(source.id)}" ${canPrepareSource(source)?'':'disabled'}>후보 검토서 준비</button><button class="text-button" data-source-edit="${esc(source.id)}">내용 수정</button></div></article>`;
+    const {bucket,aging}=sourceBucket(source);
+    return `<article class="source-card"><div class="job-top"><h3>${esc(source.title)}</h3><span class="status ${source.readingStatus==='read'?'completed':''}">${esc(reading)}</span></div>${sourceReferenceNames(source).length?`<p class="muted">원본 자료명 · ${esc(sourceReferenceNames(source).join(" · "))}</p>`:""}<p class="muted">${esc(({feature:"공통 기능",project:"기존 프로젝트",'project-review':"새 프로젝트 검토",unclassified:"분류 대기"})[route.kind])} · ${esc(route.name)} · ${esc(route.stage)}</p>${linkIssue?'<p class="source-unavailable">기존 프로젝트 연결을 확인해야 합니다. 원본 자료는 보존되어 있습니다.</p>':''}<div class="source-meta"><span class="source-decision">${esc(decision)}</span><span class="source-bucket">${esc(bucketNames[bucket]||bucket)}</span>${aging?'<span class="source-aging-badge">AGING · 14일 경과</span>':''}${project?`<button class="text-button" data-source-project="${esc(project.id)}">${esc(project.name)} ↗</button>`:'<small>프로젝트 미연결</small>'}</div>${url?`<a class="text-button source-url" href="${esc(url.href)}" target="_blank" rel="noopener noreferrer">${esc(source.url)} ↗</a>`:source.sourceLocator?`<span class="muted source-url">확인된 외부 링크 없음 · 주제: ${esc(source.sourceLocator)}</span>`:`<span class="muted source-url">${esc(source.url)}</span>`}${source.aliases?.length?`<p class="muted">별칭 · ${esc(source.aliases.join(' · '))}</p>`:''}${source.readingStatus==='unavailable'?'<p class="source-unavailable">원문에 접근하지 못했습니다. 내용 확인 전에는 개선 후보로 준비하지 않습니다.</p>':''}<div class="source-note"><small>확인한 내용과 범위</small><p>${esc(source.summary||'아직 확인한 내용이 기록되지 않았습니다.')}</p></div><details class="source-review"><summary>응용 방법과 확인 사항</summary><div class="source-note"><small>YENO에 응용할 방법</small><p>${esc(source.application||'아직 정하지 않았습니다.')}</p></div><div class="source-note"><small>권리·개인정보·이용조건</small><p>${esc(source.riskNotes||'확인 기록이 없습니다.')}</p></div><small class="source-id">자료 ID · ${esc(source.id)}</small></details><div class="project-meta"><small>수정 ${esc(date(source.updatedAt||source.createdAt))}</small></div><div class="project-actions"><button class="button subtle" data-source-brief="${esc(source.id)}">브리핑 만들기</button><button class="button subtle" data-source-candidate="${esc(source.id)}" ${canPrepareSource(source)?'':'disabled'}>후보 검토서 준비</button><button class="text-button" data-source-edit="${esc(source.id)}">내용 수정</button></div></article>`;
   }).join('') || `<div class="empty">${!available?'연결한 본체의 자료 기능을 확인할 수 없습니다.':query||filter!=='all'?'이 조건에 맞는 자료가 없습니다.':'참고할 자료를 추가해 주세요.\n출처와 검토 내용을 다음 작업에 이어갑니다.'}</div>`;
   renderSourceRequest();renderCommandRequest();
 }
@@ -671,6 +687,8 @@ $('reload-source').addEventListener('click',async()=>{
 $('source-search').addEventListener('input',renderSources);
 $('source-filter').addEventListener('change',renderSources);
 $('source-destination-filter').addEventListener('change',renderSources);
+$('source-bucket-filter').addEventListener('change',renderSources);
+$('source-aging-only').addEventListener('change',renderSources);
 $('absorption-plan').addEventListener('click',()=>submitCommand('/api/commands',{text:'흡수 계획'}));
 $('import-sources').addEventListener('click',()=>{
   if(!online || current?.capabilities?.sourceIntake!==true || sourceRequests?.pending || sourceStorageError)return;

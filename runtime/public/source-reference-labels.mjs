@@ -150,6 +150,24 @@ const labels = {
   ]
 };
 
+// ALL/NOW/QUEUED/BLOCKED/AGING views (BLACKHOLE §C): pure, derived only from
+// already-real fields, shared verbatim by server (runtime/lib/sources.mjs
+// re-exports these) and browser (the sources tab UI) so the two can never
+// silently disagree on what bucket a source is in. `retired`/`rejected`
+// items fall out of every active bucket (they still show under ALL) rather
+// than being force-fit into one. `aging` is a warning flag layered on top of
+// `queued`/`blocked`, never a separate gate that gets stuck forever or
+// blocks anything by itself.
+export const SOURCE_AGING_DAYS = 14;
+export const SOURCE_BUCKETS = Object.freeze(['now', 'queued', 'blocked', 'retired']);
+export function sourceBucket(source, at = new Date().toISOString()) {
+  const ageDays = Math.floor((Date.parse(at) - Date.parse(source.updatedAt)) / 86400000);
+  if (source.implementationStatus === 'retired' || source.decision === 'rejected') return { bucket: 'retired', aging: false, ageDays };
+  if (source.implementationStatus === 'blocked') return { bucket: 'blocked', aging: ageDays >= SOURCE_AGING_DAYS, ageDays };
+  if (['coding', 'tested', 'live'].includes(source.implementationStatus)) return { bucket: 'now', aging: false, ageDays };
+  return { bucket: 'queued', aging: ageDays >= SOURCE_AGING_DAYS, ageDays };
+}
+
 export function sourceReferenceNames(source) {
   return Object.hasOwn(labels, source.canonicalUrl) ? [...labels[source.canonicalUrl]] : [];
 }

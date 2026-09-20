@@ -120,3 +120,51 @@ npm test
 - 검증: `canonical-intake.test.mjs`를 5회 반복 실행해 결정적 통과 확인. **실제 base 비교**: 이 브랜치의 수정 전 exact head(`e816e91`, 코드는 `74783810`과 동일)에서 실제로 `npm test`를 다시 돌려 954개 중 923 pass·24 fail(기존 23개 + 이 버그 1개)을 확보했고, 수정 후 같은 명령이 924 pass·23 fail(기존 23개와 정확히 동일한 이름)로 줄어드는 것을 직접 비교했다 — 신규 실패 0개, 추정치 없음.
 - 수정 커밋: `f13d4cd0def59d1c8c1ba9ef9ca4fd502b899ef9`. **실제 조회 결과**: developer-worker run #105(`id:35513051558`) — `status:completed`, `conclusion:success`. 아티팩트 `blackhole-developer-verification`(`id:10605654570`, `sha256:807a030ae9cbb9f13f28793009ffc555293d9b58c51fcbddba1ba475434b63e4`). 이후 커밋(`48accaf`, 이 checkpoint 자체)은 `docs/**` 전용이라 `developer-worker.yml`의 `paths-ignore`에 걸려 새 실행을 만들지 않는다 — exact code head는 여전히 `f13d4cd`다.
 
+## 13. R2 — semantic verifier 확인, Shadow UI 재적용, ALL/NOW/QUEUED/BLOCKED/AGING 검색 (PR #37)
+
+- 실제 base: `blackhole/canonical-intake-import-claude-20260920` @ PR #36 최종 head `cf5f8a9` (CI green 재확인).
+- branch: `blackhole/r2-verify-shadow-ui-claude-20260920`, head `d236f71`.
+- PR: #37 (Draft, PR #36 위 stacked).
+
+### A. semantic verifier / JEV — 확인만, 재구축 없음
+`semantic-verification.mjs`/`jev.mjs`/`shadow-army.mjs`가 이미 지시된 모든 보장을 갖추고 있음을 코드 판독과 기존 시험(semantic-verification.test.mjs 17개 시나리오, jev.test.mjs, shadow-army.test.mjs, jarvis-shadow-bridge.test.mjs = 총 40개)을 이 브랜치에서 재실행해 확인했다. 코드 변경 없음. `authorizesDispatch:false` 고정, deterministic PASS만으로 완료 안 됨(semantic verifier가 `callLimit:1`의 별도 durable job), semantic fail/uncertain이 milestone 승격을 막음, unknown provider 결과 자동 재시도 없음, 재시작 후 verifier job 중복 없음 — 전부 기존 코드·기존 시험으로 이미 성립.
+
+### B. Shadow Army UI — 실제 데이터 연결(누락됐던 부분)
+서버(`project-universe.mjs`)는 Phase D부터 이미 `shadowMissions`를 계산해 왔으나, 공유 클라이언트 모듈(`project-universe-model.mjs`/`project-universe-view.mjs`)이 렌더링 전에 이 필드를 버리고 있었다. 과거 미병합 PR #31(`blackhole/phase-d-shadow-ui-codex-20260920`, PR #29 기반이라 semanticVerifier 이전)의 관련 부분만 선별 재적용·확장했다(통짜 merge 아님):
+- 역할/상태/의존성 수/산출물 수/제공자별 실제 job과, deterministic 검증 결과 및 **별도 줄**의 semantic 판정(pass/fail/uncertain + independence + summary).
+- 실제 `pauseReason`/`failureReason`, 실제 `emergencyStop` 알림.
+- `project-universe-view.mjs`는 `apps/controller/src/native-projects.ts`가 그대로 재사용하므로 Android도 `apps/controller` 변경 없이 동일한 Shadow Army 렌더링을 받는다.
+- **정직하게 남긴 격차**: emergencyStop 알림은 이번 slice에서 web 전용이다. `native-projects.ts`+`main.ts`에 배선하면 배너 하나 때문에 Android CI/APK 사이클이 열리므로 보류했다 — Android Home은 이미 공유 `living-core-view.mjs`로 전체 멈춤 상태를 보여주므로 신호 자체가 감춰지지는 않는다.
+
+### C. 검색 — 공유 로직, 두 번째 사본 아님
+`sourceBucket()`/`SOURCE_BUCKETS`/`SOURCE_AGING_DAYS`를 `runtime/lib/sources.mjs`에서 서버·브라우저가 이미 공유하던 `source-reference-labels.mjs`로 옮기고 `sources.mjs`는 재수출만 한다(로직이 둘로 갈라질 위험 제거). 자료 탭에 실제 ALL/NOW/QUEUED/BLOCKED/RETIRED select와 AGING 전용 체크박스를 추가했고, 서버 `GET /api/sources?view=&aging=`와 동일한 `sourceBucket()`을 그대로 호출한다. 각 카드에 실제 bucket과 AGING 배지를 표시한다.
+
+### 실제 검사
+- `node --test test/shadow-army-ui.test.mjs`(신규 6개), `test/r2-search-coverage.test.mjs`(신규 1개): 전부 pass.
+- `semantic-verification.test.mjs`/`jev.test.mjs`/`shadow-army.test.mjs`/`jarvis-shadow-bridge.test.mjs`/`project-universe*.test.mjs`/`sources.test.mjs`/`single-ledger-intake.test.mjs`/`backup.test.mjs`/`canonical-intake.test.mjs`: 전부 pass.
+- `npm test`(전체 961개): 931 pass · 23 fail(PR #36 head에서 실제로 재확인한 기존 실패 목록과 정확히 동일) · 7 skip — 신규 실패 0개.
+- `node scripts/verify-web-ui.mjs`: 통과.
+- `npm run verify:mobile`(실제 Chromium)을 수동 실행 — 이 샌드박스에서 `#pair-screen` 대기 타임아웃이 이 브랜치와 수정 전 PR #36 head **양쪽 모두**에서 동일하게 발생함을 직접 대조 확인했다(사전 존재 환경 한계, 이번 변경의 회귀 아님).
+- exact-head CI(developer-worker): **실제 조회 결과** — run #106(`id:35513941919`), head `d236f71`, `status:completed`, `conclusion:success`. 아티팩트 `blackhole-developer-verification`(`id:10606326317`, `sha256:e51a362106dba3347abc7db36a947de0748178527c563799edc4be673ede941b`). 이후 커밋(`3fee3d5`, `88855d4`, docs 전용)은 `paths-ignore`에 걸려 새 실행을 만들지 않는다 — exact code head는 `d236f71`.
+
+### STRUCTURAL/SYNTHETIC/LIVE/PHYSICAL
+STRUCTURAL·SYNTHETIC: 위 자동 시험. LIVE: 해당 없음(provider·실기기 요소 없음). PHYSICAL: 해당 없음(`apps/controller` 미변경, APK 없음).
+
+### ARTIFACT/HASH
+APK 없음(backend+web only). 개발자 워커 CI 아티팩트: push 후 실제 실행 ID/해시를 Issue #25 보고에 기록.
+
+### ROLLBACK
+`git revert`로 이 브랜치 커밋을 되돌리면 관련 파일이 PR #36 head 상태로 복원된다. Additive-only(새 필드·새 UI 섹션·재수출만, 기존 API 응답 형태 불변)이므로 기존 저장 데이터를 파괴하지 않는다.
+
+### BLOCKER
+없음.
+
+### NEXT SINGLE ACTION
+R3(실제 폰 사용 흐름 1건 — 명령 접수→실제 job→artifact→검증→조회→앱 종료/재접속→같은 결과→stop→명시적 resume) 검증으로 진행. 이미 `phone-acceptance.test.mjs`가 일부를 다루고 있으므로, 이번 R1/R2에서 추가된 소스 검색·Shadow UI가 그 흐름과 실제로 맞물리는지(예: 폰에서 목표 실행 후 Project Universe에서 Shadow Army 상태를 실제로 확인) 별도 slice로 검사한다.
+
+즉시 실행 가능한 명령:
+```
+git checkout blackhole/r2-verify-shadow-ui-claude-20260920
+npm test
+```
+
