@@ -1666,7 +1666,9 @@ export function createYenoServer(options={}) {
      }
      const requestMatch=url.pathname.match(/^\/api\/requests\/([^/]+)$/);
      if(req.method==='GET'&&requestMatch){let id;try{id=decodeURIComponent(requestMatch[1]);}catch{throw new HttpError(400,'Invalid encoded requestId');}return respond(res,200,{request:lookupRequest(s,id)});}
-     if(req.method==='GET'&&url.pathname==='/api/state')return respond(res,200,state());
+     const browserJobMatch=url.pathname.match(/^\/api\/browser\/jobs\/([a-f0-9-]+)$/);
+    if(req.method==='GET'&&browserJobMatch){const job=s.jobs.find(item=>item.id===browserJobMatch[1]&&item.type==='browser');if(!job)throw new HttpError(404,'Browser job not found');return respond(res,200,{job:publicJob(job),browser:job.browser??null,artifact:job.browser?.artifactRef?{id:job.browser.artifactRef,sha256:job.browser.artifactHash}:null});}
+    if(req.method==='GET'&&url.pathname==='/api/state')return respond(res,200,state());
      if(req.method==='GET'&&url.pathname==='/api/code')return respond(res,200,codeState());
      if(req.method==='GET'&&url.pathname==='/api/abilities')return respond(res,200,{capabilities:getCapabilityStatus(s.capabilities)});
      if(req.method==='GET'&&url.pathname==='/api/studio')return respond(res,200,studioOverview(s.studio));
@@ -1784,6 +1786,10 @@ export function createYenoServer(options={}) {
          if(!b.requestId||Object.keys(b).some(k=>!['requestId'].includes(k)))throw new HttpError(400,'Persistent requestId required');
          const outcome=synthesizeGoal();
          return {status:outcome.persisted?201:200,payload:outcome};
+       }
+       if(url.pathname==='/api/browser/harness'){
+         const job=browserHarnessJob(b);
+         return {status:201,payload:{jobId:job.id,job:publicJob(job),browser:browserHarnessStatus({adapterConfigured:typeof options.browserHarnessAdapter==='function',provider:typesafeJevProviderStatus(env)})}};
        }
        if(url.pathname==='/api/browser/decision'){
          const allowed=['requestId','goal','snapshot','draft','independentOutcome'];
@@ -1909,7 +1915,7 @@ export function createYenoServer(options={}) {
          throw new HttpError(422,'자유로운 요청을 처리할 AI 모델이 아직 연결되지 않았습니다. 현재는 기억·문서·세계 현황 등 지원 명령을 사용할 수 있습니다.',{examples});
        }
        const actionMatch=url.pathname.match(/^\/api\/jobs\/([a-f0-9-]+)\/action$/);
-       if(actionMatch){const job=s.jobs.find(j=>j.id===actionMatch[1]);if(!job)throw new HttpError(404,'Job not found');if(b.revision!==undefined&&b.revision!==job.version)throw new HttpError(409,'Job changed; refresh before retrying',{job:publicJob(job)});const action=b.action;if(!['pause','resume','cancel'].includes(action))throw new HttpError(400,'Unsupported action');if(['completed','cancelled','failed'].includes(job.status))throw new HttpError(409,'Terminal jobs cannot be changed');if(action==='pause'){if(!['queued','running'].includes(job.status))throw new HttpError(409,'Job is already paused');job.status='paused';job.pauseReason='owner';invalidate(job);}else if(action==='resume'){if(job.status!=='paused')throw new HttpError(409,'Only paused jobs can resume');if(s.emergencyStop)throw new HttpError(409,'Emergency stop is active');if(!job.questId)requireModule(jobModule(job));else if(!configFor(job).ready)throw new HttpError(409,'선택한 모델 연결이 필요합니다.');if(job.deadlineAt&&Date.now()>=Date.parse(job.deadlineAt))throw new HttpError(409,'목표의 실행 시간이 만료되었습니다. 결과와 호출 기록을 확인하세요.');if(job.questId&&job.agentJournal?.calls.some(call=>call.status!=='settled'))throw new HttpError(409,'이전 모델 응답이 미확인 상태여서 재전송할 수 없습니다.');if(job.botAssignment&&botBlockReason(job,s,profiles))throw new BotError(409,'Bot cannot resume: '+botBlockReason(job,s,profiles));job.status='queued';delete job.pauseReason;}else{job.status='cancelled';delete job.draft;invalidate(job);}touch(job);event(`Job ${action}: ${job.title}`);return {status:200,payload:{job:publicJob(job)}};}
+       if(actionMatch){const job=s.jobs.find(j=>j.id===actionMatch[1]);if(!job)throw new HttpError(404,'Job not found');if(b.revision!==undefined&&b.revision!==job.version)throw new HttpError(409,'Job changed; refresh before retrying',{job:publicJob(job)});const action=b.action;if(!['pause','resume','cancel'].includes(action))throw new HttpError(400,'Unsupported action');if(['completed','cancelled','failed'].includes(job.status))throw new HttpError(409,'Terminal jobs cannot be changed');if(action==='pause'){if(!['queued','running'].includes(job.status))throw new HttpError(409,'Job is already paused');job.status='paused';job.pauseReason='owner';invalidate(job);}else if(action==='resume'){if(job.status!=='paused')throw new HttpError(409,'Only paused jobs can resume');if(s.emergencyStop)throw new HttpError(409,'Emergency stop is active');if(!job.questId)requireModule(jobModule(job));else if(!configFor(job).ready)throw new HttpError(409,'선택한 모델 연결이 필요합니다.');if(job.deadlineAt&&Date.now()>=Date.parse(job.deadlineAt))throw new HttpError(409,'목표의 실행 시간이 만료되었습니다. 결과와 호출 기록을 확인하세요.');if(job.type==='browser'&&job.browser?.providerOutcome==='unknown')throw new HttpError(409,'이전 Browser provider 결과가 미확인 상태여서 재실행할 수 없습니다. 새 검토를 생성하세요.');if(job.questId&&job.agentJournal?.calls.some(call=>call.status!=='settled'))throw new HttpError(409,'이전 모델 응답이 미확인 상태여서 재전송할 수 없습니다.');if(job.botAssignment&&botBlockReason(job,s,profiles))throw new BotError(409,'Bot cannot resume: '+botBlockReason(job,s,profiles));job.status='queued';delete job.pauseReason;}else{job.status='cancelled';delete job.draft;invalidate(job);}touch(job);event(`Job ${action}: ${job.title}`);return {status:200,payload:{job:publicJob(job)}};}
        if(url.pathname==='/api/control'){
          if(b.action==='resume'&&b.revision!==undefined&&b.revision!==s.revision)throw new HttpError(409,'Runtime changed; refresh before resuming',{revision:s.revision});
          if(!['stop','resume'].includes(b.action))throw new HttpError(400,'Unsupported control action');s.emergencyStop=b.action==='stop';
