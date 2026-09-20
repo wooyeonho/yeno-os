@@ -21,6 +21,7 @@ import {initialEcosystem,validateEcosystem} from './ecosystem.mjs';
 import {validateAgentJournal} from './agent.mjs';
 import {validateBotAssignment} from './project-bots.mjs';
 import {validateShadowAssignment} from './shadow-army.mjs';
+import {validateBrowserJob} from './browser-harness.mjs';
 import {validateJevShadowLog} from './jev.mjs';
 import {validateGrokMultiAgentApproval} from './grok-adapter.mjs';
 import {validateQuestState} from './quests.mjs';
@@ -58,6 +59,7 @@ function initializeQuestCollections(state) {
  if(!Object.hasOwn(state,'codeWorkshop'))state.codeWorkshop=initialCodeWorkshop();
  validateCodeWorkshop(state.codeWorkshop);
  for(const job of state.jobs){validateCodeJob(job,state.codeWorkshop);validateRepositoryJob(job);validateJobEvidence(job);}
+ for(const job of state.jobs)if(job.type==='browser')validateBrowserJob(job);
  for(const job of state.jobs){if(job.type==='capability'){validateCapabilityRequest(job.capabilityRequest,state.capabilities);if(capabilityInputSha256(JSON.parse(job.input))!==job.capabilityRequest.inputSha256)throw new Error('Capability job input mismatch');}else if(job.capabilityRequest)throw new Error('Unexpected capability request');}
  validateAutopilot(state.autopilot);
  for(const job of state.jobs)validateAutopilotJob(job,state);
