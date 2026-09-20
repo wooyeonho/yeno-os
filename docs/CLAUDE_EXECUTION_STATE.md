@@ -96,3 +96,17 @@
 git checkout blackhole/single-ledger-intake-claude-20260920
 npm test
 ```
+
+## 12. R1 canonical intake follow-up (PR #36)
+
+- 실제 base: `blackhole/single-ledger-intake-claude-20260920` @ PR #35 exact head `f2c7538631c4551bf9505f2ced5579876c234d9f`.
+- branch: `blackhole/canonical-intake-import-claude-20260920`.
+- PR: #36 Draft/Open, head `74783810785cc93ea021f8223705fb58660773b8`.
+- PR #35에서 이미 `planSourceImport()`가 `sourceLocator`를 받으므로 중복 구현하지 않았다.
+- `runtime/lib/canonical-intake.mjs`가 역사 레지스트리의 50개 ID를 명시적으로 보존한다.
+- `POST /api/sources/import-canonical-intake`는 owner 인증과 requestId를 요구하는 멱등·추가 전용 작업이다. 호출 전에는 registry를 자동으로 바꾸지 않는다.
+- 모든 레코드는 URL 없는 `sourceLocator`, `readingStatus=unread`, `decision=pending`으로 시작한다. 이는 구현·검토·배포 완료가 아니다.
+- 새 테스트는 50개 고유 ID, 검색 가능성, 반복/재시작 후 중복 방지, 소유자 수정 보존, 인증·입력 경계를 검사한다.
+- 이 checkpoint 시점 exact-head CI는 **pending**이다. CI 결과를 확인하기 전 GREEN 또는 테스트 통과로 보고하지 않는다.
+- Android/APK는 변경하지 않았다. production·merge·외부 게시도 하지 않았다.
+
