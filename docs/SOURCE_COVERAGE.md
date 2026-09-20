@@ -30,7 +30,8 @@
 - `POST /api/sources/import-canonical-intake`를 owner가 호출하면 기존 `state.sources` 하나에 URL 없는 `sourceLocator` 자료로 추가된다.
 - 호출 전 자동 등록은 없다. 호출 후에도 각 항목은 `readingStatus=unread`, `decision=pending`이며 구현·검토·배포 완료가 아니다.
 - 반복 호출·재시작은 같은 ID를 재사용하고, 사용자 편집을 덮어쓰지 않는다.
-- PR #36 exact-head CI는 이 문서 작성 시점에 pending이다.
+- **실제 CI가 잡아낸 검색 정확성 결함(수정됨)**: `GET /api/sources?q=<code>`가 코드 하나당 정확히 1건이 아니라 여러 건을 반환하는 비결정적 버그가 있었다(CI에서는 E04, 로컬 재현에서는 실행마다 A03/B02/B04로 다르게 나타남). 원인 둘: ① `sourceMatches()`가 `source.id`(무작위 UUID)까지 부분일치 대상에 넣어서, 짧은 코드가 우연히 다른 레코드 UUID의 부분 문자열이 되면 결과가 실행마다 달라졌다. ② `aliases`도 부분일치였는데, 계층 코드의 부모가 자식 코드의 접두어라("B02"는 "B02-1".."B02-6"의 접두어, "B04"도 동일) 부모 코드 검색이 모든 자식까지 끌어왔다. `runtime/public/source-reference-labels.mjs`에서 `id`/`aliases`/복원된 참조명은 전체 일치로, 자유 텍스트(title/summary/sourceLocator/url)는 기존처럼 부분일치로 수정했다. 부수적으로 `runtime/lib/canonical-intake.mjs`의 B04-01~13 summary가 부모 코드 "B04"를 문장에 그대로 반복해 같은 종류의 충돌을 추가로 만들고 있어 표현을 정리했다. 수정 후 `canonical-intake.test.mjs`를 5회 반복 실행해 결정적으로 통과함을 확인했다.
+- PR #36 exact-head CI: 수정 커밋 `f13d4cd`을 push한 뒤 조회했다 — 결과는 Issue #25 보고에 실행 ID·conclusion으로 기록한다(이 문서 작성 시점에는 아직 조회 전이므로 pending으로 남긴다).
 
 ## 아직 registry에 없는 것
 
