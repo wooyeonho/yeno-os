@@ -2,7 +2,7 @@
 
 ## 이번 링크에서 실제로 확인한 것
 
-Instagram 공개 게시물의 본문은 gittrend.io의 OpenStock 소개였습니다. “실시간 가격, 개인 알림, 기업 정보”를 제공하는 오픈소스 주식 시장 앱이라는 설명과 함께 원 저장소를 확인했습니다.
+Instagram 공개 게시물(https://www.instagram.com/reel/Ddhruw6iaPW/?stkn=dzhpamEwdmNkOXZz)의 본문은 gittrend.io의 OpenStock 소개였습니다. “실시간 가격, 개인 알림, 기업 정보”를 제공하는 오픈소스 주식 시장 앱이라는 설명과 함께 원 저장소를 확인했습니다.
 
 원 저장소: https://github.com/Open-Dev-Society/OpenStock
 - 공개 저장소, 기본 브랜치 main, TypeScript/Next.js 기반
