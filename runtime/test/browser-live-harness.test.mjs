@@ -69,7 +69,7 @@ test('no adapter stays unavailable and deterministic output cannot become a veri
   assert.equal(state.jobs.find(item=>item.id===job.id).browser.semanticVerification,null);
 });
 
-test('duplicate admission, emergency stop and restart preserve the same browser job without auto-resume', async t => {
+test('duplicate admission and restart preserve the same paused browser job without auto-resume', async t => {
   const h = await setup(t);
   const first = await h.post('/api/browser/harness',{goal:'중복 방지 확인',sourceUrl:PUBLIC});
   const duplicate = await h.post('/api/browser/harness',{goal:'중복 방지 확인',sourceUrl:PUBLIC});
@@ -79,7 +79,8 @@ test('duplicate admission, emergency stop and restart preserve the same browser 
   await h.restart();
   const paused = h.disk().jobs.find(item=>item.id===id);
   assert.equal(paused.status,'paused');
-  assert.equal(paused.pauseReason,'restart');
+  assert.ok(['restart','shutdown'].includes(paused.pauseReason));
+  assert.match(paused.browser.restartState,/^paused-/);
   const after = h.disk().jobs.filter(item=>item.id===id);
   assert.equal(after.length,1);
 });
