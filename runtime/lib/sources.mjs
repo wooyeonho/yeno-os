@@ -1,5 +1,10 @@
 import { isIP } from 'node:net';
-import { sourceMatches, sourceReferenceNames, sourceSearchKey } from '../public/source-reference-labels.mjs';
+import { sourceMatches, sourceReferenceNames, sourceSearchKey, SOURCE_AGING_DAYS, SOURCE_BUCKETS, sourceBucket } from '../public/source-reference-labels.mjs';
+// Re-exported (not redefined) so server.mjs/tests can keep importing bucket
+// logic from this module while the actual pure function lives in the one
+// shared server+browser file - a single source of truth, never a second
+// copy that could silently drift from what the sources tab UI computes.
+export { SOURCE_AGING_DAYS, SOURCE_BUCKETS, sourceBucket };
 
 export class SourceError extends Error {
   constructor(status, message, extra = {}) { super(message); this.status = status; this.extra = extra; }
@@ -19,9 +24,6 @@ const DECISIONS = new Set(['pending', 'candidate', 'deferred', 'rejected']);
 export const SOURCE_ENTITY_TYPES = Object.freeze(['SYS', 'APP', 'OPS', 'IP', 'HW', 'RND', 'REF', 'UNRESOLVED']);
 export const SOURCE_IMPLEMENTATION_STATUSES = Object.freeze(['idea', 'scoped', 'queued', 'coding', 'tested', 'live', 'blocked', 'retired']);
 export const SOURCE_ORIGINS = Object.freeze(['user', 'assistant', 'external']);
-// A queued/blocked item left untouched this long is flagged `aging` - a
-// warning surfaced in the view, never a reason to fail CI or block work.
-export const SOURCE_AGING_DAYS = 14;
 
 function record(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
 function text(value, field, maximum, required = false) {
@@ -198,20 +200,6 @@ export function migrateLegacySource(source) {
   if (!Object.hasOwn(source, 'implementationStatus')) source.implementationStatus = 'idea';
   if (!Object.hasOwn(source, 'origin')) source.origin = 'user';
   return source;
-}
-
-// ALL/NOW/QUEUED/BLOCKED/AGING views (BLACKHOLE §C): pure, derived only from
-// already-real fields. `retired`/`rejected` items fall out of every active
-// bucket (they still show under ALL) rather than being force-fit into one.
-// `aging` is a warning flag layered on top of `queued`/`blocked`, never a
-// separate gate that gets stuck forever or blocks anything by itself.
-export const SOURCE_BUCKETS = Object.freeze(['now', 'queued', 'blocked', 'retired']);
-export function sourceBucket(source, at = new Date().toISOString()) {
-  const ageDays = Math.floor((Date.parse(at) - Date.parse(source.updatedAt)) / 86400000);
-  if (source.implementationStatus === 'retired' || source.decision === 'rejected') return { bucket: 'retired', aging: false, ageDays };
-  if (source.implementationStatus === 'blocked') return { bucket: 'blocked', aging: ageDays >= SOURCE_AGING_DAYS, ageDays };
-  if (['coding', 'tested', 'live'].includes(source.implementationStatus)) return { bucket: 'now', aging: false, ageDays };
-  return { bucket: 'queued', aging: ageDays >= SOURCE_AGING_DAYS, ageDays };
 }
 
 export function planSourceImport(body, existing, projects) {
