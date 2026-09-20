@@ -257,91 +257,91 @@ export const CANONICAL_PROJECT_INTAKE = Object.freeze([
     "code": "B04-01",
     "title": "F-01 천하제일 야구검객",
     "entityType": "IP",
-    "summary": "B04 소설/IP 작품 후보.",
+    "summary": "소설/IP 작품 후보.",
     "implementationStatus": "idea"
   },
   {
     "code": "B04-02",
     "title": "F-02 중국통일 / 대만통일",
     "entityType": "IP",
-    "summary": "B04 소설/IP 작품 후보.",
+    "summary": "소설/IP 작품 후보.",
     "implementationStatus": "idea"
   },
   {
     "code": "B04-03",
     "title": "F-03 조상님이 보고계셔",
     "entityType": "IP",
-    "summary": "B04 소설/IP 작품 후보.",
+    "summary": "소설/IP 작품 후보.",
     "implementationStatus": "idea"
   },
   {
     "code": "B04-04",
     "title": "F-04 태어나보니 북한사람",
     "entityType": "IP",
-    "summary": "B04 소설/IP 작품 후보.",
+    "summary": "소설/IP 작품 후보.",
     "implementationStatus": "idea"
   },
   {
     "code": "B04-05",
     "title": "F-05 태어나보니 친일 / 대한독립",
     "entityType": "IP",
-    "summary": "B04 소설/IP 작품 후보.",
+    "summary": "소설/IP 작품 후보.",
     "implementationStatus": "idea"
   },
   {
     "code": "B04-06",
     "title": "F-06 전생에 암행어사, 현생엔 감사팀",
     "entityType": "IP",
-    "summary": "B04 소설/IP 작품 후보.",
+    "summary": "소설/IP 작품 후보.",
     "implementationStatus": "idea"
   },
   {
     "code": "B04-07",
     "title": "F-07 나라를 잃어본 왕세자",
     "entityType": "IP",
-    "summary": "B04 소설/IP 작품 후보.",
+    "summary": "소설/IP 작품 후보.",
     "implementationStatus": "idea"
   },
   {
     "code": "B04-08",
     "title": "F-08 귀신들이 사는 아파트",
     "entityType": "IP",
-    "summary": "B04 소설/IP 작품 후보.",
+    "summary": "소설/IP 작품 후보.",
     "implementationStatus": "idea"
   },
   {
     "code": "B04-09",
     "title": "F-09 조선 최고의 의원, 응급실에 떨어지다",
     "entityType": "IP",
-    "summary": "B04 소설/IP 작품 후보.",
+    "summary": "소설/IP 작품 후보.",
     "implementationStatus": "idea"
   },
   {
     "code": "B04-10",
     "title": "F-10 미래의 후손들이 나를 구독했다",
     "entityType": "IP",
-    "summary": "B04 소설/IP 작품 후보.",
+    "summary": "소설/IP 작품 후보.",
     "implementationStatus": "idea"
   },
   {
     "code": "B04-11",
     "title": "꽁몽이",
     "entityType": "IP",
-    "summary": "B04 소설/IP 작품 후보.",
+    "summary": "소설/IP 작품 후보.",
     "implementationStatus": "idea"
   },
   {
     "code": "B04-12",
     "title": "배불배불 배불이",
     "entityType": "IP",
-    "summary": "B04 소설/IP 작품 후보.",
+    "summary": "소설/IP 작품 후보.",
     "implementationStatus": "idea"
   },
   {
     "code": "B04-13",
     "title": "만화덕후 이세계",
     "entityType": "IP",
-    "summary": "B04 소설/IP 작품 후보.",
+    "summary": "소설/IP 작품 후보.",
     "implementationStatus": "idea"
   },
   {
