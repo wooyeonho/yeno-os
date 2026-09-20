@@ -17,7 +17,7 @@ const date = v => { const t = typeof v === 'number' ? v : Date.parse(v); return 
 const truncate = (text, max) => { const value = String(text ?? ''); return value.length > max ? `${value.slice(0, max)}…` : value; };
 
 export const STATUS_LABEL = {active: '진행', paused: '보류', archived: '보관'};
-const READING_LABEL = {unread: '아직 안 읽음', reading: '읽는 중', read: '읽음'};
+const READING_LABEL = {unread: '아직 안 읽음', reading: '읽는 중', partial: '일부 확인', read: '읽음'};
 const DECISION_LABEL = {pending: '판단 대기', candidate: '후보', adopted: '채택', rejected: '보류'};
 const JOB_STATUS_LABEL = {queued: '대기 중', running: '진행 중', paused: '멈춤', completed: '완료', failed: '실패', cancelled: '취소됨'};
 const BROWSER_VERIFICATION_LABEL = Object.freeze({verified: '결정론적 검증 통과', rejected: '결정론적 검증 불합격', pass: '내용 검증 통과', fail: '내용 검증 불합격', uncertain: '내용 검증 불확실'});
