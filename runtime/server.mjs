@@ -12,7 +12,8 @@ import {acquireContainerLease} from './lib/container-lease.mjs';
 import {ProjectError,projectNameKey,planProjectImport,validateProjectFields,resolveProject,projectRegistryDocument,projectBriefDocument,addMilestone,setMilestoneCompletion,removeMilestone} from './lib/projects.mjs';
 import {projectUniverseSummary} from './lib/project-universe.mjs';
 import {driveStatus} from './lib/drive-status.mjs';
-import {SourceError,validateSourceFields,planSourceImport,resolveSource,sourceRegistryDocument,sourceBriefDocument} from './lib/sources.mjs';
+import {SourceError,validateSourceFields,planSourceImport,resolveSource,sourceRegistryDocument,sourceBriefDocument,sourceBucket,SOURCE_BUCKETS,planRequiredIntakeSeed} from './lib/sources.mjs';
+import {sourceMatches} from './public/source-reference-labels.mjs';
 import {operatingBriefDocument} from './lib/operations.mjs';
 import {exportBackup} from './lib/backup.mjs';
 import {DeviceAdminError,publicDevices,revokeDevice} from './lib/device-admin.mjs';
@@ -837,9 +838,31 @@ export function createYenoServer(options={}) {
   throw new ProjectError(400,'Unknown milestone action.');}
  function projectDocumentJob(project,content,title,report){const job=newJob({type:'document',text:content,title,...(project?{projectId:project.id}:{})});job.projectReport=report;return publicJob(job);}
  function sourceRecord(fields){const at=now();return {id:uid(),...fields,version:1,createdAt:at,updatedAt:at};}
- function addSource(body){const fields=validateSourceFields(body,{creating:true,projects:s.projects});const existing=s.sources.find(source=>source.canonicalUrl===fields.canonicalUrl);if(existing)throw new SourceError(409,'This canonical source URL is already registered.',{source:existing});const source=sourceRecord(fields);s.sources.push(source);event(`Source registered: ${source.title}`);return source;}
+ function addSource(body){
+   const fields=validateSourceFields(body,{creating:true,projects:s.projects});
+   // A locator-based (topic-only) intake dedupes on its own normalized
+   // locator, never on the shared canonicalUrl:null every locator-based
+   // source also carries - two different topics must never collide there.
+   const existing=fields.canonicalUrl!==null
+     ?s.sources.find(source=>source.canonicalUrl===fields.canonicalUrl)
+     :s.sources.find(source=>source.canonicalUrl===null&&source.sourceLocator.trim().toLocaleLowerCase()===fields.sourceLocator.trim().toLocaleLowerCase());
+   if(existing)throw new SourceError(409,fields.canonicalUrl!==null?'This canonical source URL is already registered.':'This topic/idea is already registered under an equivalent name.',{source:existing});
+   const source=sourceRecord(fields);s.sources.push(source);event(`Source registered: ${source.title}`);return source;
+ }
  function updateSource(id,body){const index=s.sources.findIndex(source=>source.id===id);if(index<0)throw new SourceError(404,'Source not found.');const current=s.sources[index];const fields=validateSourceFields(body,{projects:s.projects,current});if(body.revision!==current.version)throw new SourceError(409,'Source changed; refresh before updating.',{source:current});const source={...current,...fields,version:current.version+1,updatedAt:now()};s.sources[index]=source;event(`Source reviewed: ${source.title} (${source.decision})`);return source;}
  function importSources(body){const planned=planSourceImport(body,s.sources,s.projects);const sources=planned.map(item=>item.source??sourceRecord(item.fields));const created=sources.filter((source,index)=>!planned[index].source);s.sources.push(...created);event(`Source import: ${created.length} registered, ${sources.length-created.length} reused.`);return {sources,createdCount:created.length,reusedCount:sources.length-created.length};}
+ // BLACKHOLE §C mandatory search cases: an explicit, owner-triggered,
+ // idempotent action (never an automatic migration on every boot/test
+ // store) - a term already present under its own name is always skipped,
+ // so calling this twice, or on a store that already has some of these
+ // terms under owner-edited names, never duplicates or overwrites anything.
+ function seedRequiredIntake(){
+   const planned=planRequiredIntakeSeed(s.sources);
+   const created=planned.map(fields=>sourceRecord(fields));
+   s.sources.push(...created);
+   if(created.length)event(`Required intake seeded: ${created.length} topic/reference source(s) registered (${created.map(source=>source.title).join(', ')}).`);
+   return {sources:created,createdCount:created.length};
+ }
  function sourceDocumentJob(source,content,title){const job=newJob({type:'document',text:content,title:title.slice(0,160),...(source?.projectId?{projectId:source.projectId}:{})});job.sourceReport=true;if(source)job.sourceId=source.id;return publicJob(job);}
  function takeSnapshot(label){const snapshot={id:uid(),label:label?requiredText(label,160):'수동 저장',createdAt:now(),data:structuredClone({memories:s.memories,settings:{concurrency:s.concurrency,modules:s.modules}})};s.snapshots.unshift(snapshot);event(`Snapshot created: ${snapshot.label}`);return snapshot;}
  function active(){return new Set([...s.jobs.filter(j=>j.status==='running').map(j=>j.id),...controllers.keys()]).size;}
@@ -1613,7 +1636,25 @@ export function createYenoServer(options={}) {
      if(req.method==='GET'&&url.pathname==='/api/projects')return respond(res,200,{projects:s.projects});
      const universeMatch=url.pathname.match(/^\/api\/projects\/([a-f0-9-]+)\/universe$/);
      if(req.method==='GET'&&universeMatch){const summary=projectUniverseSummary(s,universeMatch[1]);if(!summary)throw new HttpError(404,'Project not found');return respond(res,200,summary);}
-     if(req.method==='GET'&&url.pathname==='/api/sources')return respond(res,200,{sources:s.sources});
+     if(req.method==='GET'&&url.pathname==='/api/sources'){
+       // ALL/NOW/QUEUED/BLOCKED/AGING (BLACKHOLE §C): optional, additive
+       // query params on the same existing authenticated list route -
+       // omitting both keeps exactly today's response shape. `view` filters
+       // by bucket; `aging=true` narrows to items flagged aging in that
+       // bucket (a warning, never a separate hard gate). `q` reuses the
+       // exact same search key every voice/document search already uses.
+       const view=url.searchParams.get('view');
+       if(view!==null&&![...SOURCE_BUCKETS,'all'].includes(view))throw new HttpError(400,`view must be one of all, ${SOURCE_BUCKETS.join(', ')}.`);
+       const agingOnly=url.searchParams.get('aging')==='true';
+       const q=url.searchParams.get('q')??'';
+       const at=now();
+       const filtered=s.sources
+         .filter(source=>sourceMatches(source,q))
+         .map(source=>({source,...sourceBucket(source,at)}))
+         .filter(({bucket})=>view===null||view==='all'||bucket===view)
+         .filter(({aging})=>!agingOnly||aging);
+       return respond(res,200,{sources:filtered.map(({source})=>source),buckets:view===null?undefined:filtered.map(({source,bucket,aging,ageDays})=>({id:source.id,bucket,aging,ageDays}))});
+     }
      if(req.method==='GET'&&url.pathname==='/api/memory'){requireModule('memory');const q=(url.searchParams.get('q')??'').toLocaleLowerCase();return respond(res,200,{memories:s.memories.filter(m=>m.text.toLocaleLowerCase().includes(q))});}
      const artifactMatch=url.pathname.match(/^\/api\/artifacts\/([a-f0-9-]+)$/);
      if(req.method==='GET'&&artifactMatch){const item=s.artifacts[artifactMatch[1]];if(!item)throw new HttpError(404,'Artifact not found');const file=path.join(dataDir,'artifacts',item.filename);if(path.dirname(file)!==path.join(dataDir,'artifacts')||!fs.existsSync(file))throw new HttpError(404,'Artifact file is missing');const bytes=fs.readFileSync(file);if(digest(bytes)!==item.sha256)throw new HttpError(409,'Artifact checksum mismatch; download blocked');res.writeHead(200,{'Content-Type':item.mimeType??'text/plain; charset=utf-8','Content-Disposition':`attachment; filename="${item.name}"`,'Content-Length':bytes.length,'X-Content-SHA256':item.sha256});return res.end(bytes);}
@@ -1745,6 +1786,7 @@ export function createYenoServer(options={}) {
        if(milestoneUpdate)return {status:200,payload:setProjectMilestone(milestoneUpdate[1],milestoneUpdate[2],b)};
        if(url.pathname==='/api/sources')return {status:201,payload:{source:addSource(b)}};
        if(url.pathname==='/api/sources/import')return {status:201,payload:importSources(b)};
+       if(url.pathname==='/api/sources/seed-required-intake')return {status:201,payload:seedRequiredIntake()};
        const sourceUpdate=url.pathname.match(/^\/api\/sources\/([a-f0-9-]+)\/update$/);
        if(sourceUpdate)return {status:200,payload:{source:updateSource(sourceUpdate[1],b)}};
        if(url.pathname==='/api/jobs')return {status:201,payload:{job:publicJob(newJob(b))}};
