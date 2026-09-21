@@ -9,6 +9,7 @@ import { Stronghold, type Store } from '@tauri-apps/plugin-stronghold';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile, readFile } from '@tauri-apps/plugin-fs';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { createStudioView } from '../../../runtime/public/studio-view.mjs';
 import { createWorldView } from '../../../runtime/public/world-view.mjs';
 import worldLand from '../../../runtime/public/world-land.svg?url';
@@ -500,7 +501,6 @@ window.addEventListener('popstate', () => { handleBackNavigation(); });
 // the browser harness safely falls back to popstate.
 async function installNativeBackGuard() {
   try {
-    const {getCurrentWindow} = await import('@tauri-apps/api/window');
     await getCurrentWindow().onCloseRequested(event => {
       if (handleBackNavigation()) event.preventDefault();
     });
