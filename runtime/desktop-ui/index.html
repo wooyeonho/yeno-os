@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="referrer" content="no-referrer">
+  <title>BLACKHOLE · 내 PC에서 시작</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="masthead">
+      <div class="brand" aria-label="BLACKHOLE 데스크톱 설정"><span class="brand-mark" aria-hidden="true"></span>BLACKHOLE<span class="brand-sub">PERSONAL DESKTOP</span></div>
+      <span class="connection" id="connection-state"><span aria-hidden="true"></span>설정 확인 중</span>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="intro-title">
+        <p class="eyebrow">YOUR OWN WORKSPACE</p>
+        <h1 id="intro-title">연호님의 블랙홀을<br>이 PC에서 엽니다.</h1>
+        <p class="intro-copy">목표를 맡기고, 진행 상황과 결과를 확인하는<br class="wide-only"> 개인 작업 공간입니다.</p>
+        <div class="orbit" aria-hidden="true"><div class="orbit-track orbit-track-one"></div><div class="orbit-track orbit-track-two"></div><div class="orbit-core"></div><span class="orbit-point"></span></div>
+        <div class="intro-foot"><span class="tiny-line" aria-hidden="true"></span><p>기억 · 프로젝트 · 실행 · 결과<br><span>같은 코어 안에서 이어집니다.</span></p></div>
+      </section>
+
+      <section class="setup-panel" aria-labelledby="panel-title" aria-busy="true" id="setup-panel">
+        <div class="panel-heading"><p class="eyebrow" id="panel-kicker">시작 준비</p><h2 id="panel-title">설정을 확인하고 있습니다</h2><p class="muted" id="panel-description">잠시 기다려주세요.</p></div>
+
+        <div id="setup-message" class="message" role="status" aria-live="polite" hidden></div>
+
+        <div id="first-setup" hidden>
+          <fieldset class="mode-picker"><legend class="sr-only">시작 방법 선택</legend>
+            <label class="mode-option"><input type="radio" name="setup-mode" value="local" checked><span><strong>이 PC에서 새로 시작</strong><small>새 로컬 코어 만들기</small></span></label>
+            <label class="mode-option"><input type="radio" name="setup-mode" value="existing"><span><strong>기존 코어 열기</strong><small>사용하던 HTTPS 주소로 이동</small></span></label>
+          </fieldset>
+
+          <form id="initialize-form">
+            <div class="notice"><strong>새 작업 공간을 만듭니다.</strong><p>기존 서버의 기억·프로젝트·연결 키는 자동으로 옮겨오지 않습니다. 기존 기록을 계속 쓰려면 ‘기존 코어 열기’를 선택하세요.</p></div>
+            <label class="field" for="new-pairing-key"><span>이 PC의 연결 키</span><input id="new-pairing-key" type="password" autocomplete="new-password" minlength="16" maxlength="512" required spellcheck="false" aria-describedby="pairing-key-help"><small id="pairing-key-help">공백 없이 16자 이상. 다음 실행과 기기 연결에 쓰므로 따로 보관하세요.</small></label>
+
+            <details class="provider-details" id="provider-details"><summary><span>AI 모델 연결 <small>선택 사항</small></span><span class="details-plus" aria-hidden="true">+</span></summary><div class="provider-content"><p class="muted" id="provider-form-description">사용할 공급자의 API 키와 정확한 모델 ID를 입력하세요. 비워두면 AI 연결 없이 작업 공간을 엽니다. 여러 개를 입력하면 목록의 첫 공급자를 기본으로 사용합니다.</p><div id="provider-fields"></div><label class="field budget-field" for="daily-call-limit"><span>하루 AI 호출 상한</span><div class="number-input"><input id="daily-call-limit" type="number" min="1" max="20" step="1" value="4" required inputmode="numeric"><span>회 / UTC 기준</span></div><small>호출 횟수 제한입니다. 금액 한도가 아니며 모델·작업별 비용은 다릅니다.</small></label><p class="fineprint">저장 후 운영실 설정에서 AI를 켜면 입력한 키를 사용합니다. 키 저장과 실제 모델 응답 확인은 구분됩니다.</p></div></details>
+
+            <label class="confirmation"><input id="confirm-new-store" type="checkbox" required><span>기존 기록이 이전되지 않는 새 코어를 이 PC에 만듭니다.</span></label>
+            <button type="submit" class="primary" id="initialize-button">새 코어 만들고 시작<span aria-hidden="true">↗</span></button>
+          </form>
+
+          <form id="existing-form" hidden>
+            <p class="section-copy">사용하던 서버의 주소를 열어 계속 작업합니다. 이 PC에 새 코어를 만들거나 기존 서버 설정을 바꾸지 않습니다.</p>
+            <label class="field" for="existing-url"><span>기존 코어 주소</span><input id="existing-url" type="url" placeholder="https://" autocomplete="off" spellcheck="false" required><small>연결 키는 이동한 코어의 로그인 화면에서 입력하세요.</small></label>
+            <button type="submit" class="primary">기존 코어 열기<span aria-hidden="true">↗</span></button>
+          </form>
+        </div>
+
+        <form id="unlock-form" hidden>
+          <div class="installation-card"><span class="installation-icon" aria-hidden="true">◉</span><div><strong>이 PC의 저장된 작업 공간</strong><p>이전에 만든 기억과 결과를 이어서 엽니다.</p></div></div>
+          <label class="field" for="unlock-pairing-key"><span>연결 키</span><input id="unlock-pairing-key" type="password" autocomplete="current-password" minlength="16" maxlength="512" required spellcheck="false"></label>
+          <button type="submit" class="primary" id="unlock-button">잠금 해제하고 시작<span aria-hidden="true">↗</span></button>
+          <p class="fineprint">이 PC를 처음 설정할 때 만든 연결 키를 사용하세요.</p>
+        </form>
+
+        <div id="ready-panel" hidden>
+          <div class="ready-emblem" aria-hidden="true">✓</div><p class="ready-copy">코어가 열렸습니다.<br>운영실에서 명령과 결과를 확인하세요.</p>
+          <dl class="connection-details"><div><dt>실행 위치</dt><dd>이 PC</dd></div><div><dt>AI 설정</dt><dd id="provider-state">연결하지 않음</dd></div></dl>
+          <button type="button" class="primary" id="open-workspace">운영실 열기<span aria-hidden="true">↗</span></button>
+          <p class="fineprint">PC가 꺼지거나 절전 상태가 되면 이 로컬 코어에도 연결할 수 없습니다.</p>
+          <div class="ready-actions">
+            <details class="provider-details"><summary><span>시작 목록 가져오기</span><span class="details-plus" aria-hidden="true">+</span></summary><form class="provider-content" id="intake-form"><p class="muted">50개 기존 기획과 추가 키워드를 검토 목록에 넣습니다. 프로젝트 실행·완료가 아닙니다.</p><label class="field" for="intake-pairing-key"><span>연결 키 다시 입력</span><input id="intake-pairing-key" type="password" autocomplete="current-password" minlength="16" maxlength="512" spellcheck="false" required></label><button type="submit" class="secondary" id="intake-button">기존 프로젝트·키워드 목록 가져오기</button><p id="intake-result" class="fineprint" role="status" hidden></p></form></details>
+            <form id="providers-form"><div id="ready-provider-slot"></div><div id="providers-update-controls" hidden><p class="fineprint">진행 작업을 먼저 일시정지하세요. 저장하면 코어가 다시 시작되고 AI는 꺼집니다. 운영실 설정에서 AI를 켜면 입력한 키를 사용합니다.</p><label class="field" for="providers-pairing-key"><span>연결 키 다시 입력</span><input id="providers-pairing-key" type="password" autocomplete="current-password" minlength="16" maxlength="512" spellcheck="false" required></label><button type="submit" class="secondary" id="providers-button">AI 설정 저장하고 코어 다시 시작</button></div></form>
+          </div>
+          <details class="provider-details stop-details"><summary><span>이 PC 코어 종료</span><span class="details-plus" aria-hidden="true">+</span></summary><form id="stop-form" class="provider-content"><p class="muted">기억과 결과를 보존하고 이 PC의 코어를 종료합니다.</p><label class="field" for="stop-pairing-key"><span>연결 키 다시 입력</span><input id="stop-pairing-key" type="password" autocomplete="current-password" minlength="16" maxlength="512" spellcheck="false" required></label><button type="submit" class="secondary" id="stop-core">코어 종료</button></form></details>
+        </div>
+
+        <div id="stopped-panel" hidden><p class="section-copy">이 PC의 코어가 종료되었습니다. 저장된 기억과 결과는 유지됩니다.</p><button type="button" class="primary" id="reconnect-core">다시 연결<span aria-hidden="true">↗</span></button><p class="fineprint">연결 키를 입력하면 같은 작업 공간을 다시 엽니다.</p></div>
+        <button type="button" class="text-button" id="retry-state" hidden>현재 상태 다시 확인</button>
+        <footer class="panel-footer"><span>개인 작업 공간</span><span id="source-revision"></span></footer>
+      </section>
+    </main>
+    <footer class="page-footer"><span>BLACKHOLE</span><p>설정이 끝나면 기존 운영실로 연결됩니다.</p></footer>
+  </div>
+</body>
+</html>
