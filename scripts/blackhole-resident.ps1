@@ -33,7 +33,9 @@ function Read-Json([string]$Path) {
 function Write-Json([string]$Path, $Value) {
   $temporary = "$Path.$([Guid]::NewGuid().ToString('N')).tmp"
   [IO.File]::WriteAllText($temporary, ($Value | ConvertTo-Json -Depth 8 -Compress), $Utf8)
-  if (Test-Path -LiteralPath $Path) { [IO.File]::Replace($temporary, $Path, $null) }
+  # PS5.1 marshals $null to an empty string for this .NET string argument.
+  # NullString preserves a true null (no backup filename) for atomic Replace.
+  if (Test-Path -LiteralPath $Path) { [IO.File]::Replace($temporary, $Path, [NullString]::Value) }
   else { [IO.File]::Move($temporary, $Path) }
 }
 function Assert-Paths {
