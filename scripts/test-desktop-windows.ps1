@@ -73,6 +73,15 @@ function Start-Desktop {
     }
   }
   if (-not $process.HasExited) { $process.StandardInput.WriteLine('STOP'); $process.StandardInput.Flush(); $null=$process.WaitForExit(10000) }
+  $code='still_running'; $categories=@()
+  if ($process.HasExited) {
+    $code=$process.ExitCode
+    $process.WaitForExit()
+    $errorText=$errorOutput.GetAwaiter().GetResult()
+    $categories=@([regex]::Matches($errorText,'BLACKHOLE_(?:LAUNCHER_FAILED:[a-z_]+:[A-Za-z0-9]+:0x[A-F0-9]{8}|CORE_CODE:[A-Z_]+|CORE_DIAGNOSTIC)') | ForEach-Object {$_.Value} | Select-Object -Unique -First 8)
+  }
+  $evidence.nativeStartupFailure=@{exitCode=$code;categories=$categories}
+  Write-Warning ($evidence.nativeStartupFailure | ConvertTo-Json -Compress)
   throw 'Compiled desktop did not become ready.'
 }
 function Stop-Desktop($Handle) {
@@ -140,7 +149,7 @@ try {
     $evidence.nativeHelperFailure=@{exitCode=$protected.code;outputLength=$protected.output.Length;category=$helperError}
     Write-Warning ($evidence.nativeHelperFailure | ConvertTo-Json -Compress)
   }
-  Assert-That ($protected.code -eq 0 -and $protected.output -ne $plain) 'compiled DPAPI encrypts CurrentUser data'
+  Assert-That ($protected.code -eq 0 -and $protected.output.Length -gt 0 -and $protected.output -ne $plain) 'compiled DPAPI encrypts CurrentUser data'
   $unprotected=Invoke-Helper '--unprotect' $protected.output
   Assert-That ($unprotected.code -eq 0 -and $unprotected.output -ceq $plain) 'compiled DPAPI exact readback'
   $corrupt=Invoke-Helper '--unprotect' ([Convert]::ToBase64String([byte[]](1,2,3,4)))

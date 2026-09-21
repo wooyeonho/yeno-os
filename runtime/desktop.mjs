@@ -234,5 +234,9 @@ async function main() {
   process.once('SIGINT', () => { void stop(); }); process.once('SIGTERM', () => { void stop(); });
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch(() => { process.stderr.write('BLACKHOLE Desktop could not start. Check the setup guide; existing data was preserved.\n'); process.exitCode = 1; });
+  main().catch(error => {
+    // Emit a fixed category only; messages/stacks may contain owner paths or keys.
+    const category = typeof error.code === 'string' && /^(?:DESKTOP_[A-Z_]+|EADDRINUSE|EACCES|EPERM|ENOENT)$/.test(error.code) ? error.code : 'DESKTOP_START_FAILED';
+    process.stderr.write(`BLACKHOLE_CORE_FAILED:${category}\n`); process.exitCode = 1;
+  });
 }

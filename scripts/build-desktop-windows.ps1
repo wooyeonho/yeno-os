@@ -17,13 +17,13 @@ $utf8 = New-Object Text.UTF8Encoding($false)
 
 # Only tracked application files enter the package. Never copy a working-tree data
 # directory, secrets, test output, .env files, Git metadata, or developer credentials.
-$tracked = @(& git -c core.quotepath=false -C $Root ls-files -- runtime docs identity README.md LICENSE LICENSE.md NOTICE)
+$tracked = @(& git -c core.quotepath=false -C $Root ls-files -- runtime docs identity README.md LICENSE LICENSE.md NOTICE scripts/android-release.mjs)
 if ($LASTEXITCODE -ne 0) { throw 'Cannot obtain the tracked distribution manifest.' }
 $copied = 0
 foreach ($relative in $tracked) {
   if ($relative -match '(^|/)(test|tests|data|node_modules|\.git|secrets)(/|$)' -or
       $relative -match '(^|/)\.env($|\.)' -or $relative -match '\.(key|pfx|pem|p12|token)$') { continue }
-  if ($relative -notmatch '^(runtime/|docs/|identity/|README\.md$|LICENSE(?:\.md)?$|NOTICE$)') { continue }
+  if ($relative -notmatch '^(runtime/|docs/|identity/|README\.md$|LICENSE(?:\.md)?$|NOTICE$|scripts/android-release\.mjs$)') { continue }
   $source = Join-Path $Root $relative
   if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw 'Tracked distribution file missing.' }
   if (((Get-Item -LiteralPath $source).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Distribution reparse points are forbidden.' }
@@ -55,6 +55,14 @@ $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 if (-not (Test-Path -LiteralPath $compiler -PathType Leaf)) { throw '.NET Framework C# compiler is unavailable.' }
 & $compiler /nologo /target:winexe /platform:x64 /optimize+ /utf8output /codepage:65001 "/out:$package/BLACKHOLE.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Security.dll (Join-Path $Root 'scripts/desktop/BlackholeLauncher.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Native launcher compilation failed.' }
+
+# Resolve the complete runtime import graph from the staged package, not the
+# source checkout. This catches an omitted transitive file before shipping.
+Push-Location $package
+try {
+  $importCheck = & (Join-Path $package 'node.exe') --input-type=module -e "await import('./runtime/desktop.mjs'); console.log('BLACKHOLE_PACKAGED_IMPORT_OK')"
+  if ($LASTEXITCODE -ne 0 -or $importCheck -ne 'BLACKHOLE_PACKAGED_IMPORT_OK') { throw 'Packaged desktop imports are incomplete.' }
+} finally { Pop-Location }
 
 $manifest = [ordered]@{
   formatVersion = 1; product = 'BLACKHOLE'; sourceSha = $SourceSha

@@ -7,6 +7,7 @@ using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -166,7 +167,11 @@ internal static class BlackholeLauncher
         };
         child.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e)
         {
-            if (e.Data != null) Console.Error.WriteLine("BLACKHOLE_CORE_DIAGNOSTIC");
+            if (e.Data != null)
+            {
+                var code = Regex.Match(e.Data, "\\b(?:DESKTOP_[A-Z_]+|ERR_[A-Z_]+|EADDRINUSE|EACCES|EPERM)\\b");
+                Console.Error.WriteLine(code.Success ? "BLACKHOLE_CORE_CODE:" + code.Value : "BLACKHOLE_CORE_DIAGNOSTIC");
+            }
         };
         child.Start(); child.BeginOutputReadLine(); child.BeginErrorReadLine();
         var input = new Thread(delegate()
