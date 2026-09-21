@@ -139,7 +139,18 @@ try {
   assert.ok($('.studio-tabs'),'Studio must still actually render inside the opened advanced-tools drawer');
   click('.tools-drawer summary');
   assert.equal($('.tools-drawer').open,false,'advanced tools must close on a second tap');
-  evidence.checks.push('mobile Home hierarchy: Live Voice visible on Home, advanced tools collapsed by default and toggling open/closed');
+  // Android system back is represented by popstate once the native view has
+  // created a history entry. It must close the drawer first, then return
+  // from a secondary surface to Home instead of exiting the app.
+  click('.tools-drawer summary');
+  assert.equal($('.tools-drawer').open,true,'advanced tools must reopen from the full card');
+  dom.window.dispatchEvent(new dom.window.PopStateEvent('popstate'));
+  assert.equal($('.tools-drawer').open,false,'back must close advanced tools before leaving Home');
+  click('[data-native-view="world"]');
+  assert.equal($('#workspace').classList.contains('view-world'),true);
+  dom.window.dispatchEvent(new dom.window.PopStateEvent('popstate'));
+  assert.equal($('#workspace').classList.contains('view-studio'),true,'back must return to Home from a secondary surface');
+  evidence.checks.push('Android-safe explicit advanced-tools toggle and back navigation: drawer closes first, secondary views return Home');
 
   click('[data-native-view="world"]');
   assert.equal($('#workspace').classList.contains('view-world'),true);assert.equal($('#tab-world').hidden,false);
