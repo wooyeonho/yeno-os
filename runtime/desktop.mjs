@@ -63,7 +63,7 @@ export function nativeHelpers(executable) {
 }
 
 /** Crypto/filesystem injections exist only as direct test arguments, never a CLI bypass. */
-export async function startDesktop({ home, corePort = 8791, setupPort = 8792, cryptoAdapter, secureDirectory, openBrowser = () => {}, sourceRevision = 'development' }) {
+export async function startDesktop({ home, corePort = 8791, setupPort = 8792, cryptoAdapter, secureDirectory, openBrowser = () => {}, sourceRevision = 'development', agentFetch }) {
   if (!path.isAbsolute(home) || !cryptoAdapter?.protect || !cryptoAdapter?.unprotect || typeof secureDirectory !== 'function') throw fail('DESKTOP_CONFIGURATION_REQUIRED');
   for (const port of [corePort, setupPort]) if (!Number.isInteger(port) || port < 0 || port > 65535) throw fail('DESKTOP_PORT_INVALID');
   noLinks(home);
@@ -87,7 +87,7 @@ export async function startDesktop({ home, corePort = 8791, setupPort = 8792, cr
   async function bootCore() {
     if (runtime || !config) return;
     noLinks(dataDir); await secureDirectory(dataDir);
-    runtime = await start({ dataDir, token: config.pairingKey, host: '127.0.0.1', port: corePort, env: desktopProviderEnvironment(config.providers), webCookieNamespace: 'blackhole-desktop-v1' });
+    runtime = await start({ dataDir, token: config.pairingKey, host: '127.0.0.1', port: corePort, env: desktopProviderEnvironment(config.providers), webCookieNamespace: 'blackhole-desktop-v1', agentFetch });
     coreUrl = `http://127.0.0.1:${runtime.server.address().port}`;
   }
   function authenticate(key) {
@@ -116,6 +116,13 @@ export async function startDesktop({ home, corePort = 8791, setupPort = 8792, cr
     await bootCore();
     const response = await fetch(`${coreUrl}${route}`, { method: 'POST', signal: AbortSignal.timeout(10000), redirect: 'error',
       headers: { Authorization: `Bearer ${config.pairingKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(value) });
+    if (!response.ok) throw fail('DESKTOP_CORE_REQUEST_FAILED', 409);
+    return response.json();
+  }
+  async function coreRead(route) {
+    await bootCore();
+    const response = await fetch(`${coreUrl}${route}`, { method: 'GET', signal: AbortSignal.timeout(5000), redirect: 'error',
+      headers: { Authorization: `Bearer ${config.pairingKey}` } });
     if (!response.ok) throw fail('DESKTOP_CORE_REQUEST_FAILED', 409);
     return response.json();
   }
@@ -169,6 +176,27 @@ export async function startDesktop({ home, corePort = 8791, setupPort = 8792, cr
           catch { await persist(previous); config = previous; await bootCore(); throw fail('DESKTOP_PROVIDER_UPDATE_ROLLED_BACK', 409); }
           await issueWebCookie(res);
           return respond(res, 200, { ok: true, coreUrl, redirectUrl: coreUrl, providers: desktopProviderSummary(providers) });
+        }
+        if (url.pathname === '/setup/provider-test') {
+          if (!exact(input, ['pairingKey'])) throw fail('DESKTOP_INPUT_INVALID');
+          authenticate(input.pairingKey);
+          // This is an explicit owner action. It enables the existing AI
+          // module, starts exactly one durable self-test, and never retries a
+          // timed-out provider outcome.
+          await coreMutation('/api/settings', { requestId: crypto.randomUUID(), modules: { ai: true } });
+          const started = await coreMutation('/api/self-test', { requestId: crypto.randomUUID(), liveProvider: true });
+          const selfTestId = started.selfTest?.id;
+          if (!selfTestId) throw fail('DESKTOP_PROVIDER_TEST_FAILED', 409);
+          let latest = started.selfTest;
+          for (let attempt = 0; attempt < 20; attempt++) {
+            const current = await coreRead('/api/self-test');
+            latest = current.history?.find(item => item.id === selfTestId) ?? latest;
+            const status = latest?.providerLive?.status;
+            if (status && status !== 'REQUESTED') break;
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+          return respond(res, 200, { ok: true, selfTestId, selfTestStatus: latest?.status ?? 'RUNNING',
+            liveVerification: latest?.providerLive ?? { status: 'REQUESTED' }, jobId: latest?.providerLive?.jobId ?? null });
         }
         if (url.pathname === '/setup/intake') {
           if (!exact(input, ['pairingKey'])) throw fail('DESKTOP_INPUT_INVALID');

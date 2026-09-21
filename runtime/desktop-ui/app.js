@@ -92,6 +92,7 @@ const knownErrors = {
   active_jobs: '진행 중인 작업이 있습니다. 운영실에서 먼저 일시정지한 뒤 다시 저장해주세요.',
   core_busy: '진행 중인 작업이 있습니다. 운영실에서 먼저 일시정지한 뒤 다시 저장해주세요.',
   emergency_stop: '전체 멈춤 상태입니다. 운영실에서 상태를 확인해주세요.',
+  DESKTOP_PROVIDER_TEST_FAILED: '모델 연결 시험을 시작하지 못했습니다. 저장된 설정과 코어 상태를 확인해주세요.',
 };
 
 async function api(path, body) {
@@ -298,6 +299,26 @@ $('providers-form').addEventListener('submit', async event => {
     message('AI 설정을 저장했습니다. 운영실에서 AI를 켜면 사용할 수 있습니다. 실제 모델 응답은 아직 확인하지 않았습니다.');
   } catch (error) { message(error.message, true); $('retry-state').hidden = false; }
   finally { setBusy(false, $('providers-button'), 'AI 설정 저장하고 코어 다시 시작'); }
+});
+
+$('provider-test-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (busy) return;
+  message();
+  setBusy(true, $('provider-test-button'), '모델을 한 번 호출하고 있습니다');
+  try {
+    const result = await api('/setup/provider-test', {pairingKey: $('provider-test-pairing-key').value});
+    $('provider-test-pairing-key').value = '';
+    const live = result.liveVerification || {};
+    const status = typeof live.status === 'string' ? live.status : 'REQUESTED';
+    $('provider-test-result').textContent = status === 'LIVE_VERIFIED'
+      ? '실제 네트워크 응답을 확인했습니다. 운영실에서 provider/model과 호출 기록을 확인하세요.'
+      : status === 'SYNTHETIC_VERIFIED'
+        ? '합성 전송 결과입니다. 실제 모델 응답으로 표시하지 않았습니다.'
+        : `연결 시험 상태: ${status}. 결과를 다시 확인해 주세요.`;
+    $('provider-test-result').hidden = false;
+  } catch (error) { message(error.message, true); $('retry-state').hidden = false; }
+  finally { setBusy(false, $('provider-test-button'), '실제 모델 1회 호출'); }
 });
 
 $('intake-form').addEventListener('submit', async event => {
