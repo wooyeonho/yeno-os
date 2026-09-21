@@ -122,8 +122,9 @@ function Run-Core {
 }
 
 function Get-TailscalePath {
+  $programFiles = if ($env:ProgramFiles) { $env:ProgramFiles } else { 'C:\Program Files' }
   $candidates = @(
-    (Join-Path ($env:ProgramFiles ?? 'C:\Program Files') 'Tailscale\tailscale.exe'),
+    (Join-Path $programFiles 'Tailscale\tailscale.exe'),
     'tailscale.exe'
   )
   foreach ($candidate in $candidates) {
