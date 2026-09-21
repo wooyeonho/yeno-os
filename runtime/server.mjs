@@ -563,10 +563,15 @@ export function createYenoServer(options={}) {
  // live provider smoke call happens only on explicit owner request and only
  // when a real (network) transport and configured provider exist.
  function startSelfTest(b){
-   if(!b.requestId||Object.keys(b).some(k=>!['requestId','liveProvider'].includes(k)))throw new HttpError(400,'Persistent requestId required');
+   if(!b.requestId||Object.keys(b).some(k=>!['requestId','liveProvider','oneShot'].includes(k)))throw new HttpError(400,'Persistent requestId required');
    if(b.liveProvider!==undefined&&typeof b.liveProvider!=='boolean')throw new HttpError(400,'liveProvider must be boolean');
+   if(b.oneShot!==undefined&&typeof b.oneShot!=='boolean')throw new HttpError(400,'oneShot must be boolean');
    if(s.emergencyStop)throw new HttpError(409,'전체 멈춤 상태입니다.');
    if(s.jobs.some(job=>job.selfTestId&&['queued','running'].includes(job.status)))throw new HttpError(409,'이전 자가 점검이 아직 실행 중입니다.');
+   if(b.oneShot===true){
+     if(s.autopilot.enabled)throw new HttpError(409,'자동 운영을 먼저 중지하세요.');
+     if(s.jobs.some(job=>['queued','running'].includes(job.status)))throw new HttpError(409,'진행 중인 작업을 먼저 일시정지하세요.');
+   }
    s.selfTests??=[];
    const id=uid(),startedAt=now();
    const homunculusPreview=previewAutonomousGoals(s,startedAt,{manifests:SYNTHESIS_MANIFESTS});
@@ -583,7 +588,7 @@ export function createYenoServer(options={}) {
    else if(!LIVE_TRANSPORT)providerLive={status:'BLOCKED',reason:'synthetic_transport_injected',jobId:null};
    else if(!agentSettings.providers.some(p=>p.configured))providerLive={status:'BLOCKED',reason:PROVIDER_BLOCKER,detail:'no_configured_provider',jobId:null};
    else{
-     try{const smoke=newJob({type:'agent',title:'자가 점검 · 실제 모델 연결 확인',text:'BLACKHOLE self-test. Reply with exactly: OK'});smoke.selfTestId=id;smoke.callLimit=1;providerLive={status:'REQUESTED',reason:null,jobId:smoke.id};}
+     try{const smoke=newJob({type:'agent',title:'자가 점검 · 실제 모델 연결 확인',text:'BLACKHOLE self-test. Reply with exactly: OK'},{questExecution:b.oneShot===true});smoke.selfTestId=id;smoke.voiceConversation=true;smoke.callLimit=1;providerLive={status:'REQUESTED',reason:null,jobId:smoke.id};}
      catch(error){if(!(error instanceof HttpError))throw error;providerLive={status:'BLOCKED',reason:'routing_or_budget',detail:error.message,jobId:null};}
    }
    const record={version:READINESS_VERSION,id,startedAt,homunculus,kirby,jobId:job?.id??null,capabilityId:kirby.capabilityId,providerLive,durableReload:null};
@@ -1013,7 +1018,7 @@ export function createYenoServer(options={}) {
      const lastAssistant=job.agentJournal?.history.findLast(m=>m.role==='assistant');
      const budget=(job.botAssignment||job.shadowAssignment)&&job.step<2&&(!lastAssistant||lastAssistant.toolCalls.length>0)&&agentUsage(s.jobs).attempts>=configFor(job).dailyCallLimit;
      if(job.shadowAssignment&&job.type==='agent')recordJevShadowDispatch(job,blocked,budget);
-     if(blocked||budget||(!localResearchCompletion(job)&&!s.modules[jobModule(job)]&&!job.questId)){job.status='paused';job.pauseReason=blocked||(budget?'dailyBudget':'moduleDisabled');touch(job);save();continue;}
+     if(blocked||budget||(!localResearchCompletion(job)&&!s.modules[jobModule(job)]&&!job.questId&&!job.selfTestId)){job.status='paused';job.pauseReason=blocked||(budget?'dailyBudget':'moduleDisabled');touch(job);save();continue;}
      job.status='running';delete job.pauseReason;touch(job);save();const generation=(generations.get(job.id)??0)+1;generations.set(job.id,generation);runStep(job,generation);
    }}
    schedule();

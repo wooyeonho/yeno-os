@@ -280,14 +280,21 @@ test('desktop provider-test is an explicit one-call gate and synthetic transport
   const f = await fixture(t), app = await f.begin({ agentFetch: async () => { throw new Error('must not be called when synthetic transport is injected'); } }); await f.initialize(app);
   const providers = { version: 1, providers: [{ provider: 'openai', model: 'synthetic-test-model', apiKey: 'synthetic-provider-secret-value' }], primaryProvider: 'openai', dailyCallLimit: 1 };
   assert.equal((await f.setup(app, '/setup/providers', { pairingKey: f.key, providers })).status, 200);
-  const testCall = await f.setup(app, '/setup/provider-test', { pairingKey: f.key });
+  const requestId = crypto.randomUUID();
+  const testCall = await f.setup(app, '/setup/provider-test', { pairingKey: f.key, requestId });
   assert.equal(testCall.status, 200);
   assert.equal(testCall.json.ok, true);
   assert.equal(testCall.json.liveVerification.status, 'BLOCKED');
   assert.equal(testCall.json.liveVerification.reason, 'synthetic_transport_injected');
   const state = await f.core(app, '/api/state');
-  assert.equal(state.json.modules.ai, true);
+  assert.equal(state.json.modules.ai, false);
   assert.equal(state.json.agent.usage.attempts, 0);
+  assert.equal(state.json.jobs.some(job => job.type === 'agent' && ['queued', 'running'].includes(job.status)), false);
+  const repeated = await f.setup(app, '/setup/provider-test', { pairingKey: f.key, requestId });
+  assert.equal(repeated.status, 200);
+  assert.equal(repeated.json.selfTestId, testCall.json.selfTestId);
+  const after = await f.core(app, '/api/self-test');
+  assert.equal(after.json.history.length, 1);
   for (const value of [testCall.text, state.text, fs.readFileSync(path.join(f.home, 'desktop.dpapi'), 'utf8')]) {
     assert.equal(value.includes(providers.providers[0].apiKey), false);
   }

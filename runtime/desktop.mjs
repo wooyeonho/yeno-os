@@ -16,6 +16,7 @@ const EMPTY = { version: 1, providers: [], primaryProvider: null, dailyCallLimit
 const equal = (a, b) => typeof a === 'string' && typeof b === 'string' && crypto.timingSafeEqual(crypto.createHash('sha256').update(a).digest(), crypto.createHash('sha256').update(b).digest());
 function exact(value, keys) { return value && !Array.isArray(value) && typeof value === 'object' && Object.keys(value).length === keys.length && keys.every(k => Object.hasOwn(value, k)); }
 function keyValid(key) { return typeof key === 'string' && key.length >= 16 && key.length <= 512 && !/\s/.test(key); }
+function requestIdValid(value) { return typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value); }
 function noLinks(filename) {
   for (let item = path.resolve(filename);;) {
     if (fs.existsSync(item) && fs.lstatSync(item).isSymbolicLink()) throw fail('DESKTOP_PATH_UNSAFE');
@@ -178,24 +179,28 @@ export async function startDesktop({ home, corePort = 8791, setupPort = 8792, cr
           return respond(res, 200, { ok: true, coreUrl, redirectUrl: coreUrl, providers: desktopProviderSummary(providers) });
         }
         if (url.pathname === '/setup/provider-test') {
-          if (!exact(input, ['pairingKey'])) throw fail('DESKTOP_INPUT_INVALID');
+          if (!exact(input, ['pairingKey', 'requestId']) || !requestIdValid(input.requestId)) throw fail('DESKTOP_INPUT_INVALID');
           authenticate(input.pairingKey);
-          // This is an explicit owner action. It enables the existing AI
-          // module, starts exactly one durable self-test, and never retries a
-          // timed-out provider outcome.
-          await coreMutation('/api/settings', { requestId: crypto.randomUUID(), modules: { ai: true } });
-          const started = await coreMutation('/api/self-test', { requestId: crypto.randomUUID(), liveProvider: true });
-          const selfTestId = started.selfTest?.id;
+          // The one-shot gate is deliberately separate from the global AI
+          // setting. It cannot resume queued/autopilot work or enable another
+          // provider job as a side effect of a smoke test. The canonical
+          // request ledger is consulted before the operation, so replaying the
+          // same requestId returns its original self-test instead of starting
+          // a second call; a new requestId is rejected while an outcome is
+          // unknown or another job is active.
+          const started = await coreMutation('/api/self-test', { requestId: input.requestId, liveProvider: true, oneShot: true });
+          let latest = started.selfTest ?? null;
+          let current;
+          const selfTestId = latest?.id;
           if (!selfTestId) throw fail('DESKTOP_PROVIDER_TEST_FAILED', 409);
-          let latest = started.selfTest;
           for (let attempt = 0; attempt < 20; attempt++) {
-            const current = await coreRead('/api/self-test');
+            current = await coreRead('/api/self-test');
             latest = current.history?.find(item => item.id === selfTestId) ?? latest;
             const status = latest?.providerLive?.status;
             if (status && status !== 'REQUESTED') break;
             await new Promise(resolve => setTimeout(resolve, 500));
           }
-          return respond(res, 200, { ok: true, selfTestId, selfTestStatus: latest?.status ?? 'RUNNING',
+          return respond(res, 200, { ok: true, requestId: input.requestId, selfTestId, selfTestStatus: latest?.status ?? 'RUNNING',
             liveVerification: latest?.providerLive ?? { status: 'REQUESTED' }, jobId: latest?.providerLive?.jobId ?? null });
         }
         if (url.pathname === '/setup/intake') {
