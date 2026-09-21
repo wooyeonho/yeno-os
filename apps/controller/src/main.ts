@@ -66,6 +66,11 @@ let vaultPassword: string | null = null;
 let studio: ReturnType<typeof createStudioView> | null = null;
 let studioStorage: SecureRequestStorage | null = null;
 let activeView: 'studio' | 'world' | 'jobs' | 'projects' = 'studio';
+// Android back navigation is explicit. Native bottom-nav changes and the
+// advanced-tools drawer create browser history entries so the Android system
+// back gesture returns to the previous BLACKHOLE surface instead of closing
+// the app on the first press.
+let historyReady = false;
 // Seven Drives UI (issue #25): a real overlay/panel, deliberately separate
 // from activeView/showView - it is reached only from the Home drive chip
 // and layers on top of whichever view is showing, never a fifth bottom-nav
@@ -426,7 +431,10 @@ async function disconnect(localOnly = false) {
   } finally { disconnecting = false; renderPending(); }
 }
 function guard(task: () => Promise<void>) { void task().catch(error => showMessage(errorText(error))); }
-function showView(view: typeof activeView) {
+function showView(view: typeof activeView, options: {push?: boolean} = {}) {
+  if (historyReady && options.push !== false && view !== activeView) {
+    window.history.pushState({blackholeView: view}, '', `#${view}`);
+  }
   activeView = view;
   $('cockpit').hidden = view !== 'jobs'; $('native-studio').hidden = view !== 'studio'; $('tab-world').hidden = view !== 'world'; $('tab-projects').hidden = view !== 'projects';
   // Android WebView :has() support is uncertain across older devices, so the
@@ -445,7 +453,45 @@ const world = createWorldView({load: () => api('/world'), submit: async () => {
   finally { submitting = false; render(); }
 }});
 $('world-land').setAttribute('href', worldLand);
-for (const button of document.querySelectorAll<HTMLButtonElement>('[data-native-view]')) button.onclick = () => { const view = button.dataset.nativeView as typeof activeView; if (view === 'projects') nativeProjects.showList(); showView(view); };
+
+const toolsDrawer = document.querySelector<HTMLDetailsElement>('.tools-drawer');
+const toolsSummary = toolsDrawer?.querySelector<HTMLElement>(':scope > summary');
+function setToolsOpen(open: boolean, push = true) {
+  if (!toolsDrawer) return;
+  if (toolsDrawer.open === open) {
+    toolsSummary?.setAttribute('aria-expanded', String(open));
+    return;
+  }
+  toolsDrawer.open = open;
+  toolsSummary?.setAttribute('aria-expanded', String(open));
+  if (historyReady && push) {
+    if (open) window.history.pushState({blackholeTools: true}, '', '#tools');
+    else window.history.replaceState({blackholeView: activeView}, '', `#${activeView}`);
+  }
+}
+toolsSummary?.addEventListener('click', event => {
+  // Android WebView versions differ in native <details> toggle handling.
+  // Own the tap explicitly so the visible card is always a real control.
+  event.preventDefault();
+  setToolsOpen(!Boolean(toolsDrawer?.open));
+});
+toolsDrawer?.addEventListener('toggle', () => {
+  toolsSummary?.setAttribute('aria-expanded', String(Boolean(toolsDrawer?.open)));
+});
+for (const button of document.querySelectorAll<HTMLButtonElement>('[data-native-view]')) button.onclick = () => {
+  const view = button.dataset.nativeView as typeof activeView;
+  setToolsOpen(false, false);
+  if (view === 'projects') nativeProjects.showList();
+  showView(view);
+};
+
+history.replaceState({blackholeView: 'studio'}, '', `${window.location.pathname}${window.location.search}#studio`);
+historyReady = true;
+window.addEventListener('popstate', () => {
+  if (toolsDrawer?.open) { setToolsOpen(false, false); return; }
+  if (driveOrbitOpen) { closeDriveOrbit(); return; }
+  if (activeView !== 'studio') showView('studio', {push: false});
+});
 document.addEventListener('click', event => {
   const link = (event.target as Element).closest<HTMLAnchorElement>('a[href]');
   if (!link) return; event.preventDefault();
