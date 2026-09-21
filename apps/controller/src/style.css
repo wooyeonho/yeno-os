@@ -249,6 +249,18 @@ button:disabled {
   font-size: 0.76rem;
   white-space: nowrap;
 }
+.native-nav button::before {
+  display: block;
+  margin-bottom: 2px;
+  color: currentColor;
+  font-size: 0.95rem;
+  line-height: 1;
+  opacity: 0.82;
+}
+.native-nav button[data-native-view="studio"]::before { content: '⌂'; }
+.native-nav button[data-native-view="projects"]::before { content: '◫'; }
+.native-nav button[data-native-view="world"]::before { content: '◉'; }
+.native-nav button[data-native-view="jobs"]::before { content: '≡'; }
 .native-nav button[aria-pressed="true"] {
   background: #193d31;
   color: var(--accent-strong);
