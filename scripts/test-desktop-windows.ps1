@@ -134,6 +134,12 @@ try {
   $script:stage='native_crypto'
   $plain=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($token))
   $protected=Invoke-Helper '--protect' $plain
+  if ($protected.code -ne 0 -or -not $protected.output) {
+    $helperError='unclassified'
+    if ($protected.error -match 'BLACKHOLE_LAUNCHER_FAILED:[a-z_]+:[A-Za-z0-9]+:0x[A-F0-9]{8}') { $helperError=$Matches[0] }
+    $evidence.nativeHelperFailure=@{exitCode=$protected.code;outputLength=$protected.output.Length;category=$helperError}
+    Write-Warning ($evidence.nativeHelperFailure | ConvertTo-Json -Compress)
+  }
   Assert-That ($protected.code -eq 0 -and $protected.output -ne $plain) 'compiled DPAPI encrypts CurrentUser data'
   $unprotected=Invoke-Helper '--unprotect' $protected.output
   Assert-That ($unprotected.code -eq 0 -and $unprotected.output -ceq $plain) 'compiled DPAPI exact readback'

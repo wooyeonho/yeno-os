@@ -13,11 +13,15 @@ using System.Windows.Forms;
 internal static class BlackholeLauncher
 {
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("BLACKHOLE-DESKTOP-v1");
+    private static string nativeStage = "startup";
     [STAThread]
     private static int Main(string[] args)
     {
         try
         {
+            // WinExe has no attached console. Explicitly bind inherited redirected
+            // handles and consume a possible UTF-8 BOM from .NET/PowerShell writers.
+            if (args.Length > 0) BindProtocolStreams();
             if (args.Length == 1 && (args[0] == "--protect" || args[0] == "--unprotect"))
                 return Protect(args[0] == "--protect");
             if (args.Length == 2 && args[0] == "--secure-directory")
@@ -61,24 +65,44 @@ internal static class BlackholeLauncher
                 return child.HasExited ? child.ExitCode : 1;
             }
         }
-        catch
+        catch (Exception error)
         {
             // Exception text can contain owner paths or private provider inputs.
             if (args.Length == 0) MessageBox.Show("BLACKHOLE을 시작하지 못했습니다. 압축을 모두 풀었는지 확인해 주세요. 기존 데이터는 보존됩니다.", "BLACKHOLE", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            else Console.Error.WriteLine("BLACKHOLE_LAUNCHER_FAILED");
+            else Console.Error.WriteLine("BLACKHOLE_LAUNCHER_FAILED:" + nativeStage + ":" + error.GetType().Name + ":0x" + error.HResult.ToString("X8"));
             return 1;
         }
     }
 
     private static string Quote(string value) { return "\"" + value.Replace("\"", "") + "\""; }
 
+    private static void BindProtocolStreams()
+    {
+        Console.SetIn(new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false, true), true));
+        var output = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false));
+        output.AutoFlush = true; Console.SetOut(output);
+        var error = new StreamWriter(Console.OpenStandardError(), new UTF8Encoding(false));
+        error.AutoFlush = true; Console.SetError(error);
+    }
+
+    private static void WriteCommand(Process child, string command)
+    {
+        byte[] bytes = Encoding.UTF8.GetBytes(command + "\n");
+        // Use raw pipe bytes so Framework default StreamWriter cannot prefix a BOM.
+        child.StandardInput.BaseStream.Write(bytes, 0, bytes.Length);
+        child.StandardInput.BaseStream.Flush();
+    }
+
     private static int Protect(bool encrypt)
     {
+        nativeStage = "crypto_input";
         string input = ReadBoundedLine(1024 * 1024);
+        nativeStage = "base64_decode";
         byte[] plain = Convert.FromBase64String(input);
         byte[] output = null;
         try
         {
+            nativeStage = encrypt ? "dpapi_protect" : "dpapi_unprotect";
             output = encrypt
                 ? ProtectedData.Protect(plain, Entropy, DataProtectionScope.CurrentUser)
                 : ProtectedData.Unprotect(plain, Entropy, DataProtectionScope.CurrentUser);
@@ -154,10 +178,10 @@ internal static class BlackholeLauncher
                 {
                     if (command == "STOP" || command == "OPEN")
                     {
-                        child.StandardInput.WriteLine(command); child.StandardInput.Flush();
+                        WriteCommand(child, command);
                     }
                 }
-                if (!child.HasExited) { child.StandardInput.WriteLine("STOP"); child.StandardInput.Flush(); }
+                if (!child.HasExited) WriteCommand(child, "STOP");
             }
             catch (IOException) { }
             catch (InvalidOperationException) { }
@@ -200,7 +224,7 @@ internal static class BlackholeLauncher
 
         private void Send(string command)
         {
-            try { if (!child.HasExited) { child.StandardInput.WriteLine(command); child.StandardInput.Flush(); } }
+            try { if (!child.HasExited) WriteCommand(child, command); }
             catch (IOException) { failed = true; }
             catch (InvalidOperationException) { failed = true; }
         }
