@@ -1,6 +1,7 @@
 # BLACKHOLE resident Windows launcher
 # Runs the existing runtime/service.mjs under the current Windows user.
 # It does not create a second scheduler, provider, or job engine.
+# The existing service.mjs runtime lock remains the single-writer guard.
 
 [CmdletBinding()]
 param(
@@ -90,6 +91,7 @@ function Register-ResidentTask {
 
 function Run-Core {
   Assert-Node20
+  $node = Get-Command node -ErrorAction Stop
   if (-not (Test-Path -LiteralPath $RuntimeDir -PathType Container)) {
     throw "Runtime directory not found: $RuntimeDir"
   }
