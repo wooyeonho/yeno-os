@@ -90,6 +90,20 @@ function Bytes-Hash([byte[]]$Bytes) {
     try { return ([BitConverter]::ToString($sha.ComputeHash($Bytes))).Replace('-', '').ToLowerInvariant() }
     finally { $sha.Dispose() }
 }
+function Redact-Diagnostic([string]$Text) {
+    if ($null -eq $Text) { return '' }
+    $safe = $Text
+    foreach ($name in @('token', 'deviceToken')) {
+        $value = Get-Variable -Name $name -Scope Script -ErrorAction SilentlyContinue
+        if ($value -and $value.Value -is [string] -and $value.Value.Length -gt 0) {
+            $safe = $safe.Replace($value.Value, '[REDACTED]')
+        }
+    }
+    $safe = $safe -replace '(?i)Bearer\s+\S+', 'Bearer [REDACTED]'
+    $safe = $safe -replace '(?i)(api[_-]?key|password|authorization|token)\s*[:=]\s*[^\s,;]+', '$1=[REDACTED]'
+    if ($safe.Length -gt 1000) { $safe = $safe.Substring(0, 1000) }
+    return $safe
+}
 
 try {
     Assert-That ($PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -eq 1) 'real Windows PowerShell 5.1'
@@ -249,12 +263,21 @@ try {
     $evidence.checkCount = $script:checks.Count
     Write-Output ('Windows resident acceptance passed: ' + $script:checks.Count + ' assertions; physical phone/Tailscale pending.')
 } catch {
+    $failure = $_
     $evidence.status = 'failed'
     $evidence.failedStage = $script:stage
     $evidence.checks = @($script:checks)
     $evidence.checkCount = $script:checks.Count
+    $evidence.failure = [ordered]@{
+        type = Redact-Diagnostic $failure.Exception.GetType().FullName
+        fullyQualifiedErrorId = Redact-Diagnostic $failure.FullyQualifiedErrorId
+        sourceFile = [IO.Path]::GetFileName($failure.InvocationInfo.ScriptName)
+        lineNumber = $failure.InvocationInfo.ScriptLineNumber
+        message = Redact-Diagnostic $failure.Exception.Message
+    }
     # Do not put request headers, response bodies, runtime data or keys in logs.
     Write-Warning ('Windows resident acceptance failed at stage: ' + $script:stage)
+    Write-Warning ($evidence.failure | ConvertTo-Json -Compress)
     throw ('Windows resident acceptance failed at stage: ' + $script:stage)
 } finally {
     try {

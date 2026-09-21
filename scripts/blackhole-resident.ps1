@@ -216,10 +216,11 @@ function Get-PhoneConfig {
 }
 function Show-Status {
   $task = Get-OwnedTask
+  $taskInfo = if ($task) { Get-ScheduledTaskInfo -TaskName $TaskName -TaskPath '\' } else { $null }
   $config = Get-Config
   $instance = Read-Json $InstancePath
   $healthy = Test-CoreHealth
-  [ordered]@{taskName=$TaskName;taskState=$(if($task){[string]$task.State}else{'NotRegistered'});coreHealthy=$healthy;phoneStatus=$(if($healthy -and $instance.phone){$instance.phone.status}else{'unavailable'});phoneUrl=$(if($config.phone){"https://$($config.phone.dnsName):9443"}else{$null});dataDirectory=$DataDir;tokenFilePresent=(Test-Path -LiteralPath $TokenFile);instanceId=$(if($instance){$instance.instanceId}else{$null})} | ConvertTo-Json -Compress
+  [ordered]@{taskName=$TaskName;taskState=$(if($task){[string]$task.State}else{'NotRegistered'});lastTaskResult=$(if($taskInfo){$taskInfo.LastTaskResult}else{$null});coreHealthy=$healthy;instanceState=$(if($instance){$instance.state}else{$null});phoneStatus=$(if($healthy -and $instance.phone){$instance.phone.status}else{'unavailable'});phoneUrl=$(if($config.phone){"https://$($config.phone.dnsName):9443"}else{$null});dataDirectory=$DataDir;tokenFilePresent=(Test-Path -LiteralPath $TokenFile);instanceId=$(if($instance){$instance.instanceId}else{$null})} | ConvertTo-Json -Compress
 }
 
 if ($MyInvocation.InvocationName -eq '.') { return }
