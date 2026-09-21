@@ -256,6 +256,16 @@ function Write-PhoneHost {
   $info = Get-TailscaleInfo
   Ensure-Directory $DataDir
   $value = '{0}:9443' -f $info.DnsName
+  $served = & $info.Path serve status --json 2>$null
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Cannot inspect existing Tailscale Serve configuration. No phone bridge change was made.'
+  }
+  try { $existing = $served | ConvertFrom-Json } catch { throw 'Tailscale Serve returned invalid status JSON.' }
+  $port = $existing.TCP.PSObject.Properties['9443']
+  $oldHost = if (Test-Path -LiteralPath $PhoneHostFile -PathType Leaf) { [System.IO.File]::ReadAllText($PhoneHostFile).Trim() } else { '' }
+  if ($port -and $port.Value -and $oldHost -ne $value) {
+    throw 'Tailscale HTTPS port 9443 already has another configuration. It was left unchanged.'
+  }
   [System.IO.File]::WriteAllText($PhoneHostFile, $value, (New-Object System.Text.UTF8Encoding($false)))
   return [pscustomobject]@{ Info = $info; Host = $value }
 }
