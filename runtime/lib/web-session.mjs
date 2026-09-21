@@ -12,7 +12,10 @@ const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 // This module never stores raw device/owner credentials. The existing device
 // registry remains the authority for revocation and encrypted backup recovery.
-export function createWebSessions({key, now = Date.now}) {
+export function createWebSessions({key, now = Date.now, cookieNamespace = null}) {
+  // A packaged local core can use a distinct cookie name: browser cookies are
+  // shared across ports and must not overwrite an older local core's login.
+  if (cookieNamespace !== null && cookieNamespace !== 'blackhole-desktop-v1') throw new TypeError('Unsupported web cookie namespace');
   const mac = (domain, value = '') => crypto.createHmac('sha256', key).update(`YENO/${domain}/v1\0${value}`).digest('base64url');
   const attempts = new Map();
   const storageScope = mac('web-storage');
@@ -27,7 +30,7 @@ export function createWebSessions({key, now = Date.now}) {
     // Untrusted X-Forwarded-* headers never relax the cookie/origin boundary.
     const secure = Boolean(req.socket.encrypted) || !local;
     const origin = new URL(`${secure ? 'https' : 'http'}://${host}`).origin;
-    return {origin, secure, name: secure ? '__Host-yeno-web-v1' : 'yeno-web-dev-v1'};
+    return {origin, secure, name: cookieNamespace ? (secure ? `__Host-${cookieNamespace}` : cookieNamespace) : secure ? '__Host-yeno-web-v1' : 'yeno-web-dev-v1'};
   }
 
   function guard(req, {mutation = false} = {}) {

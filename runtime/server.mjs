@@ -134,7 +134,7 @@ export function createYenoServer(options={}) {
  if(!token){if(fs.existsSync(secretFile))token=fs.readFileSync(secretFile,'utf8').trim();else{token=crypto.randomBytes(32).toString('base64url');atomicWrite(secretFile,`${token}\n`);}}
  if(typeof token!=='string'||token.length<16){releaseLock();throw new Error('YENO_TOKEN must contain at least 16 characters.');}
  const tokenHash=digest(token);
- const webSessions=createWebSessions({key:token,now:options.webSessionNow??Date.now});
+ const webSessions=createWebSessions({key:token,now:options.webSessionNow??Date.now,cookieNamespace:options.webCookieNamespace??null});
  const webPairings=createWebPairings({now:options.webSessionNow??Date.now});
  const hankkiRateLimit=createHankkiRateLimiter();
  const aiBase=env.YENO_AI_BASE_URL??'', aiModel=env.YENO_AI_MODEL??'', aiKey=env.YENO_AI_API_KEY??'';
