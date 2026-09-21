@@ -254,7 +254,7 @@ button:disabled {
   color: var(--accent-strong);
   box-shadow: inset 0 0 0 1px #2e6652;
 }
- .home-shell {
+.home-shell {
   display: grid;
   gap: 10px;
 }
