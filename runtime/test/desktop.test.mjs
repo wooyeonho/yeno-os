@@ -354,3 +354,23 @@ test('desktop restart preserves unknown provider outcome without resending or du
     assert.equal(saved.agentJournal.calls[0].status, 'unknown');
   }
 });
+
+test('desktop shutdown releases an unfinished setup HTTP body before waiting for server close', { timeout: 4000 }, async t => {
+  const f = await fixture(t), app = await f.begin(); await f.initialize(app);
+  const url = new URL(app.url);
+  const pending = http.request(`${url.origin}/setup/unlock`, { method: 'POST', headers: {
+    Origin: url.origin, 'X-Blackhole-Setup': new URLSearchParams(url.hash.slice(1)).get('setup'),
+    'Content-Type': 'application/json', 'Content-Length': '100',
+  }});
+  pending.on('error', () => {}); t.after(() => pending.destroy());
+  pending.write('{');
+  await delay(50);
+  let timer;
+  try {
+    await Promise.race([app.close(), new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('setup connection blocked shutdown')), 1500);
+    })]);
+  } finally { clearTimeout(timer); pending.destroy(); }
+  const restored = await f.begin();
+  assert.equal((await f.core(restored, '/api/state')).status, 200);
+});

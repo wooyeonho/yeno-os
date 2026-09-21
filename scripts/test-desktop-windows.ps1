@@ -89,7 +89,13 @@ function Stop-Desktop($Handle) {
   $process=$Handle.process
   if (-not $process.HasExited) {
     $process.StandardInput.WriteLine('STOP'); $process.StandardInput.Flush()
-    if (-not $process.WaitForExit(20000)) { throw 'Desktop did not stop gracefully.' }
+    if (-not $process.WaitForExit(20000)) {
+      $coreProbe=Request-Core 'GET' '/api/state' $token
+      $setupProbe=Request $script:setupOrigin 'GET' '/setup/state' @{'X-Blackhole-Setup'=$script:setupToken}
+      $evidence.shutdownFailure=@{nativeExited=$process.HasExited;coreHttpStatus=$coreProbe.status;setupHttpStatus=$setupProbe.status}
+      Write-Warning ($evidence.shutdownFailure | ConvertTo-Json -Compress)
+      throw 'Desktop did not stop gracefully.'
+    }
   }
   Assert-That ($process.ExitCode -eq 0) 'native launcher gracefully exits after STOP'
   $errors=$Handle.errorTask.GetAwaiter().GetResult()

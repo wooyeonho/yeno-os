@@ -204,7 +204,12 @@ export async function startDesktop({ home, corePort = 8791, setupPort = 8792, cr
   const url = `${setupOrigin}/#setup=${authId}`;
   async function close() {
     if (closing) return closing;
-    closing = (async () => { await stopCore(); await new Promise(resolve => setupServer.close(resolve)); setupServer.closeAllConnections?.(); config = null; authId = ''; })();
+    closing = (async () => {
+      await stopCore();
+      const closed = new Promise(resolve => setupServer.close(resolve));
+      setupServer.closeAllConnections?.();
+      await closed; config = null; authId = '';
+    })();
     return closing;
   }
   return { url, state, close, open: () => openBrowser(url) };
@@ -228,7 +233,13 @@ async function main() {
   process.stdout.write(JSON.stringify({ type: 'ready', url: app.url, status: app.state().initialized ? 'locked' : 'setup-required' }) + '\n');
   app.open();
   const lines = readline.createInterface({ input: process.stdin });
-  const stop = async () => { lines.close(); await app.close(); process.exitCode = 0; };
+  const stop = async () => {
+    lines.close();
+    // Readline.close() only pauses its input. Release the owned IPC pipe as
+    // well, otherwise a pending Windows read can keep the core alive on STOP.
+    process.stdin.destroy();
+    await app.close(); process.exitCode = 0;
+  };
   lines.on('line', line => { if (line === 'OPEN') app.open(); else if (line === 'STOP') void stop().catch(() => { process.exitCode = 1; }); });
   lines.once('close', () => { void app.close().catch(() => { process.exitCode = 1; }); });
   process.once('SIGINT', () => { void stop(); }); process.once('SIGTERM', () => { void stop(); });
