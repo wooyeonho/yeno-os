@@ -86,8 +86,20 @@ function Get-OwnedTask {
   if ($task) {
     $taskUser = $task.Principal.UserId
     $current = [Security.Principal.WindowsIdentity]::GetCurrent()
-    if ($task.Description -ne "BLACKHOLE resident-v2 $($owner.installId)" -or @($task.Actions).Count -ne 1 -or $task.Actions[0].Execute -ne $owner.nodeExecutable -or $task.Actions[0].Arguments -ne (Get-TaskArguments) -or $taskUser -notin @($current.Name,$current.User.Value)) {
-      throw 'Task belongs to a different installation. Refusing to stop, replace or unregister it.'
+    # Task Scheduler may normalize SID input to a local account name. Compare
+    # resolved security identifiers, never loosen ownership to display names.
+    $taskSid = $null
+    try {
+      if ($taskUser -match '^S-1-') { $taskSid = (New-Object Security.Principal.SecurityIdentifier($taskUser)).Value }
+      else { $taskSid = (New-Object Security.Principal.NTAccount($taskUser)).Translate([Security.Principal.SecurityIdentifier]).Value }
+    } catch { $taskSid = $null }
+    $mismatch = @()
+    if ($task.Description -ne "BLACKHOLE resident-v2 $($owner.installId)") { $mismatch += 'description' }
+    if (@($task.Actions).Count -ne 1) { $mismatch += 'action-count' }
+    elseif ($task.Actions[0].Execute -ne $owner.nodeExecutable -or $task.Actions[0].Arguments -ne (Get-TaskArguments)) { $mismatch += 'action' }
+    if ($taskSid -ne $current.User.Value) { $mismatch += 'principal' }
+    if ($mismatch.Count -gt 0) {
+      throw ('Task belongs to a different installation (' + ($mismatch -join ',') + '). Refusing to stop, replace or unregister it.')
     }
   }
   return $task
