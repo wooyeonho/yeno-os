@@ -455,7 +455,7 @@ const world = createWorldView({load: () => api('/world'), submit: async () => {
 $('world-land').setAttribute('href', worldLand);
 
 const toolsDrawer = document.querySelector<HTMLDetailsElement>('.tools-drawer');
-const toolsSummary = toolsDrawer?.querySelector<HTMLElement>(':scope > summary');
+const toolsSummary = toolsDrawer?.querySelector<HTMLElement>('summary');
 function setToolsOpen(open: boolean, push = true) {
   if (!toolsDrawer) return;
   if (toolsDrawer.open === open) {
