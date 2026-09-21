@@ -13,9 +13,9 @@
    (runtime/public/style.css and apps/controller/src/style.css) already
    define on :root with equivalent dark/teal/mint values - this file never
    redefines :root itself, so it can never clash with either host's theme. */
-.living-core { display:grid; gap:16px; margin-bottom:26px; }
-.living-orb-wrap { display:flex; align-items:center; gap:18px; }
-.living-orb { position:relative; width:60px; height:60px; flex-shrink:0; display:grid; place-items:center; }
+.living-core { display:grid; gap:12px; margin-bottom:18px; }
+.living-orb-wrap { display:flex; align-items:center; gap:12px; padding:2px 0; }
+.living-orb { position:relative; width:54px; height:54px; flex-shrink:0; display:grid; place-items:center; }
 .living-orb-ring { position:absolute; inset:0; border-radius:50%; border:1px solid #4f9d84; opacity:.45; }
 .living-orb-core { position:relative; width:28px; height:28px; border-radius:50%; background:radial-gradient(circle at 35% 30%,#c8fbe9,#43d9a8 55%,#0d3a2c); box-shadow:0 0 20px #43d9a866; }
 .living-orb.idle .living-orb-core { animation:living-breathe 3.4s ease-in-out infinite; }
@@ -43,13 +43,13 @@
 .living-orb.offline .living-orb-core { background:#3a4a4c; box-shadow:none; animation:none; }
 .living-orb.offline .living-orb-ring { opacity:.25; animation:none; }
 .living-orb-text { min-width:0; }
-.living-sentence { font-size:.9375rem; color:var(--text); margin-top:4px; }
+.living-sentence { font-size:1rem; font-weight:650; color:var(--text); margin-top:2px; line-height:1.35; }
 .living-voice-cta { width:100%; }
-.living-mission, .living-recent { display:block; width:100%; text-align:left; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px 18px; color:inherit; }
-.living-mission p, .living-recent p { margin-top:6px; font-size:.9375rem; overflow-wrap:anywhere; }
+.living-mission, .living-recent { display:block; width:100%; text-align:left; background:linear-gradient(145deg, color-mix(in srgb, var(--panel) 96%, var(--accent) 4%), var(--panel)); border:1px solid var(--line); border-radius:16px; padding:13px 15px; color:inherit; }
+.living-mission p, .living-recent p { margin-top:5px; font-size:.9rem; overflow-wrap:anywhere; }
 .living-mission small, .living-recent small { display:block; margin-top:6px; color:var(--muted); }
 .living-mission.empty, .living-orbit.empty, .living-recent.empty { color:var(--muted); border:1px dashed #3a4b51; background:none; }
-.living-signals { display:flex; flex-wrap:wrap; gap:8px; }
+.living-signals { display:flex; flex-wrap:wrap; gap:6px; }
 .living-signal-chip { border:1px solid var(--line); border-radius:999px; padding:6px 13px; font-size:.8125rem; color:var(--muted); }
 .living-signal-drive { background:none; font-family:inherit; cursor:pointer; }
 .living-orbit { display:grid; gap:10px; }
