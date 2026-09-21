@@ -1,75 +1,90 @@
-# BLACKHOLE Windows resident core
+# BLACKHOLE Windows resident core — corrected standalone slice
 
-이 문서는 기존 "runtime/service.mjs"를 Windows 로그인 시 자동으로 실행하는 최소 운영 슬라이스다. 두 번째 스케줄러·두 번째 job engine·두 번째 provider를 만들지 않는다. 한 번 설치하면 노트북을 켜고 로그인할 때 BLACKHOLE의 기존 영속 코어가 다시 뜬다.
+## What this is, and what it is not
 
-## 현재 구현 범위
+PR #50 was not usable on Windows: its PowerShell was corrupted, it invoked a Linux-only container lease, and the green Linux tests did not execute the installer. This revision replaces that path and adds real Windows CI. Do not use the earlier launcher at `5cd7296`.
 
-- Windows Task Scheduler 작업 이름: BLACKHOLE Core
-- 로그인 시 실행, 중복 인스턴스는 무시(MultipleInstances=IgnoreNew)
-- 비정상 종료 시 최대 5회, 1분 간격으로 재시작
-- 기존 runtime/service.mjs 호출
-- 토큰은 %LOCALAPPDATA%\BLACKHOLE\secrets\pairing.token에 한 줄로 저장하고 현재 사용자만 읽도록 ACL 보호
-- 데이터는 %LOCALAPPDATA%\BLACKHOLE\data에 저장
-- 서비스 바인딩은 기본 127.0.0.1만 사용
-- Node.js 20 이상 필요
-- 모델 키가 없어도 Core·기억·큐·중단·복구가 부팅된다. 모델 호출은 별도 설정·예산·권한이 있을 때만 선택된다.
+This is a **separate, owner-initialized local core**. It reuses the existing server, job engine, store lock, device API, memory and recovery behavior. It does not import or synchronize the existing Koyeb core, older local 0.2.3 installation, projects or credentials. Both phone and PC must point to the SAME chosen core to share state. Changing the phone's existing core requires an owner decision; this slice does not perform that switch.
 
-## 설치
+Laptop powered off, sleeping, or signed out means this interactive-user local core is unavailable. Task Scheduler restarts it when the owner logs in; this is not 24/7 cloud hosting and not a Windows EXE installer. Production is unchanged.
 
-저장소 루트의 PowerShell에서 실행한다.
+## First setup on Windows
 
-    powershell -ExecutionPolicy Bypass -File .\scripts\blackhole-resident.ps1 -Action install
+Use Node.js 24+ and the reviewed PR #50 source. Keep the checkout in a stable location owned by the Windows user. Install locked runtime dependencies without lifecycle scripts:
 
-설치할 때만 pairing token을 한 번 입력한다. 실제 토큰은 채팅·Git·로그에 넣지 않는다. 설치 후 상태를 확인한다.
+```powershell
+npm ci --prefix runtime --ignore-scripts --no-audit --no-fund
+.\scripts\blackhole-resident.ps1 -Action install -InitializeNewStore
+.\scripts\blackhole-resident.ps1 -Action status
+```
 
-    powershell -ExecutionPolicy Bypass -File .\scripts\blackhole-resident.ps1 -Action status
+Run under Windows PowerShell 5.1 according to the machine's existing execution policy; no policy or administrator permission is silently changed. The scheduled task directly invokes the resolved Node executable, not another PowerShell launcher.
 
-삭제는 Task Scheduler 작업만 지우며 데이터와 토큰은 보존한다.
+The explicit flag acknowledges creation of a NEW local store. Pairing-key entry is masked. Use a unique key of 16–512 non-whitespace characters; do not paste it into chat. Existing keys are preserved on reinstall. A nonempty unconfigured directory is rejected instead of migrated.
 
-    powershell -ExecutionPolicy Bypass -File .\scripts\blackhole-resident.ps1 -Action uninstall
+Defaults:
+- Task: `BLACKHOLE Core v2` (does not take over an older `BLACKHOLE Core` task).
+- Home: `%LOCALAPPDATA%\BLACKHOLE\resident-v2`.
+- Local core: `http://127.0.0.1:8790`; `-Port` selects a different port at first install. Port 9443 is reserved.
+- Data, control records and secrets have current-user-only directory ACLs; files inherit those ACLs. Windows administrators/compromised owner accounts remain privileged.
+- `owner.json` binds installation, account, exact task action and Node path.
+- Task uses Interactive login, limited privilege, IgnoreNew, no 72-hour expiry, up to five one-minute failure restarts.
+- Runtime configuration is explicit. Inherited cloud/proxy/provider environment values are not imported. **Real multi-provider execution is not enabled by this installer.**
 
-토큰까지 지울 때만 명시적으로 다음을 추가한다.
+`status` reports authenticated local HTTP readiness, not just task registration. Retrying `install` preserves data, key, port and installation identity. It does not authorize a second core against the same store.
 
-    powershell -ExecutionPolicy Bypass -File .\scripts\blackhole-resident.ps1 -Action uninstall -RemoveSecret
+## Start, stop, restart and uninstall
 
-## 실제 수락시험
+```powershell
+.\scripts\blackhole-resident.ps1 -Action stop
+.\scripts\blackhole-resident.ps1 -Action start
+.\scripts\blackhole-resident.ps1 -Action restart
+.\scripts\blackhole-resident.ps1 -Action uninstall
+```
 
-이 문서의 코드 검사만으로 Windows 상주 실행이 완료된 것은 아니다. 노트북에서 다음을 확인해야 한다.
+Stop uses an instance-bound nonce, calls the existing runtime shutdown, waits for server/owned bridge termination, and preserves jobs paused. Restart does not resume unfinished work or replay unknown provider outcomes. Uninstall removes only the verified owned task; **data and pairing keys remain**. No broad kill, recursive delete, forced takeover or token deletion option exists.
 
-1. install 후 taskState가 Running 또는 로그인 후 Ready인지 확인한다.
-2. http://127.0.0.1:8790에서 기존 pairing token으로 상태를 읽는다.
-3. 무해한 문서/상태 명령 하나를 제출하고 결과를 확인한다.
-4. 작업과 브라우저를 닫고 다시 열어 같은 Core identity와 결과가 남는지 확인한다.
-5. Windows 로그아웃/재로그인 후 status와 상태 API를 재확인한다.
-6. 전체 멈춤을 켰다가 해제할 때 작업이 자동으로 재개되지 않는지 확인한다.
-7. 실패 시 uninstall로 작업만 제거하고 데이터는 보존한다.
+Foreign task descriptions/actions/accounts are refused even if the task name matches. A dead core may be restarted after its actual exit is observed. If a recorded bridge process still exists after an abrupt core crash, restart/uninstall is blocked for owner inspection: PID reuse means it is not safe to blindly kill that process. No Tailscale reset is issued. Metadata-write or shutdown failures are reported as failures rather than successful cleanup.
 
-Android 폰에서 확인하려면 별도의 owner-configured HTTPS/Tailscale 경로가 필요하다. 이 슬라이스는 외부 포트를 열거나 Tailscale 계정을 자동으로 조작하지 않는다. 따라서 Windows live acceptance와 폰 재접속 acceptance는 아직 실행 전이다.
+## Optional private phone bridge
 
-## 증거 경계
+First install and sign in to Tailscale on the Windows PC and Android phone yourself, in the intended private tailnet. The owner must allow Serve/HTTPS and appropriate tailnet access. This implementation does not create accounts, accept terms, expose Funnel, open Windows firewall ports, or change existing Tailscale configuration.
 
-- 정적 테스트는 스크립트가 기존 서비스·토큰 파일·중복 방지·재시작 정책을 사용하는지만 증명한다.
-- CI에서 Node 회귀를 통과해도 Windows Task Scheduler가 실제로 실행됐다는 뜻은 아니다.
-- 실제 노트북 설치·로그인 재시작·폰 명령→결과는 소유자 기기에서 별도로 증명해야 한다.
-- production(Koyeb/Vercel/Supabase)에는 변경하지 않는다.
+```powershell
+.\scripts\blackhole-resident.ps1 -Action phone-install
+.\scripts\blackhole-resident.ps1 -Action status
+.\scripts\blackhole-resident.ps1 -Action phone-uninstall
+```
 
+There is ONE resident task. Its supervisor owns a foreground `tailscale serve --https=9443 http://127.0.0.1:<configured-port>` child. Existing Serve configuration, including nested foreground routes, is conservatively rejected; no route is overwritten even when the hostname matches. Each startup rechecks daemon identity and configuration. A conflict leaves the local core running with phone access blocked.
 
-## 폰 연결
+The core permits only the explicit MagicDNS host. Phone status becomes `available` only after an actual TLS-validated HTTPS `/api/health` response with the expected protocol; a launched process alone is not readiness. This proves host-side HTTPS reachability, **not a physical Android test**. If setup is blocked, the local core remains usable; use `phone-uninstall` to return to local-only operation.
 
-폰 연결은 코어를 인터넷에 공개하는 방식이 아니라, 소유자 Tailscale 네트워크 안에서만 HTTPS로 전달한다. 먼저 Windows에 Tailscale을 설치하고 같은 계정으로 로그인한 뒤, 저장소 루트에서 다음을 실행한다.
+`phone-uninstall` gracefully stops the owned foreground bridge, restarts the same core without the phone Host allowlist, and never resets unrelated routes. Bridge loss becomes pending/unavailable; repeating phone-install does not treat a healthy local core as proof of phone connectivity.
 
-    powershell -ExecutionPolicy Bypass -File .\scripts\blackhole-resident.ps1 -Action phone-install
+For a new test client only, use the status `phoneUrl` as its core address. Do not delete the existing APK, vault, request IDs or cloud enrollment.
 
-이 명령은 기존 BLACKHOLE Core를 재시작해 허용된 Tailscale DNS 이름만 추가하고, BLACKHOLE Phone Bridge 작업을 로그인 시 함께 시작한다. 출력되는 https://<기기이름>.<tailnet>.ts.net:9443 주소를 Android controller의 코어 주소로 사용한다. Android 폰에도 Tailscale을 설치하고 같은 tailnet에 로그인해야 한다.
+## Evidence and acceptance
 
-상태 확인:
+Local Node tests execute actual temporary HTTP servers, state/artifact files, enrollment and request replay. They cover standalone boot, isolation from inherited credentials, host/auth rejection, duplicate writer/port conflicts, durable result/identity, paused work, emergency-stop persistence, unknown-call hold, nonce-bound stop and metadata failure cleanup. Tailscale child/probe fault tests use injected synthetic adapters.
 
-    powershell -ExecutionPolicy Bypass -File .\scripts\blackhole-resident.ps1 -Action status
+`.github/workflows/windows-resident.yml` runs on a real Windows host:
+1. Those Node tests on Windows.
+2. Windows PowerShell 5.1 AST parsing (catches malformed syntax and duplicated functions).
+3. Actual temporary Task Scheduler registration, settings and ownership checks.
+4. Native API enrollment → document → downloaded SHA-256 → stop/restart → same request/job/result.
+5. Emergency stop across restart, key preservation and uninstall preservation.
+6. Sanitized evidence only; no runtime data, secrets or auth headers are uploaded.
 
-연결 해제:
+The existing developer-worker workflow separately runs complete Linux regression, web UI and networkless/read-only Docker isolation. Check **both exact-head checks** on PR #50. Writing the workflow is not a successful run; the PR report links actual results after they finish.
 
-    powershell -ExecutionPolicy Bypass -File .\scripts\blackhole-resident.ps1 -Action phone-uninstall
+Still requires physical acceptance:
+- Owner laptop installation, sign-out/sign-in and sleep/wake behavior.
+- Real Tailscale account/Serve consent, private TLS route and bridge revocation.
+- Android APK or phone browser command → result → close → reopen → same result.
+- Explicit decision about existing cloud-core vs new local-core data ownership; no live migration was done.
+- No EXE or APK is built by this backend/launcher-only slice.
 
-phone-uninstall은 BLACKHOLE Phone Bridge 작업과 이 저장소가 만든 host allowlist만 제거한다. 다른 Tailscale Serve 설정은 건드리지 않는다.
+## Rollback
 
-이 기능의 정적/CI 검사는 끝났지만 Tailscale 계정, Windows 노트북, Android 실기기에서의 명령→결과→재접속은 아직 실행 전이다. 그러므로 현재 상태는 PHONE_BRIDGE_CODE_READY이며 PHONE_LIVE_ACCEPTANCE_PENDING이다.
+On the installed revision, use `-Action phone-uninstall` if configured, then `-Action uninstall`. Preserve the home directory and checkout for recovery. Do not roll back to the broken `5cd7296` launcher. Existing cloud services and earlier installations remain untouched.
