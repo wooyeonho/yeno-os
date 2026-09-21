@@ -9,6 +9,7 @@ import { Stronghold, type Store } from '@tauri-apps/plugin-stronghold';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile, readFile } from '@tauri-apps/plugin-fs';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { createStudioView } from '../../../runtime/public/studio-view.mjs';
 import { createWorldView } from '../../../runtime/public/world-view.mjs';
 import worldLand from '../../../runtime/public/world-land.svg?url';
@@ -66,6 +67,11 @@ let vaultPassword: string | null = null;
 let studio: ReturnType<typeof createStudioView> | null = null;
 let studioStorage: SecureRequestStorage | null = null;
 let activeView: 'studio' | 'world' | 'jobs' | 'projects' = 'studio';
+// Android back navigation is explicit. Native bottom-nav changes and the
+// advanced-tools drawer create browser history entries so the Android system
+// back gesture returns to the previous BLACKHOLE surface instead of closing
+// the app on the first press.
+let historyReady = false;
 // Seven Drives UI (issue #25): a real overlay/panel, deliberately separate
 // from activeView/showView - it is reached only from the Home drive chip
 // and layers on top of whichever view is showing, never a fifth bottom-nav
@@ -426,7 +432,10 @@ async function disconnect(localOnly = false) {
   } finally { disconnecting = false; renderPending(); }
 }
 function guard(task: () => Promise<void>) { void task().catch(error => showMessage(errorText(error))); }
-function showView(view: typeof activeView) {
+function showView(view: typeof activeView, options: {push?: boolean} = {}) {
+  if (historyReady && options.push !== false && view !== activeView) {
+    window.history.pushState({blackholeView: view}, '', `#${view}`);
+  }
   activeView = view;
   $('cockpit').hidden = view !== 'jobs'; $('native-studio').hidden = view !== 'studio'; $('tab-world').hidden = view !== 'world'; $('tab-projects').hidden = view !== 'projects';
   // Android WebView :has() support is uncertain across older devices, so the
@@ -445,7 +454,61 @@ const world = createWorldView({load: () => api('/world'), submit: async () => {
   finally { submitting = false; render(); }
 }});
 $('world-land').setAttribute('href', worldLand);
-for (const button of document.querySelectorAll<HTMLButtonElement>('[data-native-view]')) button.onclick = () => { const view = button.dataset.nativeView as typeof activeView; if (view === 'projects') nativeProjects.showList(); showView(view); };
+
+const toolsDrawer = document.querySelector<HTMLDetailsElement>('.tools-drawer');
+const toolsSummary = toolsDrawer?.querySelector<HTMLElement>('summary');
+function setToolsOpen(open: boolean, push = true) {
+  if (!toolsDrawer) return;
+  if (toolsDrawer.open === open) {
+    toolsSummary?.setAttribute('aria-expanded', String(open));
+    return;
+  }
+  toolsDrawer.open = open;
+  toolsSummary?.setAttribute('aria-expanded', String(open));
+  if (historyReady && push) {
+    if (open) window.history.pushState({blackholeTools: true}, '', '#tools');
+    else window.history.replaceState({blackholeView: activeView}, '', `#${activeView}`);
+  }
+}
+toolsSummary?.addEventListener('click', event => {
+  // Android WebView versions differ in native <details> toggle handling.
+  // Own the tap explicitly so the visible card is always a real control.
+  event.preventDefault();
+  setToolsOpen(!Boolean(toolsDrawer?.open));
+});
+toolsDrawer?.addEventListener('toggle', () => {
+  toolsSummary?.setAttribute('aria-expanded', String(Boolean(toolsDrawer?.open)));
+});
+for (const button of document.querySelectorAll<HTMLButtonElement>('[data-native-view]')) button.onclick = () => {
+  const view = button.dataset.nativeView as typeof activeView;
+  setToolsOpen(false, false);
+  if (view === 'projects') nativeProjects.showList();
+  showView(view);
+};
+
+history.replaceState({blackholeView: 'studio'}, '', `${window.location.pathname}${window.location.search}#studio`);
+historyReady = true;
+function handleBackNavigation() {
+  if (toolsDrawer?.open) { setToolsOpen(false, false); return true; }
+  if (driveOrbitOpen) { closeDriveOrbit(); return true; }
+  if (activeView !== 'studio') { showView('studio', {push: false}); return true; }
+  return false;
+}
+window.addEventListener('popstate', () => { handleBackNavigation(); });
+
+// Tauri Android can deliver the system back gesture as a close request
+// instead of browser history. Install the guard only in the native shell;
+// the browser harness safely falls back to popstate.
+async function installNativeBackGuard() {
+  try {
+    await getCurrentWindow().onCloseRequested(event => {
+      if (handleBackNavigation()) event.preventDefault();
+    });
+  } catch {
+    // Web preview/CI has no Tauri window bridge; popstate remains covered.
+  }
+}
+void installNativeBackGuard();
 document.addEventListener('click', event => {
   const link = (event.target as Element).closest<HTMLAnchorElement>('a[href]');
   if (!link) return; event.preventDefault();
