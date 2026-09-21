@@ -15,6 +15,20 @@ const originalProviderParent = $('provider-details').parentElement;
 let currentState = null;
 let workspaceUrl = null;
 let busy = false;
+const providerTestRequestStorageKey = 'blackhole.providerTestRequestId';
+let providerTestRequestId = '';
+try { providerTestRequestId = sessionStorage.getItem(providerTestRequestStorageKey) || ''; } catch {}
+function providerTestRequest() {
+  if (!providerTestRequestId) {
+    providerTestRequestId = crypto.randomUUID();
+    try { sessionStorage.setItem(providerTestRequestStorageKey, providerTestRequestId); } catch {}
+  }
+  return providerTestRequestId;
+}
+function clearProviderTestRequest() {
+  providerTestRequestId = '';
+  try { sessionStorage.removeItem(providerTestRequestStorageKey); } catch {}
+}
 
 for (const [provider, label] of providerLabels) {
   const details = document.createElement('details');
@@ -307,7 +321,7 @@ $('provider-test-form').addEventListener('submit', async event => {
   message();
   setBusy(true, $('provider-test-button'), '모델을 한 번 호출하고 있습니다');
   try {
-    const result = await api('/setup/provider-test', {pairingKey: $('provider-test-pairing-key').value});
+    const result = await api('/setup/provider-test', {pairingKey: $('provider-test-pairing-key').value, requestId: providerTestRequest()});
     $('provider-test-pairing-key').value = '';
     const live = result.liveVerification || {};
     const status = typeof live.status === 'string' ? live.status : 'REQUESTED';
@@ -317,6 +331,7 @@ $('provider-test-form').addEventListener('submit', async event => {
         ? '합성 전송 결과입니다. 실제 모델 응답으로 표시하지 않았습니다.'
         : `연결 시험 상태: ${status}. 결과를 다시 확인해 주세요.`;
     $('provider-test-result').hidden = false;
+    if (!['REQUESTED', 'OUTCOME_UNKNOWN', 'RUNNING'].includes(status)) clearProviderTestRequest();
   } catch (error) { message(error.message, true); $('retry-state').hidden = false; }
   finally { setBusy(false, $('provider-test-button'), '실제 모델 1회 호출'); }
 });

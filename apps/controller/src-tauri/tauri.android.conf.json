@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "BLACKHOLE Smoke",
+  "identifier": "kr.yeno.controller.smoke",
+  "bundle": {
+    "android": {
+      "versionCode": 2001
+    }
+  }
+}
