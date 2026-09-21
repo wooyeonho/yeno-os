@@ -487,11 +487,28 @@ for (const button of document.querySelectorAll<HTMLButtonElement>('[data-native-
 
 history.replaceState({blackholeView: 'studio'}, '', `${window.location.pathname}${window.location.search}#studio`);
 historyReady = true;
-window.addEventListener('popstate', () => {
-  if (toolsDrawer?.open) { setToolsOpen(false, false); return; }
-  if (driveOrbitOpen) { closeDriveOrbit(); return; }
-  if (activeView !== 'studio') showView('studio', {push: false});
-});
+function handleBackNavigation() {
+  if (toolsDrawer?.open) { setToolsOpen(false, false); return true; }
+  if (driveOrbitOpen) { closeDriveOrbit(); return true; }
+  if (activeView !== 'studio') { showView('studio', {push: false}); return true; }
+  return false;
+}
+window.addEventListener('popstate', () => { handleBackNavigation(); });
+
+// Tauri Android can deliver the system back gesture as a close request
+// instead of browser history. Install the guard only in the native shell;
+// the browser harness safely falls back to popstate.
+async function installNativeBackGuard() {
+  try {
+    const {getCurrentWindow} = await import('@tauri-apps/api/window');
+    await getCurrentWindow().onCloseRequested(event => {
+      if (handleBackNavigation()) event.preventDefault();
+    });
+  } catch {
+    // Web preview/CI has no Tauri window bridge; popstate remains covered.
+  }
+}
+void installNativeBackGuard();
 document.addEventListener('click', event => {
   const link = (event.target as Element).closest<HTMLAnchorElement>('a[href]');
   if (!link) return; event.preventDefault();
