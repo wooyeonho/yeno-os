@@ -16,6 +16,19 @@ target = root / 'build-artifacts/android'
 target.mkdir(parents=True, exist_ok=True)
 entries = []
 config = json.loads((root / 'apps/controller/src-tauri/tauri.conf.json').read_text())
+# Tauri merges platform-specific config during Android initialization. Read the
+# same override here so artifact evidence validates the package actually built,
+# including smoke builds that must be installable beside the production package.
+android_config_path = root / 'apps/controller/src-tauri/tauri.android.conf.json'
+if android_config_path.exists():
+    android_config = json.loads(android_config_path.read_text())
+    if isinstance(android_config.get('identifier'), str):
+        config['identifier'] = android_config['identifier']
+    if isinstance(android_config.get('version'), str):
+        config['version'] = android_config['version']
+    android_bundle = android_config.get('bundle', {}).get('android', {})
+    if isinstance(android_bundle.get('versionCode'), int):
+        config.setdefault('bundle', {}).setdefault('android', {})['versionCode'] = android_bundle['versionCode']
 sdk_tools = Path(os.environ['ANDROID_HOME']) / 'build-tools/35.0.0'
 # Public certificate parsed from the original delivered APK, whose file hash
 # was independently rechecked. This is not a signing key.
