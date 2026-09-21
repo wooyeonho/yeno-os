@@ -1,0 +1,50 @@
+name: BLACKHOLE Windows resident verification
+on:
+  push:
+    branches: [codex, 'blackhole/**']
+    paths:
+      - '.github/workflows/windows-resident.yml'
+      - 'scripts/blackhole-resident.ps1'
+      - 'scripts/test-resident-windows.ps1'
+      - 'runtime/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-resident-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install locked runtime dependencies without lifecycle scripts
+        shell: powershell
+        run: npm ci --prefix runtime --ignore-scripts --no-audit --no-fund
+      - name: Resident Node lifecycle and failure-path tests on Windows
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP/blackhole-resident-evidence" | Out-Null
+          node --test runtime/test/resident-worker.test.mjs runtime/test/resident-runtime.test.mjs 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/blackhole-resident-evidence/node-tests.txt"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Windows PowerShell 5.1 parser and real scheduled-task acceptance
+        shell: powershell
+        run: |
+          & ./scripts/test-resident-windows.ps1 -Root $env:GITHUB_WORKSPACE -EvidencePath "$env:RUNNER_TEMP/blackhole-resident-evidence/windows-acceptance.json"
+          if (-not $?) { exit 1 }
+      - name: Upload only sanitized verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blackhole-windows-resident-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/blackhole-resident-evidence/node-tests.txt
+            ${{ runner.temp }}/blackhole-resident-evidence/windows-acceptance.json
+          retention-days: 7
+          if-no-files-found: warn
