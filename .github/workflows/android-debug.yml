@@ -3,7 +3,7 @@ run-name: Android APK · ${{ github.event_name }} · ${{ github.event_name == 'w
 
 on:
   push:
-    branches: [codex, blackhole/android-live-voice-claude-20260917, blackhole/mobile-ux-claude-20260917, blackhole/living-core-v1-claude-20260918, blackhole/memory-phase-b-claude-20260918, blackhole/phone-live-codex-20260921, blackhole/provider-test-safety-apk-smoke-codex-20260921]
+    branches: [codex, blackhole/android-live-voice-claude-20260917, blackhole/mobile-ux-claude-20260917, blackhole/living-core-v1-claude-20260918, blackhole/memory-phase-b-claude-20260918, blackhole/phone-live-codex-20260921, blackhole/provider-test-safety-apk-smoke-codex-20260921, blackhole/mobile-tools-back-codex-20260921]
     paths:
       - 'apps/controller/**'
       - 'runtime/public/studio-view.mjs'
