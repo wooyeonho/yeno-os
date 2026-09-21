@@ -27,3 +27,13 @@ test('resident launcher keeps the local service loopback-only and never prints s
   assert.match(script, /RemoveSecret/);
   assert.match(script, /Unregister-ScheduledTask/);
 });
+
+
+test('resident launcher exposes an owner-controlled phone bridge without opening the core publicly', () => {
+  assert.match(script, /phone-install/);
+  assert.match(script, /BLACKHOLE Phone Bridge/);
+  assert.match(script, /tailscale/i);
+  assert.match(script, /--https=9443/);
+  assert.match(script, /YENO_ALLOWED_HOSTS/);
+  assert.match(script, /127\.0\.0\.1:8790/);
+});

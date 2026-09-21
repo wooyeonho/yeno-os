@@ -5,7 +5,7 @@
 
 [CmdletBinding()]
 param(
-  [ValidateSet('install', 'uninstall', 'status', 'run')]
+  [ValidateSet('install', 'uninstall', 'status', 'run', 'phone-install', 'phone-uninstall', 'phone-run')]
   [string]$Action = 'run',
   [string]$Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
   [switch]$RemoveSecret
@@ -18,6 +18,8 @@ $DataDir = Join-Path $env:LOCALAPPDATA 'BLACKHOLE\data'
 $SecretDir = Join-Path $env:LOCALAPPDATA 'BLACKHOLE\secrets'
 $TokenFile = Join-Path $SecretDir 'pairing.token'
 $ScriptPath = Join-Path $PSScriptRoot 'blackhole-resident.ps1'
+$PhoneTaskName = 'BLACKHOLE Phone Bridge'
+$PhoneHostFile = Join-Path $DataDir 'phone-host.txt'
 
 function Assert-Node20 {
   $node = Get-Command node -ErrorAction SilentlyContinue
@@ -100,6 +102,8 @@ function Run-Core {
   }
   Ensure-Directory $DataDir
   # The service entrypoint reads the token file and never prints its value.
+  $phoneHost = Read-PhoneHost
+  if ($phoneHost) { $env:YENO_ALLOWED_HOSTS = $phoneHost } else { Remove-Item Env:YENO_ALLOWED_HOSTS -ErrorAction SilentlyContinue }
   $env:YENO_TOKEN_FILE = $TokenFile
   $env:YENO_DATA_DIR = $DataDir
   # Loopback is intentional. Remote/phone access is a separate, owner-configured
@@ -115,6 +119,189 @@ function Run-Core {
     Pop-Location
   }
   exit $exitCode
+}
+
+function Get-TailscalePath {
+  $candidates = @(
+    (Join-Path ($env:ProgramFiles ?? 'C:\Program Files') 'Tailscale\tailscale.exe'),
+    'tailscale.exe'
+  )
+  foreach ($candidate in $candidates) {
+    $probe = & $candidate version 2>$null
+    if ($LASTEXITCODE -eq 0) { return $candidate }
+  }
+  throw 'Tailscale is not installed or not on PATH. Install and sign in to Tailscale before enabling phone access.'
+}
+
+function Get-TailscaleInfo {
+  $tailscale = Get-TailscalePath
+  $raw = & $tailscale status --json 2>$null
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Tailscale status could not be read. Open Tailscale and connect this Windows account first.'
+  }
+  try { $status = $raw | ConvertFrom-Json } catch { throw 'Tailscale returned invalid status JSON.' }
+  if ($status.BackendState -ne 'Running') {
+    throw 'Tailscale is not running. Sign in and connect this device first.'
+  }
+  $dns = [string]$status.Self.DNSName
+  $dns = $dns.TrimEnd('.')
+  if ($dns -notmatch '^[a-z0-9][a-z0-9.-]+\.ts\.net
+  $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+  $info = if ($task) { Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction SilentlyContinue } else { $null }
+  [pscustomobject]@{
+    taskName = $TaskName
+    taskState = if ($task) { [string]$task.State } else { 'NotRegistered' }
+    lastRunTime = if ($info) { $info.LastRunTime } else { $null }
+    lastTaskResult = if ($info) { $info.LastTaskResult } else { $null }
+    nextRunTime = if ($info) { $info.NextRunTime } else { $null }
+    tokenFilePresent = Test-Path -LiteralPath $TokenFile -PathType Leaf
+    dataDirectory = $DataDir
+    dataDirectoryPresent = Test-Path -LiteralPath $DataDir -PathType Container
+    networkBinding = '127.0.0.1'
+    phoneTaskName = $PhoneTaskName
+    phoneHostFilePresent = Test-Path -LiteralPath $PhoneHostFile -PathType Leaf
+  } | Format-List
+}
+
+function Uninstall-ResidentTask {
+  Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+  Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+  if ($RemoveSecret -and (Test-Path -LiteralPath $TokenFile -PathType Leaf)) {
+    Remove-Item -LiteralPath $TokenFile -Force
+    Write-Output 'Pairing token removed. Runtime data was preserved.'
+  } else {
+    Write-Output 'Scheduled task removed. Pairing token and runtime data were preserved.'
+  }
+}
+
+switch ($Action) {
+  'install' {
+    Assert-Node20
+    Ensure-Directory $DataDir
+    Ensure-Token
+    Register-ResidentTask
+    Start-ScheduledTask -TaskName $TaskName
+    Write-Output "BLACKHOLE resident core installed for the current Windows user."
+    Write-Output "Task: $TaskName"
+    Write-Output "Data: $DataDir"
+    Write-Output 'Binding: 127.0.0.1 (remote access is not opened automatically).'
+  }
+  'uninstall' { Uninstall-ResidentTask }
+  'status' { Show-ResidentStatus }
+  'run' { Run-Core }
+  'phone-install' { Install-PhoneBridge }
+  'phone-uninstall' { Uninstall-PhoneBridge }
+  'phone-run' { Run-PhoneBridge }
+}
+) {
+    throw 'Tailscale MagicDNS name is unavailable. Enable MagicDNS in the owner-controlled tailnet.'
+  }
+  return [pscustomobject]@{ Path = $tailscale; DnsName = $dns }
+}
+
+function Read-PhoneHost {
+  if (-not (Test-Path -LiteralPath $PhoneHostFile -PathType Leaf)) { return '' }
+  $value = [System.IO.File]::ReadAllText($PhoneHostFile).Trim()
+  if ($value -notmatch '^[a-z0-9][a-z0-9.-]+\.ts\.net:9443
+  $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+  $info = if ($task) { Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction SilentlyContinue } else { $null }
+  [pscustomobject]@{
+    taskName = $TaskName
+    taskState = if ($task) { [string]$task.State } else { 'NotRegistered' }
+    lastRunTime = if ($info) { $info.LastRunTime } else { $null }
+    lastTaskResult = if ($info) { $info.LastTaskResult } else { $null }
+    nextRunTime = if ($info) { $info.NextRunTime } else { $null }
+    tokenFilePresent = Test-Path -LiteralPath $TokenFile -PathType Leaf
+    dataDirectory = $DataDir
+    dataDirectoryPresent = Test-Path -LiteralPath $DataDir -PathType Container
+    networkBinding = '127.0.0.1'
+  } | Format-List
+}
+
+function Uninstall-ResidentTask {
+  Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+  Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+  if ($RemoveSecret -and (Test-Path -LiteralPath $TokenFile -PathType Leaf)) {
+    Remove-Item -LiteralPath $TokenFile -Force
+    Write-Output 'Pairing token removed. Runtime data was preserved.'
+  } else {
+    Write-Output 'Scheduled task removed. Pairing token and runtime data were preserved.'
+  }
+}
+
+switch ($Action) {
+  'install' {
+    Assert-Node20
+    Ensure-Directory $DataDir
+    Ensure-Token
+    Register-ResidentTask
+    Start-ScheduledTask -TaskName $TaskName
+    Write-Output "BLACKHOLE resident core installed for the current Windows user."
+    Write-Output "Task: $TaskName"
+    Write-Output "Data: $DataDir"
+    Write-Output 'Binding: 127.0.0.1 (remote access is not opened automatically).'
+  }
+  'uninstall' { Uninstall-ResidentTask }
+  'status' { Show-ResidentStatus }
+  'run' { Run-Core }
+}
+) {
+    throw "Invalid phone host file: $PhoneHostFile"
+  }
+  return $value
+}
+
+function Write-PhoneHost {
+  $info = Get-TailscaleInfo
+  Ensure-Directory $DataDir
+  $value = '{0}:9443' -f $info.DnsName
+  [System.IO.File]::WriteAllText($PhoneHostFile, $value, (New-Object System.Text.UTF8Encoding($false)))
+  return [pscustomobject]@{ Info = $info; Host = $value }
+}
+
+function Register-PhoneTask {
+  $current = Get-TaskPrincipal
+  $powershell = (Get-Command powershell.exe -ErrorAction Stop).Source
+  $safeScript = $ScriptPath.Replace('"', '\"')
+  $safeRoot = $Root.Replace('"', '\"')
+  $arguments = '-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $safeScript + '" -Action phone-run -Root "' + $safeRoot + '"'
+  $taskAction = New-ScheduledTaskAction -Execute $powershell -Argument $arguments
+  $taskTrigger = New-ScheduledTaskTrigger -AtLogOn -User $current
+  $taskSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1)
+  $taskPrincipal = New-ScheduledTaskPrincipal -UserId $current -LogonType InteractiveToken -RunLevel Limited
+  Register-ScheduledTask -TaskName $PhoneTaskName -Action $taskAction -Trigger $taskTrigger -Settings $taskSettings -Principal $taskPrincipal -Description 'BLACKHOLE owner Tailscale phone bridge (loopback core only)' -Force | Out-Null
+}
+
+function Install-PhoneBridge {
+  if (-not (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue)) {
+    throw 'Install the BLACKHOLE Core task first.'
+  }
+  $phone = Write-PhoneHost
+  Register-PhoneTask
+  # Restart only the existing core so it reads the allowlisted Tailscale host.
+  Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+  Start-ScheduledTask -TaskName $TaskName
+  Start-ScheduledTask -TaskName $PhoneTaskName
+  Write-Output "Phone bridge enabled: https://$($phone.Host)"
+  Write-Output 'Install/sign in to Tailscale on the Android phone, then use this HTTPS origin in the controller.'
+}
+
+function Uninstall-PhoneBridge {
+  Stop-ScheduledTask -TaskName $PhoneTaskName -ErrorAction SilentlyContinue
+  Unregister-ScheduledTask -TaskName $PhoneTaskName -Confirm:$false -ErrorAction SilentlyContinue
+  if (Test-Path -LiteralPath $PhoneHostFile -PathType Leaf) { Remove-Item -LiteralPath $PhoneHostFile -Force }
+  Write-Output 'Phone bridge task removed. Other Tailscale Serve configuration was not changed.'
+}
+
+function Run-PhoneBridge {
+  $info = Get-TailscaleInfo
+  $hostValue = Read-PhoneHost
+  $expected = '{0}:9443' -f $info.DnsName
+  if ($hostValue -ne $expected) {
+    throw 'Phone host changed or is not registered. Run -Action phone-install interactively.'
+  }
+  & $info.Path serve '--https=9443' 'http://127.0.0.1:8790'
+  exit $LASTEXITCODE
 }
 
 function Show-ResidentStatus {
