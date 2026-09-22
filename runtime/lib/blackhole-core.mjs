@@ -128,6 +128,11 @@ function validateHeartbeatEntry(entry) {
 // never real, a shadow job id that never existed, a dominant drive that
 // disagrees with the mission quest's own real driveId) fails closed exactly
 // like every other cross-referenced record in this store.
+// A "shadow" job is either a project-bot job (botAssignment, project-bots.mjs)
+// or a Shadow Army job (shadowAssignment, shadow-army.mjs). Both are real
+// durable jobs; neither is counted from a decorative field.
+const isShadowJob = (job) => Boolean(job && (job.botAssignment || job.shadowAssignment));
+
 export function validateCoreState(core, state) {
   if (!exactKeys(core, CORE_FIELDS)) throw new BlackholeCoreError('Invalid BlackholeCoreState shape');
   if (core.schemaVersion !== CORE_SCHEMA_VERSION) throw new BlackholeCoreError('Unsupported BlackholeCoreState schemaVersion');
@@ -146,7 +151,7 @@ export function validateCoreState(core, state) {
     throw new BlackholeCoreError('Core dominantDriveId must equal the mission quest\'s own driveId');
   }
   if (!Array.isArray(core.activeShadowIds) || core.activeShadowIds.length > MAX_ACTIVE_SHADOWS) throw new BlackholeCoreError('Invalid Core activeShadowIds');
-  for (const id of core.activeShadowIds) if (!(state.jobs ?? []).some(j => j.id === id && j.botAssignment)) throw new BlackholeCoreError('Core activeShadowIds references a non-shadow job');
+  for (const id of core.activeShadowIds) if (!(state.jobs ?? []).some(j => j.id === id && isShadowJob(j))) throw new BlackholeCoreError('Core activeShadowIds references a non-shadow job');
   if (new Set(core.activeShadowIds).size !== core.activeShadowIds.length) throw new BlackholeCoreError('Core activeShadowIds contains a duplicate');
   validateArtifactRef(core.recentArtifactRef, state);
   // No durable outcome-verification verdict store exists in this codebase
@@ -198,10 +203,12 @@ export function evaluateHeartbeat(previousCore, state, {at, trigger = 'state_cha
   // nothing live to attribute a drive to.
   const dominantDriveId = mission?.driveId ?? null;
 
-  // Active shadows: real running project-bot jobs (project-bots.mjs), not a
-  // decorative count. Deliberately excludes queued/paused - "active" means
-  // actually running right now.
-  const activeShadowIds = jobs.filter(j => j.botAssignment && j.status === 'running').map(j => j.id).slice(0, MAX_ACTIVE_SHADOWS);
+  // Active shadows: real running project-bot jobs (project-bots.mjs) AND
+  // real running Shadow Army jobs (shadow-army.mjs), not a decorative count.
+  // Deliberately excludes queued/paused - "active" means actually running
+  // right now. (F03: shadowAssignment jobs used to be dropped here, so a
+  // working Shadow was invisible on Home.)
+  const activeShadowIds = jobs.filter(j => isShadowJob(j) && j.status === 'running').map(j => j.id).slice(0, MAX_ACTIVE_SHADOWS);
 
   // Recent artifact: the most recently updated completed quest job that
   // actually produced an artifact - quests.mjs's own "artifact_recorded",

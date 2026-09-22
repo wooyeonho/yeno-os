@@ -144,6 +144,16 @@ test('active shadows are only real running project-bot jobs, never queued/paused
   validateCoreState(core, state);
 });
 
+test('F03: running Shadow Army jobs (shadowAssignment) count as active shadows exactly like project-bot jobs (botAssignment), and validation accepts them', () => {
+  const bot = job(randomUUID(), {status: 'running', botAssignment: {profile: 'primary'}});
+  const shadow = job(randomUUID(), {status: 'running', shadowAssignment: {missionId: randomUUID(), role: 'researcher'}});
+  const pausedShadow = job(randomUUID(), {status: 'paused', shadowAssignment: {missionId: randomUUID(), role: 'builder'}});
+  const state = baseState({jobs: [bot, shadow, pausedShadow]});
+  const {core} = evaluateHeartbeat(initialCoreState(), state, {at: at()});
+  assert.deepEqual([...core.activeShadowIds].sort(), [bot.id, shadow.id].sort(), 'a running shadowAssignment job must not vanish from the home count');
+  validateCoreState(core, state);
+});
+
 test('recentArtifactRef is only the most recently updated completed quest job that actually carries an artifact - and is never called verified', () => {
   const olderJobId = randomUUID(), olderQuestId = randomUUID();
   const newerJobId = randomUUID(), newerQuestId = randomUUID();
