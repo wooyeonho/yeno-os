@@ -168,3 +168,30 @@ git checkout blackhole/r2-verify-shadow-ui-claude-20260920
 npm test
 ```
 
+
+
+---
+
+## 2026-09-23 (Claude, Cowork) — G1 통합 후보 완료 / 재개 기록 (§14)
+
+### 현재 위치
+- 브랜치 `blackhole/g1-integration-claude-20260922` (base PR #55 head `84d6f27c`), 로컬 전용 — **원격 push 안 됨**(이 VM에 GitHub 자격증명 없음: `could not read Username`). 작업 트리 clean(이 문서 커밋 직전 기준).
+- 커밋(오래된 순): `fd75003` F03 · `4068f5e` F05 · `7e5cdbb` F04 · `1624721` F06 · `ceef5bd` #39 STAGE2 · `771d1c2` #39 STAGE3 · `0730614` #22+fabric 브리지 · `093bd7e` G1 통합 검사 · `59bd320` 점검 도구 · (이 커밋) docs.
+- 설계 기록: `docs/BLACKHOLE_G1_DESIGN_RECORDS_20260923.md`. 요구 원장: `docs/BLACKHOLE_REQUIREMENTS_LEDGER_20260923.md`.
+
+### 이번 세션에 실제로 실행한 검사 (전부 노트북 Cowork VM, 합성 transport, provider 키·실기기 없음)
+- 전체 회귀(후보 `093bd7e`, 130개 파일): tests 1019 · pass 1012 · fail 0 · skipped 7(video runtime env-gate: PIL/fonttools/Nanum 없음). 이후 커밋 `59bd320`(점검 도구+package.json scripts)은 자체 검사 3/3 통과; 전체 재실행은 하지 않음.
+- 재현→수정: F03(23중 1 실패→통과), F05(수정 전 server.mjs stash로 3중 2 실패→3/3).
+- G1 게이트 `g1-living-loop-integration.test.mjs` 2/2: 명령→결정→임무→검증→milestone/memory/outbox/XP→Home→재시작 동일, 부정 사례 포함.
+- 점검 도구: isolated PASS(프로세스 재시작 포함), basic PASS vs 실제 Koyeb(health 200, anon 401), live BLOCKED(토큰 없음).
+
+### 차단(외부 게이트) — 실행자는 해결 불가
+1. **GitHub push/Draft PR/CI**: 자격증명 필요. 소유자 명령 1개로 해결: `git push -u origin blackhole/g1-integration-claude-20260922` (Windows Git, 본인 계정). 이후 Draft PR: GitHub 웹 `compare` 또는 `gh pr create --draft --base main --head blackhole/g1-integration-claude-20260922`. CI(`verify`/`android`/`windows`)는 push되면 해당 SHA에서 돈다 — #55의 초록 체크를 이 후보 증거로 재사용하지 않음.
+2. **YENO_TOKEN**: `npm run check:live`(runtime/)를 소유자 터미널에서 `$env:YENO_TOKEN`만 설정한 프로세스로 실행 → 5개 필드 회신. 채팅에 토큰 금지.
+3. **provider 키**(R07/R09 live): 없으면 `providerMissing` 유지.
+4. **실기기**(R30/R31): 후보 SHA APK는 push→CI 후에만 존재.
+
+### 다음 정확한 재개 작업
+- push 게이트가 열리면: CI 결과·아티팩트 SHA-256을 manifest로 기록(§10), 실패 시 재현→수정.
+- 코드 작업(키 불필요, 바로 가능): F07(`/api/voice` 기억 회수+의도→기존 작업 계약), F14(비용 총액 한도), F13(Obsidian exporter 01_DRAFTS 규칙), F09(코어/배포 SHA 클라이언트 표시). 순서 제안: F07 → F14 → F09 → F13.
+- 재실행 금지 외부 효과: 없음(이 세션은 외부 발송·결제·배포·삭제를 하지 않았고, Koyeb에는 GET health/state만 보냄).
