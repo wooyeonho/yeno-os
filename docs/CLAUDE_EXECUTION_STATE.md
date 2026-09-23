@@ -195,7 +195,7 @@ APK 없음(backend+web only). 개발자 워커 CI 아티팩트: push 후 실제 
 **실제 검사**: `runtime/test/jarvis-shadow-closed-loop.test.mjs`(신규 2개, `shadow-army.test.mjs`와 동일한 합성 전송 방식) — (1) project 없는 목표와 project 있는 목표를 함께 저장 → "지금 가장 먼저 해야 할 일을 알아서 진행해" → 실제 5-job Shadow Army 임무가 project 목표에 배정됨(`job` 아님) 확인 → scout/researcher/builder/deterministic verify/semantic verify 전부 완료까지 실제로 기다림 → 실제 프로젝트 마일스톤 + 실제 Memory Event 생성 확인 → Homunculus Heartbeat(Stage 2)의 `currentQuest`가 임무 진행 중엔 이미 배정된 project 목표를 후보에서 제외하고 남은 목표를 가리킴을 확인 → 다음 "정해줘"(재계획)가 완료된 목표를 다시 실행하지 않고 남은 목표(project 없음이므로 기존 단일 job 경로)를 정확히 고름을 확인 → 재시작 후 임무·마일스톤·Memory Event·Core 상태 전부 보존 확인. (2) project 목표에 이미 활성 Shadow 임무가 있으면 "정해줘"가 두 번째 임무를 만들지 않고 정직하게 409(`선택할 수 있는 저장된 목표가 없습니다`)를 반환함을 확인.
 - 영향받는 기존 시험(변경 없이 재실행, 전부 pass): `decide.test.mjs`(10) · `jarvis-shadow-bridge.test.mjs`(3) · `shadow-army.test.mjs`(9) · `quest-api.test.mjs`(4) · `quests.test.mjs`(12) · `quest-autorun-boundary.test.mjs`(2) · `command-request.test.mjs`(10) · `voice-ui.test.mjs`(9) · `closed-loop.test.mjs`(5) · `phone-acceptance.test.mjs`(3, project 없는 목표 경로라 동작 완전히 동일).
 - `npm test`(전체 975개 = 973 + 신규 2개): **945 pass · 23 fail(이름까지 기존과 정확히 동일) · 7 skip** — 신규 실패 0개.
-- exact-head CI(developer-worker): push 후 실제 조회해 기록(placeholder 아님).
+- exact-head CI(developer-worker): **실제 조회 결과** — run #112(`id:35521509812`), head `9ce7c97`, `status:completed`, `conclusion:success`. PR #39는 이후 docs 전용 커밋(`3137525`)까지 clean·mergeable·미병합·리뷰 코멘트 없음(2026-09-23 재확인).
 
 ### STRUCTURAL/SYNTHETIC/LIVE/PHYSICAL
 STRUCTURAL·SYNTHETIC: 위 자동 시험(합성 provider 전송). LIVE: 해당 없음. PHYSICAL: 해당 없음(`apps/controller` 미변경).
@@ -253,4 +253,16 @@ Product Hunt/Reddit/X/Threads/Instagram 연동: owner의 명시적 계정 연결
 
 ### NEXT SINGLE ACTION
 지시 §2("승인이 필요 없는 다음 개발·테스트·문서·sandbox 단계는 계속 진행한다")에 따라, 계정 연결이 필요 없는 MCP Registry 공개 카탈로그 읽기를 `ecosystem.mjs`와 동일한 읽기 전용·미설치·미실행 원칙으로 별도 slice로 설계·구현한다.
+
+### 실제 확인한 API 사양(추측 아님 — WebSearch+실제 curl로 직접 검증, 2026-09-20)
+공식 MCP Registry는 인증 없이 공개 읽기가 가능하다. `curl https://registry.modelcontextprotocol.io/v0.1/servers?limit=2`와 `?search=github`를 실제로 호출해 확인한 실제 응답 모양:
+```json
+{"servers":[{"server":{"$schema":"...","name":"ai.smithery/smithery-ai-github","description":"...","repository":{"url":"https://github.com/...","source":"github"},"version":"1.0.0","remotes":[{"type":"streamable-http","url":"..."}]},"_meta":{"io.modelcontextprotocol.registry/official":{"status":"active","statusChangedAt":"...","publishedAt":"...","updatedAt":"...","isLatest":true}}}],"metadata":{"nextCursor":"...","count":2}}
+```
+- 베이스 URL: `https://registry.modelcontextprotocol.io`(운영), `https://staging.registry.modelcontextprotocol.io`(스테이징) — 둘 다 실제 프로젝트 소유가 아닌 공개 제3자 서비스이므로, 붙일 때 `ecosystem.mjs`의 GitHub API 호출과 동일하게 응답 스키마를 엄격히 검증(모르는 필드·형식 오류는 실패 폐쇄)해야 한다.
+- `GET /v0.1/servers?search=<질의>&limit=<n>` — `search`는 이름 부분일치, `limit`/커서 기반 페이지네이션(`metadata.nextCursor`), `updated_since`(RFC3339)로 증분 조회 가능.
+- `server.name`(고유), `server.title`(선택), `server.description`, `server.version`, `server.repository.url`/`source`(있을 때만), `server.remotes[].url/type`(원격 엔드포인트, 있을 때만) — `sources.mjs`의 `url`(repository.url 있을 때)/`sourceLocator`(없을 때, name 사용)·`title`·`summary`(description)·`aliases`([name])로 그대로 매핑 가능.
+- `_meta["io.modelcontextprotocol.registry/official"].status/publishedAt/updatedAt/isLatest` — 레지스트리 자체의 등재 상태일 뿐, YENO가 그 서버를 검토·설치했다는 뜻이 아니다(반드시 `readingStatus:'unread'`, `decision:'pending'`으로 시작).
+
+다음 세션이 이 사양으로 바로 구현을 시작할 수 있도록 기록한다 — 이번 세션은 API 존재·모양 확인까지만 하고 코드는 작성하지 않았다(같은 커밋 묶음에 세 번째 신규 기능을 무리하게 쌓지 않기 위한 의도적 경계).
 
