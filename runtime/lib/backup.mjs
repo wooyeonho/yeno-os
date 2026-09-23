@@ -33,6 +33,7 @@ import {initialAutopilot,validateAutopilot,validateAutopilotJob} from './autopil
 import {initialCoreState,validateCoreState,evaluateHeartbeat,createCoreIdentity,deriveHomunculusFields} from './blackhole-core.mjs';
 import {validateMemoryEvents} from './memory-events.mjs';
 import {validateOutbox} from './memory-sync-outbox.mjs';
+import {initialPersistentBots, validatePersistentBots} from './persistent-bots.mjs';
 
 export const BACKUP_MAX_PLAINTEXT_BYTES = 16 * 1024 * 1024;
 export const BACKUP_MAX_ARCHIVE_BYTES = BACKUP_MAX_PLAINTEXT_BYTES + 36;
@@ -66,7 +67,7 @@ function memories(value) {
   }
 }
 function validateState(state) {
-  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop', 'selfTests', 'runtimeBoots', 'deviceAcceptances', 'outcomeConnectors', 'outcomeReadings', 'outcomeEvidence', 'capabilityInbox', 'blackholeCore', 'memoryEvents', 'memorySyncOutbox', 'jevShadowLog', 'grokQuarantined', 'grokMultiAgentApproval'], STATE_KEYS);
+  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop', 'selfTests', 'runtimeBoots', 'deviceAcceptances', 'outcomeConnectors', 'outcomeReadings', 'outcomeEvidence', 'capabilityInbox', 'blackholeCore', 'memoryEvents', 'memorySyncOutbox', 'jevShadowLog', 'grokQuarantined', 'grokMultiAgentApproval', 'persistentBots'], STATE_KEYS);
   if (Object.hasOwn(state, 'runtimeBoots')) validateBootRecords(state.runtimeBoots);
   if (Object.hasOwn(state, 'deviceAcceptances')) validateDeviceAcceptances(state.deviceAcceptances);
   if (Object.hasOwn(state, 'outcomeConnectors')) validateConnectors(state.outcomeConnectors);
@@ -117,6 +118,9 @@ function validateState(state) {
   if (typeof state.grokQuarantined !== 'boolean') fail('invalid grokQuarantined flag');
   if (!Object.hasOwn(state, 'grokMultiAgentApproval')) state.grokMultiAgentApproval = null;
   validateGrokMultiAgentApproval(state.grokMultiAgentApproval);
+  // Persistent bot roster (#22): same fail-closed shape check the store applies on load.
+  if (!Object.hasOwn(state, 'persistentBots')) state.persistentBots = initialPersistentBots();
+  validatePersistentBots(state.persistentBots);
   if (!Array.isArray(state.jobs) || !Array.isArray(state.snapshots) || !Array.isArray(state.events) || !record(state.requests) || !record(state.devices) || !record(state.artifacts)) fail('invalid state collections');
   const jobs = new Map(), references = new Set();
   for (const job of state.jobs) {
