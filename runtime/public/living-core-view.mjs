@@ -103,6 +103,18 @@ function recentItemHTML(core, memories) {
   return `<div class="living-recent empty"><span class="eyebrow">최근 활동</span><p>최근 결과물 없음</p></div>`;
 }
 
+
+// F09 - which core is this screen looking at. Read straight from the server's
+// own runtimeIdentity (source commit detected from deployment metadata or the
+// checkout, data dir name, deployment kind); nothing is inferred client-side,
+// and a missing value is shown as unknown rather than filled in.
+function identityFooterHTML(state) {
+  const id = state?.runtimeIdentity;
+  if (!id) return '';
+  const sha = typeof id.sourceCommit === 'string' ? id.sourceCommit.slice(0, 12) : '알 수 없음';
+  return `<p class="cockpit-fine living-identity" data-living-identity="${esc(id.sourceCommit ?? '')}">코어 ${esc(id.deployment ?? 'unknown')} · 소스 ${esc(sha)} · API v${esc(state?.apiVersion ?? '?')} · 데이터 ${esc(id.dataDirName ?? '?')}</p>`;
+}
+
 export function createLivingCoreView({root, onNavigate = () => {}}) {
   if (!root) throw new Error('Living Core에는 표시할 위치가 필요합니다.');
   root.classList.add('living-core');
@@ -125,6 +137,7 @@ export function createLivingCoreView({root, onNavigate = () => {}}) {
       ${signalRowHTML(core)}
       ${projectOrbitHTML(state?.projects)}
       ${recentItemHTML(core, state?.memories)}
+      ${identityFooterHTML(state)}
     `;
   }
 

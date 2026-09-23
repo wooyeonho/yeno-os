@@ -182,3 +182,15 @@ test('destroy() removes all content and stops responding to clicks', () => {
   assert.equal(h.root.innerHTML, '');
   h.dom.window.close();
 });
+
+test('F09: the home screen shows which core it is looking at from the server runtimeIdentity only, and shows unknown rather than inventing a value', () => {
+  const h = setup();
+  h.view.updateState({core: coreFixture(), apiVersion: '1', runtimeIdentity: {sourceCommit: '84d6f27c7d1c38fa4b0acaba466f8c631fdaf0d0', sourceCommitOrigin: 'git_ref', dataDirName: 'data', deployment: 'koyeb'}}, true);
+  assert.match(h.root.textContent, /코어 koyeb · 소스 84d6f27c7d1c · API v1 · 데이터 data/);
+  assert.equal(h.root.querySelector('[data-living-identity]').getAttribute('data-living-identity'), '84d6f27c7d1c38fa4b0acaba466f8c631fdaf0d0');
+  h.view.updateState({core: coreFixture(), apiVersion: '1', runtimeIdentity: {sourceCommit: null, sourceCommitOrigin: null, dataDirName: 'data', deployment: 'local'}}, true);
+  assert.match(h.root.textContent, /소스 알 수 없음/);
+  h.view.updateState({core: coreFixture()}, true);
+  assert.doesNotMatch(h.root.textContent, /코어 /, 'no identity block when the server did not send one');
+  h.close();
+});
