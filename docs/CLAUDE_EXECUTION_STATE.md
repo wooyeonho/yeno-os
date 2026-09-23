@@ -297,3 +297,16 @@ npm test
 - 이번 세션은 전체 회귀(`npm test`, 132개 파일·1000+ 테스트)를 device_bash의 180초 타임아웃 안에서 끝까지 실행하지 못했다 — 대신 `memory-embeddings.test.mjs` + provider/agent-provider-selection/desktop-provider-config 4개 파일(25/25 PASS)만 표적 재확인했다. 다음 재개에서 전체 회귀를 20개 묶음으로 나눠 재실행해 `not ok` 0건을 다시 확인하는 것을 권장한다.
 - `docs/BLACKHOLE_LE_SPEC_V3_AUDIT_20260923.md`에는 이 P2 메모리 작업에 정확히 대응하는 기존 행이 없다(A02 "검색"은 LE-01 검색 경로 자체를 가리키며 별개 개념) — 필요하면 다음 재개에서 신규 행을 추가할지 owner 판단이 필요하다.
 - push·Draft PR·원격 반영은 여전히 하지 않았다(로컬 커밋만, 지시대로).
+
+## §18 재개 기록 (2026-09-24, 3cc9ccc 기준 — device_bash 샌드박스 전체 회귀)
+
+`3cc9ccc` 체크아웃 그대로(코드 변경 없음) `runtime/test/*.test.mjs` 137개 파일 전체를 이 세션의 device_bash 샌드박스(사용자 실PC가 아니라 그 안의 격리된 Linux VM, bwrap)에서 개별 실행했다.
+
+### 결과
+- **126/137 파일 실행 완료, 951개 테스트 전부 pass, fail 0건.**
+- **11개 파일은 이 device_bash 샌드박스에서 응답 없이 멈춤(hang)** — 전부 `jsdom`(`createRequire(...)('jsdom')`)을 쓰는 뷰 테스트: `autopilot-ui`, `capability-ui`, `code-ui`, `desktop-ui`, `drive-orbit-ui`, `growth-ui`, `living-core-ui`, `project-universe-ui`, `shadow-army-ui`, `voice-ui`, `voice-view-live`. `TAP version 13` 한 줄만 찍힌 뒤 40~90초를 줘도 전혀 진행되지 않음 — jsdom 초기화가 이 중첩 샌드박스 VM에서 막히는 것으로 보이며(예: 이 VM에 없는 자원에 대한 접근), 코드 결함의 증거는 아니다. 같은 137개 파일 세트가 과거 세션 보고(§16/§17 이전, 실제 사용자 PC 또는 다른 실행 경로)에서는 "993~1026개 pass, 0 fail, 7 skip"로 전부 통과했다고 기록되어 있어, 이 11개 hang은 device_bash 샌드박스 고유의 환경 제약으로 판단한다.
+- **재현 가능한 실제 코드 결함(not ok)은 0건.** 처음에 15초/25초 가드로는 여유가 부족해 `TIMEOUT`으로 잘못 분류됐던 파일(`autopilot-api`, `code-sandbox`, `code-workshop`, `container-lease`, `f05-mission-memory-outbox`, `projects`, `runtime`, `semantic-verification`)은 40~90초로 재시도해 전부 pass로 확인됐다 — 진짜 hang이 아니라 이 VM이 단순히 느린 것이었다.
+
+### 남은 사항
+- jsdom 11개 파일의 실제 pass/fail은 **이 device_bash 샌드박스에서는 확인 불가**. 사용자 실PC의 PowerShell에서 `npm test` 또는 `node --test runtime/test/*-ui.test.mjs runtime/test/voice-view-live.test.mjs`를 직접 실행해 확인하는 것을 다음 재개 항목으로 남긴다(이 세션은 클립보드 붙여넣기 방식으로 실행은 가능하나, 결과가 길어 자동 캡처는 사용자 협조가 필요).
+- 코드 변경 없음 — 이 커밋은 순수 기록용.
