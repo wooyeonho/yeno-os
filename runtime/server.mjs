@@ -58,6 +58,7 @@ import {validateLedger as validateAndroidLedger} from '../scripts/android-releas
 import {createLiveSession,setupMessage,audioChunkMessage,audioStreamEndMessage,textTurnMessage,applyServerMessage,settleToolCall,toolResponseMessage,openTransition,setupSentTransition,closeTransition,LIVE_ENDPOINT} from './lib/gemini-live.mjs';
 import {isWebSocketUpgrade,acceptUpgrade} from './lib/live-ws.mjs';
 import {coreSummary,coreHomeSummary} from './lib/blackhole-core.mjs';
+import {shadowGrowthFromState} from './lib/shadow-growth.mjs';
 import {createMemoryEvent,addMemoryEvent,MemoryEventError} from './lib/memory-events.mjs';
 import {enqueue,applyOutcome,pendingItems,outboxSummary,MemorySyncError} from './lib/memory-sync-outbox.mjs';
 import {loadSupabaseMemoryConfig,createSupabaseAdapter} from './lib/memory-supabase-adapter.mjs';
@@ -375,7 +376,7 @@ export function createYenoServer(options={}) {
  // and why B/A/S report blocked (composition, intervention counts, and
  // externally-verified outcomes have no tracked evidence yet).
  function levelingById(engine){return Object.fromEntries(levelingHistoriesFromState(s,engine).map(h=>[h.skillId,h]));}
- function growthState(){return {capabilities:growthOverview(s.capabilities,'capability',{outcomesById:verifiedOutcomesByCapability(s,now()),levelingById:levelingById('capability')}),code:growthOverview(s.codeWorkshop,'code',{levelingById:levelingById('code')})};}
+ function growthState(){return {capabilities:growthOverview(s.capabilities,'capability',{outcomesById:verifiedOutcomesByCapability(s,now()),levelingById:levelingById('capability')}),code:growthOverview(s.codeWorkshop,'code',{levelingById:levelingById('code')}),shadow:shadowGrowthFromState(s)};}
  function codeMutation(action,b){
    if(!b.requestId)throw new HttpError(400,'Persistent requestId required');
    const fields={generate:['id','version','name','goal','fixtures','activate','provider'],repair:['id','goal','activate','provider'],github:['spec'],import:['manifest'],verify:['id','hash','activate'],run:['id','input'],activate:['id','hash'],disable:['id'],rollback:['id']}[action];

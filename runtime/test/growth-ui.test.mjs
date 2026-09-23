@@ -286,3 +286,23 @@ test('the growth screen renders real quest/decision/skill/ledger data from the a
   assert.match(after.root.textContent,/실제 확인된 성과/);
   after.view.destroy();after.dom.window.close();
 });
+
+test('F06: Shadow Army XP/level renders exactly the server-derived values, hides roles with no evidence, and never claims authority',()=>{
+  const h=setup();
+  const shadow={version:1,rules:{grantsAuthority:false},held:[],events:[],roles:[
+    {role:'scout',skillId:'shadow:scout',xp:0,level:0,nextLevelAt:10,verifiedMissions:0,failedMissions:0,heldMissions:0,lastVerifiedAt:null},
+    {role:'builder',skillId:'shadow:builder',xp:40,level:2,nextLevelAt:90,verifiedMissions:2,failedMissions:1,heldMissions:0,lastVerifiedAt:'2026-09-02T00:00:00.000Z'},
+    {role:'semanticVerifier',skillId:'shadow:semanticVerifier',xp:5,level:0,nextLevelAt:10,verifiedMissions:1,failedMissions:0,heldMissions:1,lastVerifiedAt:'2026-09-01T00:00:00.000Z'},
+  ]};
+  h.view.updateState(fixtureState({growth:{...fixtureState().growth,shadow}}),fixtureQuestData());
+  const rows=[...h.root.querySelectorAll('[data-shadow-role]')].map(el=>el.getAttribute('data-shadow-role'));
+  assert.deepEqual(rows,['builder','semanticVerifier'],'scout has no evidence and is not rendered');
+  assert.match(h.root.textContent,/Builder · 결과 작성/);
+  assert.match(h.root.textContent,/Lv\.2 · 40 XP · 다음 90 XP/);
+  assert.match(h.root.textContent,/검증 통과 2 · 실패 1/);
+  assert.match(h.root.textContent,/보류 1/);
+  assert.match(h.root.textContent,/레벨은 실행 권한이나 비용 한도를 늘리지 않습니다/);
+  h.view.updateState(fixtureState(),fixtureQuestData());
+  assert.match(h.root.textContent,/아직 검증을 통과한 Shadow 임무가 없습니다/);
+  h.close();
+});

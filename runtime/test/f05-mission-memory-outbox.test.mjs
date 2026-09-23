@@ -100,3 +100,16 @@ test('F04 (integration): after a real verified mission, Living Core exposes veri
   const again = await h.get('/api/core');
   assert.deepEqual(again.body.verifiedResult, ref, 'same evidence re-read after restart');
 });
+
+test('F06 (integration): a real verified mission grants role XP once, visible in /api/state growth.shadow, unchanged after restart and after re-reading', async t => {
+  const h = await setup(t);
+  await verifiedMission(h);
+  const g1 = (await h.get('/api/state')).body.growth.shadow;
+  const builder = g1.roles.find(r => r.role === 'builder');
+  assert.equal(builder.xp, 20); assert.equal(builder.level, 1); assert.equal(builder.verifiedMissions, 1);
+  assert.equal(g1.roles.find(r => r.role === 'semanticVerifier').xp, 5);
+  assert.equal(g1.held.length, 0);
+  await h.restart();
+  const g2 = (await h.get('/api/state')).body.growth.shadow;
+  assert.deepEqual(g2.roles, g1.roles, 'XP is derived from durable evidence, so a restart neither loses nor doubles it');
+});

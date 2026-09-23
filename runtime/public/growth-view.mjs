@@ -6,6 +6,7 @@
 // never invents a level, a percentage, or a "new" badge that isn't a real
 // comparison against a value seen before. Like the other *-view.mjs modules,
 // this is a pure display: it owns no fetch and no mutation.
+const SHADOW_ROLE_LABEL = Object.freeze({scout: 'Scout · 자료 탐색', researcher: 'Researcher · 대안 조사', builder: 'Builder · 결과 작성', verifier: 'Verifier · 무결성 검증', semanticVerifier: 'Semantic Verifier · 의미 검증'});
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const date = v => { const t = typeof v === 'number' ? v : Date.parse(v); return v && Number.isFinite(t) ? new Date(t).toLocaleString('ko-KR') : null; };
 const QUEST_STATUS_LABEL = {proposed:'저장됨 · 실행 대기',assigned:'배정됨',queued:'실행 대기',running:'진행 중',paused:'멈춤 · 확인 필요',completed:'결과 생성 완료',failed:'실패',cancelled:'종료됨'};
@@ -84,6 +85,7 @@ export function createGrowthView({root, onNavigate = () => {}, storage = null}) 
     // here. Writing belongs solely to acknowledge(), called when the owner
     // actually leaves this screen (see createGrowthView's closure comment).
     const hasGrowthData = !!state?.growth;
+    const shadowRoles = (state?.growth?.shadow?.roles || []).filter(r => r.xp > 0 || r.failedMissions > 0 || r.heldMissions > 0);
     const rawSkills = [
       ...namedSkills(state?.growth?.capabilities?.skills, state?.autopilot?.capabilities, 'capability'),
       ...namedSkills(state?.growth?.code?.skills, state?.codeWorkshop?.entries, 'code'),
@@ -120,6 +122,14 @@ export function createGrowthView({root, onNavigate = () => {}, storage = null}) 
         <div class="cockpit-section-heading"><div><span class="eyebrow">KIRBY · 성장 등급</span><h3>보유 능력과 E~S 등급</h3></div></div>
         ${skills.length ? skills.map(skillCard).join('') : '<p class="studio-empty">아직 흡수한 능력이 없습니다.</p>'}
         <p class="cockpit-fine">등급은 실제 활성화·실행·복구 기록으로만 계산합니다. 주장으로 올라가지 않습니다.</p>
+      </section>
+
+      <section class="cockpit-kirby" aria-label="Shadow Army 성장">
+        <div class="cockpit-section-heading"><div><span class="eyebrow">SHADOW ARMY · XP와 레벨</span><h3>역할별 성장</h3></div></div>
+        ${shadowRoles.length
+          ? `<ul class="shadow-growth">${shadowRoles.map(r => `<li class="shadow-growth-row" data-shadow-role="${esc(r.role)}"><strong>${esc(SHADOW_ROLE_LABEL[r.role] || r.role)}</strong><span>Lv.${esc(r.level)} · ${esc(r.xp)} XP · 다음 ${esc(r.nextLevelAt)} XP</span><span class="cockpit-fine">검증 통과 ${esc(r.verifiedMissions)} · 실패 ${esc(r.failedMissions)}${r.heldMissions ? ` · 보류 ${esc(r.heldMissions)}` : ''}</span></li>`).join('')}</ul>`
+          : '<p class="studio-empty">아직 검증을 통과한 Shadow 임무가 없습니다.</p>'}
+        <p class="cockpit-fine">XP는 독립 검증(의미 판정 통과)을 끝낸 임무에서만 한 번씩 계산합니다. 레벨은 실행 권한이나 비용 한도를 늘리지 않습니다.</p>
       </section>
 
       <section class="autopilot-blockers" aria-label="확인이 필요한 목표">

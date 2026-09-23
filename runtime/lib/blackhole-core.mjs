@@ -123,7 +123,7 @@ export function initialCoreState(at = null) {
 // justify RIGHT NOW against the given state, or null with a reason. Shared by
 // evaluateHeartbeat (derivation) and validateCoreState (fail-closed check) so
 // the two can never disagree about what counts as verified.
-function resolveVerifiedResult(semanticJob, state) {
+export function resolveVerifiedResult(semanticJob, state) {
   const v = semanticJob?.semanticVerdict;
   if (!semanticJob || semanticJob.status !== 'completed' || !object(v)) return {ref: null, reason: 'no_completed_semantic_verdict'};
   if (v.verdict !== 'pass') return {ref: null, reason: `semantic_${v.verdict}`};
