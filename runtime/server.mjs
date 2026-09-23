@@ -701,6 +701,7 @@ export function createYenoServer(options={}) {
    validateAutopilot(next);s.autopilot=next;
    if(!body.enabled)for(const job of s.jobs)if(job.autopilot&&['queued','running'].includes(job.status)){job.status='paused';job.pauseReason='autopilotStopped';touch(job);invalidate(job);}
    event(body.enabled?'자동 운영 시작: 연구·공개 세계 현황·연구 페이지 점검·텍스트 카드 영상.':'자동 운영 중지: 새 작업 선정과 진행 중인 자동 작업을 멈췄습니다.');
+   schedule();
    return {status:200,payload:{autopilot:autopilotState()}};
  }
  function verifiedAutopilotParent(id){
@@ -1051,23 +1052,39 @@ export function createYenoServer(options={}) {
    lastObsidianDigests=digests;
  }
  function schedule(){if(closed||schedulerTimer)return;schedulerTimer=setTimeout(tick,150);schedulerTimer.unref();}
+ // tick() self-reschedules via schedule() at the very end of every run. Before
+ // this fix, any uncaught throw from an unguarded step (the deadline sweep,
+ // the automatic-mission job, or a `persistencePending` save retry) escaped
+ // tick() before reaching that final call, which permanently stopped the
+ // scheduler for the rest of this server process's life - autopilot's repair
+ // goal would then never synthesize or execute again, with no error surfaced
+ // anywhere (root cause of the closed-loop.test.mjs "Loop 2" flake: it only
+ // showed up under full-regression I/O/CPU contention, never standalone,
+ // because that contention is what made an occasional step throw). schedule()
+ // now runs in a `finally` so a single bad tick can never kill the loop; every
+ // step that used to run unguarded is now caught and logged the same way the
+ // rest of tick() already handles its own failures (fail loud, never silent,
+ // never stuck).
  function tick(){schedulerTimer=null;if(closed)return;
-   try{ensureDurable();}catch{schedule();return;}
-   for(const job of s.jobs)if(job.deadlineAt&&['queued','running'].includes(job.status)&&Date.now()>=Date.parse(job.deadlineAt)){job.status='paused';job.pauseReason='deadline';touch(job);invalidate(job);save();}
+  try{
+   try{ensureDurable();}catch{return;}
+   try{for(const job of s.jobs)if(job.deadlineAt&&['queued','running'].includes(job.status)&&Date.now()>=Date.parse(job.deadlineAt)){job.status='paused';job.pauseReason='deadline';touch(job);invalidate(job);save();}}catch(error){event(`마감 처리 실패: ${error.message}`);}
    void discovery.tick();
    void ecosystem.tick();
    if(!s.emergencyStop)void processMemorySyncBatch();
    try{runAutopilot();}catch(error){
-     if(persistencePending){schedule();return;}
+     if(persistencePending){return;}
      s.autopilot.lastError=error instanceof ProductionCapacityError?error.message:'자동 작업 접수 또는 이전 결과 확인에 실패했습니다. 보관된 결과·연결 상태를 점검해야 합니다.';
      s.autopilot.retryAt=new Date(Date.now()+60*60*1000).toISOString();event(s.autopilot.lastError);
-     try{save();}catch{schedule();return;}
+     try{save();}catch{return;}
    }
    if(s.autopilot.enabled&&!s.emergencyStop){try{if(synthesizeGoal().persisted)save();}catch(error){event(`자율 목표 합성 실패(저장 없음): ${error.message}`);}}
-  if(s.autopilot.enabled&&!s.emergencyStop){try{if(advanceClosedLoop('autopilot').applied)save();}catch(error){if(persistencePending){schedule();return;}event(`닫힌 고리 진행 실패(저장 없음): ${error.message}`);}}
-   const mission=automaticMission(s,agentSettings);
-   if(mission){const job=newJob({type:'agent',title:'YENO 자동 자료 검토',text:mission.text});job.agentJournal.automaticKey=mission.key;job.agentJournal.automaticScope=mission.scope;save();}
-   if(!s.emergencyStop){for(const job of s.jobs.slice().reverse()){
+  if(s.autopilot.enabled&&!s.emergencyStop){try{if(advanceClosedLoop('autopilot').applied)save();}catch(error){if(!persistencePending)event(`닫힌 고리 진행 실패(저장 없음): ${error.message}`);}}
+   try{
+     const mission=automaticMission(s,agentSettings);
+     if(mission){const job=newJob({type:'agent',title:'YENO 자동 자료 검토',text:mission.text});job.agentJournal.automaticKey=mission.key;job.agentJournal.automaticScope=mission.scope;save();}
+   }catch(error){event(`자동 자료 검토 작업 생성 실패(저장 없음): ${error.message}`);}
+   try{if(!s.emergencyStop){for(const job of s.jobs.slice().reverse()){
      if(job.botAssignment&&job.status==='paused'&&job.pauseReason==='dailyBudget'&&!botBlockReason(job,s,profiles)&&agentUsage(s.jobs).attempts<configFor(job).dailyCallLimit){job.status='queued';delete job.pauseReason;touch(job);save();}
      // Shadow Army (issue #25 §6): a dependent shadow/verify job starts
      // paused with pauseReason 'dependencyPending' at creation (see
@@ -1087,8 +1104,8 @@ export function createYenoServer(options={}) {
      if(job.shadowAssignment&&job.type==='agent')recordJevShadowDispatch(job,blocked,budget);
      if(blocked||budget||(!localResearchCompletion(job)&&!s.modules[jobModule(job)]&&!job.questId&&!job.selfTestId)){job.status='paused';job.pauseReason=blocked||(budget?'dailyBudget':'moduleDisabled');touch(job);save();continue;}
      job.status='running';delete job.pauseReason;touch(job);save();const generation=(generations.get(job.id)??0)+1;generations.set(job.id,generation);runStep(job,generation);
-   }}
-   schedule();
+   }}}catch(error){event(`작업 진행 루프 실패: ${error.message}`);}
+  }finally{schedule();}
  }
  function writeArtifact(job,content,name,mimeType){
    const id=uid(),filename=`${id}.${mimeType==='application/json'?'json':mimeType==='text/csv; charset=utf-8'?'csv':mimeType==='text/html; charset=utf-8'?'html':'md'}`,file=path.join(dataDir,'artifacts',filename);
