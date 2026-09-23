@@ -26,7 +26,7 @@ import {validateGrokMultiAgentApproval} from './grok-adapter.mjs';
 import {validateQuestState} from './quests.mjs';
 import {emptyStudio,validateStudio} from './studio.mjs';
 import {initialAutopilot,validateAutopilot,validateAutopilotJob} from './autopilot.mjs';
-import {initialCoreState,validateCoreState,evaluateHeartbeat,createCoreIdentity} from './blackhole-core.mjs';
+import {initialCoreState,validateCoreState,evaluateHeartbeat,createCoreIdentity,deriveHomunculusFields} from './blackhole-core.mjs';
 import {validateMemoryEvents} from './memory-events.mjs';
 import {validateOutbox} from './memory-sync-outbox.mjs';
 
@@ -77,10 +77,18 @@ function initializeQuestCollections(state) {
  if(!Object.hasOwn(state,'memoryEvents'))state.memoryEvents=[];
  validateMemoryEvents(state.memoryEvents,state);
  if(!Object.hasOwn(state,'blackholeCore'))state.blackholeCore=initialCoreState();
- // A store whose blackholeCore predates the stable-identity correction gets
- // one generated here, exactly once - after this, the field is always
- // present in the persisted state, so no later call ever regenerates it.
- else if(!Object.hasOwn(state.blackholeCore,'identity'))state.blackholeCore.identity=createCoreIdentity(now());
+ else {
+   // A store whose blackholeCore predates the stable-identity correction gets
+   // one generated here, exactly once - after this, the field is always
+   // present in the persisted state, so no later call ever regenerates it.
+   if(!Object.hasOwn(state.blackholeCore,'identity'))state.blackholeCore.identity=createCoreIdentity(now());
+   // Homunculus Heartbeat (BLACKHOLE continuous execution directive, Stage 2):
+   // a store predating these fields gets them filled in from the exact same
+   // honest derivation evaluateHeartbeat() itself uses (never a placeholder
+   // default that could disagree with validateCoreState's own recomputation)
+   // - additive, exactly once, same idiom as the identity backfill above.
+   if(!Object.hasOwn(state.blackholeCore,'autonomyMode'))Object.assign(state.blackholeCore,deriveHomunculusFields(state,state.blackholeCore.updatedAt??now()));
+ }
  validateCoreState(state.blackholeCore,state);
  // BLACKHOLE Durable Memory Fabric (Phase B): the sync outbox is pure
  // bookkeeping around the already-canonical memoryEvents ledger above, so it

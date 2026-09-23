@@ -344,7 +344,16 @@ export function createYenoServer(options={}) {
    if(!decision)return null;
    const top=s.quests.find(q=>q.id===decision.top.questId);
    if(top.synthesis){event(`호문쿨루스 결정(자율 목표, 실행 보류): ${decision.top.goal}`);return {decision,pendingOwnerAction:true,job:null,quest:publicQuest(top,s),message:'자율 합성된 목표는 소유자가 직접 실행을 눌러야 시작됩니다.'};}
-   const result=runQuest(decision.top.questId);
+   // STAGE 3 (Jarvis-Shadow closed loop): a project-linked winning quest is
+   // promoted into the real Scout/Researcher/Builder -> deterministic verify
+   // -> semantic verify Shadow Army mission (dispatchShadowMission - the exact
+   // same mechanics POST /api/shadow-army/missions already uses), never a
+   // second execution engine. decide.mjs's own candidate filtering
+   // (hasReusableShadowMission) already keeps a quest with a live mission out
+   // of contention, so this never double-dispatches. A quest with no project
+   // is not Shadow-Army-eligible (planShadowMission requires one) and keeps
+   // the existing single generic job path unchanged.
+   const result=top.projectId?dispatchShadowMission({questId:top.id}):runQuest(decision.top.questId);
    event(`호문쿨루스 결정: ${decision.top.goal}`);
    return {decision,...result.payload};
  }
@@ -770,9 +779,8 @@ export function createYenoServer(options={}) {
  // turns each into one real job and pushes all of them in the same save, and
  // s.concurrency is raised the same way startBots already does so the two
  // independent leaf shadows (scout, researcher) can actually run at once.
- function startShadowMission(body){
-   if(!body.requestId)throw new ShadowArmyError(400,'지속 요청 번호가 필요합니다.');
-   const plan=planShadowMission(s,body),at=now();
+ function dispatchShadowMission(planBody){
+   const plan=planShadowMission(s,planBody),at=now();
    const jobs=plan.specs.map(spec=>shadowJobFromSpec(spec,at));
    if(agentSettings.ready)s.modules.ai=true;
    s.jobs.unshift(...jobs);s.concurrency=Math.max(s.concurrency,2);
@@ -780,6 +788,10 @@ export function createYenoServer(options={}) {
      ? `Jarvis 목표 ${plan.plannerQuestId}를 Shadow Army 임무 ${plan.missionId}에 연결했습니다.`
      : `Shadow Army mission planned: ${plan.missionId} (${jobs.length} shadows) for project.`);
    return {status:201,payload:{kind:'shadowMission',missionId:plan.missionId,plannerQuestId:plan.plannerQuestId??null,mission:missionStatus(plan.missionId,s)}};
+ }
+ function startShadowMission(body){
+   if(!body.requestId)throw new ShadowArmyError(400,'지속 요청 번호가 필요합니다.');
+   return dispatchShadowMission(body);
  }
  // BLACKHOLE JEV v0 shadow-mode (issue #25 §4.6/§5.1): computes JEV's own
  // typed answer for a real dispatch/verify decision purely for comparison
@@ -1712,7 +1724,7 @@ export function createYenoServer(options={}) {
          // can say honestly that no goal is on file yet.
          if(isDecideRequest(text)){
            const outcome=decideAndRunQuest();
-           if(outcome)return {status:outcome.pendingOwnerAction?200:201,payload:{jobId:outcome.job?.id??null,job:outcome.job,...(outcome.pendingOwnerAction?{pendingOwnerAction:true,quest:outcome.quest,message:outcome.message}:{}),decision:{goal:outcome.decision.top.goal,successCriterion:outcome.decision.top.successCriterion,dominantDrives:outcome.decision.top.motivation.dominantDrives,announcement:decisionAnnouncement(outcome.decision)}}};
+           if(outcome)return {status:outcome.pendingOwnerAction?200:201,payload:{jobId:outcome.job?.id??null,job:outcome.job,...(outcome.kind==='shadowMission'?{missionId:outcome.missionId,mission:outcome.mission}:{}),...(outcome.pendingOwnerAction?{pendingOwnerAction:true,quest:outcome.quest,message:outcome.message}:{}),decision:{goal:outcome.decision.top.goal,successCriterion:outcome.decision.top.successCriterion,dominantDrives:outcome.decision.top.motivation.dominantDrives,announcement:decisionAnnouncement(outcome.decision)}}};
          }
          const context=`코어의 실제 요약: ${JSON.stringify({running:s.jobs.filter(j=>j.status==='running').map(j=>({title:j.title,type:j.type})),projects:s.projects.length,codeCapabilities:getCodeStatus(s.codeWorkshop).map(e=>({name:e.name,active:!!e.activeHash})),automatic:s.autopilot.enabled,aiCalls:agentUsage(s.jobs).attempts})}\n`;
          const prompt=context+(history.length?`이전 대화는 맥락 자료입니다. 현재 요청에 한국어로 답하세요.\n${JSON.stringify(history)}\n현재 요청: ${text}`:text);

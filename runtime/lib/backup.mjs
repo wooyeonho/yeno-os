@@ -29,7 +29,7 @@ import {validateVideoInput} from './video.mjs';
 import {validateForAiInput} from './forai.mjs';
 import {validateResearchRequest,validateResearchBundle} from './research.mjs';
 import {initialAutopilot,validateAutopilot,validateAutopilotJob} from './autopilot.mjs';
-import {initialCoreState,validateCoreState,evaluateHeartbeat,createCoreIdentity} from './blackhole-core.mjs';
+import {initialCoreState,validateCoreState,evaluateHeartbeat,createCoreIdentity,deriveHomunculusFields} from './blackhole-core.mjs';
 import {validateMemoryEvents} from './memory-events.mjs';
 import {validateOutbox} from './memory-sync-outbox.mjs';
 
@@ -94,9 +94,15 @@ function validateState(state) {
   if (!Object.hasOwn(state, 'memoryEvents')) state.memoryEvents = [];
   validateMemoryEvents(state.memoryEvents, state);
   if (!Object.hasOwn(state, 'blackholeCore')) state.blackholeCore = initialCoreState();
-  // Same one-time, migration-safe backfill store.mjs performs for an older
-  // backup archive whose blackholeCore predates the stable-identity fix.
-  else if (!Object.hasOwn(state.blackholeCore, 'identity')) state.blackholeCore.identity = createCoreIdentity(new Date().toISOString());
+  else {
+    // Same one-time, migration-safe backfill store.mjs performs for an older
+    // backup archive whose blackholeCore predates the stable-identity fix.
+    if (!Object.hasOwn(state.blackholeCore, 'identity')) state.blackholeCore.identity = createCoreIdentity(new Date().toISOString());
+    // Homunculus Heartbeat fields (BLACKHOLE continuous execution directive,
+    // Stage 2): same one-time additive backfill as store.mjs, from the exact
+    // same honest derivation evaluateHeartbeat() itself uses.
+    if (!Object.hasOwn(state.blackholeCore, 'autonomyMode')) Object.assign(state.blackholeCore, deriveHomunculusFields(state, state.blackholeCore.updatedAt ?? new Date().toISOString()));
+  }
   validateCoreState(state.blackholeCore, state);
   if (!Object.hasOwn(state, 'memorySyncOutbox')) state.memorySyncOutbox = [];
   validateOutbox(state.memorySyncOutbox, state);

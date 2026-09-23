@@ -159,12 +159,110 @@ APK 없음(backend+web only). 개발자 워커 CI 아티팩트: push 후 실제 
 ### BLOCKER
 없음.
 
+## 14. BLACKHOLE CONTINUOUS EXECUTION DIRECTIVE — STAGE 0(기준 감사) + STAGE 2(Homunculus Heartbeat) (PR #39)
+
+소유자의 "BLACKHOLE CONTINUOUS EXECUTION DIRECTIVE v1"(15단계 연속 실행, owner 승인 필요 항목 외에는 진행 여부를 묻지 않음)을 받아 STAGE 0부터 순서대로 진행한다.
+
+### STAGE 0 — 기준 감사 (코드 변경 없음)
+- `git status --short`/`git branch --show-current`/`git log --oneline -5`로 실제 작업 트리가 clean, `blackhole/r2-verify-shadow-ui-claude-20260920` 위임을 확인.
+- GitHub API로 PR #37을 실제 재조회: `state:open`, `draft:true`, `merged:false`, `mergeable_state:clean`, head `a57d6dd6fe8a1c9caf9423e4c53797443589a100`(로컬 HEAD와 정확히 일치). base `blackhole/canonical-intake-import-claude-20260920`.
+- `developer-worker.yml`의 이 브랜치 실행을 재조회: run #106(`id:35513941919`), head `d236f71`(코드 커밋), `status:completed`·`conclusion:success` — §13에 이미 기록된 값과 정확히 일치, 추정하지 않고 재확인. 이후 `3fee3d5`/`88855d4`/`a57d6dd`는 `docs/**` 전용이라 `paths-ignore`에 걸려 새 실행 없음(의도된 동작).
+- PR #37이 green이므로 지시 §1대로 그 정확한 head(`a57d6dd`) 위에 새 stacked Draft PR을 연다. 기존 PR을 merge하지 않았고 production을 건드리지 않았다.
+
+### STAGE 2 — Homunculus Heartbeat (`runtime/lib/blackhole-core.mjs` 확장)
+
+지시의 명시 요구: "reuse existing Core/Memory/Drive engines"; 새 점수·목표·퀘스트 엔진을 만들지 않는다. `decide.mjs`(`decideQuest`)와 `motivation.mjs`(`motivationStatus`)를 그대로 재사용해 Core에 다음 필드를 추가했다: `autonomyMode`(paused|active|emergency_stopped), `currentQuestId`, `currentGoalId`, `measuredDrivePressure`, `pendingApprovalIds`, `lastReplanAt`, `lastGrowthEvidenceRef`.
+
+- `deriveAutonomyMode(state)`: 순수 함수, `state.emergencyStop ? 'emergency_stopped' : (state.autopilot.enabled ? 'active' : 'paused')`가 항상 유일한 정의다 — 독립적으로 설정 가능한 두 번째 스위치가 아니다.
+- `deriveHomunculusFields(state, at)`: `decideQuest(state, at)`의 실제 top pick을 `currentQuestId`로, 그 quest가 `synthesis`를 가질 때만(호문쿨루스 자율 합성 목표일 때만) 같은 id를 `currentGoalId`로 삼는다(소유자가 직접 쓴 quest는 절대 "goal"이 되지 않는다) — 이 함수 하나가 `evaluateHeartbeat()`의 실제 heartbeat tick과 `store.mjs`/`backup.mjs`의 구버전 Core 레코드 backfill 마이그레이션 양쪽에서 동일하게 쓰인다.
+- `pendingApprovalIds`: `synthesis.approvalRequired:true`인 실제 `proposed` quest만. `lastReplanAt`/`lastGrowthEvidenceRef`: 실제 `synthesis.createdAt`/`outcomes` 레코드 중 가장 최근 것만 참조 — 존재하지 않으면 `null`(추정하지 않음).
+- 한 heartbeat는 언제나 최대 하나의 quest만 "현재"로 선택한다(`decide.mjs`의 단일 top 선택을 그대로 반영) — 지시의 "한 heartbeat에 여러 목표를 만들지 않는다"를 설계 자체로 만족.
+
+**설계 수정(자체 발견)**: 최초 구현은 `validateCoreState()`가 저장된 값과 방금 재계산한 "진짜" 값을 바이트 단위로 비교하도록 했다(recompute-and-compare). `quest-backup.test.mjs`의 fixture(직접 quests/outcomes를 push하고 `save()`를 호출하지 않는, 이 코드베이스 전역에서 흔한 유효한 패턴)로 실제 시험을 돌리자 3개 실패가 나왔다. 원인을 추적한 결과 기존 `dominantDriveId`/`recentArtifactRef` 검증은 애초에 recompute-and-compare가 아니라 "주장된 값 자체의 참조적 일관성"만 본다는 것을 확인했고, 새 필드 검증도 동일한 원칙(주장이 있으면 그 주장이 실제 레코드를 가리켜야 한다 — 최신이어야 한다는 요구는 없다)으로 다시 작성했다. `homunculus-heartbeat.test.mjs`의 마지막 시험이 이 정정 자체를 회귀 방지로 고정한다.
+
+### 실제 검사
+- `node --test test/homunculus-heartbeat.test.mjs`(신규 10개): 전부 pass.
+- `node --test test/blackhole-core-server.test.mjs`(기존 10개 + 신규 2개 = 12개): 전부 pass. 신규 2개는 실제 HTTP 왕복으로 검사 — (a) `POST /api/autopilot`→`POST /api/control stop`→`POST /api/control resume` 전체를 거치며 `autonomyMode`가 paused→active→emergency_stopped→**paused**(자동으로 active 복귀하지 않음, 서버가 emergency stop 시 autopilot을 강제 비활성화하고 resume이 재활성화하지 않는 실제 동작과 일치)로 전이함을 확인. (b) `POST /api/quests`로 만든 실제 소유자 quest가 `GET /api/core`의 `currentQuest.id`로 나타나고 `currentGoalId`는 `null`(synthesis 없음)이며, `openStore()`로 실제 재시작을 시뮬레이션해도 `currentQuestId`/`currentGoalId`가 동일하게 보존됨을 확인.
+- `npm test`(전체 973개 = 기존 961 + 이번 신규 12개): 943 pass · 23 fail · 7 skip — 실패 목록을 이름 단위로 대조해 §13의 기존 23개(QuickJS/WASM code-workshop 관련 22개 + `scripts/native-config.test.mjs`의 `URLPattern is not defined` 1개)와 정확히 동일함을 확인. 신규 실패 0개.
+- exact-head CI(developer-worker): run #111(`id:35520824481`), head `1976776`(STAGE 2 코드 커밋). **재조회 결과**: `status:completed`, `conclusion:success` — 실제 확정. PR #39 오픈, `subscribe_pr_activity` 등록 완료.
+
+## 15. STAGE 3 — Jarvis-Shadow 닫힌 고리: "정해줘"/"알아서 진행해"가 실제 Shadow Army 임무를 낸다 (PR #39에 계속 커밋)
+
+**실제 감사로 찾은 격차**: `decideAndRunQuest()`(server.mjs)는 이긴 quest가 project에 연결돼 있어도 항상 단일 일반 `type:'agent'` job(`runQuest()`)만 만들었다 — Scout/Researcher/Builder→deterministic verify→semantic verify 5-job Shadow Army 파이프라인(`shadow-army.mjs`, 이미 `jarvis-shadow-bridge.test.mjs`/`shadow-army.test.mjs`/`semantic-verification.test.mjs` 40개로 완전히 검증됨)은 오직 소유자가 `POST /api/shadow-army/missions`를 별도로 호출해야만 시작됐다. 이것이 지시가 명시한 "goal→quest→Shadow mission→Scout/Researcher/Builder→deterministic verify→semantic verify→artifact save→Memory Event save→replan"이 "정해줘" 경로에서는 끊겨 있던 지점이다.
+
+**수정(두 번째 실행 엔진 없음)**: `startShadowMission(body)`의 본문을 `dispatchShadowMission(planBody)`로 추출해 재사용 가능하게 했다(요청 검증만 `startShadowMission`에 남김). `decideAndRunQuest()`는 이긴 quest에 `projectId`가 있으면 `dispatchShadowMission({questId:top.id})`를(POST /api/shadow-army/missions와 완전히 동일한 메커니즘), 없으면 기존 `runQuest()`를 그대로 호출한다. `decide.mjs`의 기존 `hasReusableShadowMission` 필터가 이미 활성 Shadow 임무가 있는 quest를 후보에서 제외하므로 이중 배정은 구조적으로 불가능하다. `/api/voice`의 "정해줘" 응답 모양도 `outcome.kind==='shadowMission'`일 때 `missionId`/`mission`을 노출하도록 확장했다(`job` 필드는 이 경우 없음).
+
+**실제 검사**: `runtime/test/jarvis-shadow-closed-loop.test.mjs`(신규 2개, `shadow-army.test.mjs`와 동일한 합성 전송 방식) — (1) project 없는 목표와 project 있는 목표를 함께 저장 → "지금 가장 먼저 해야 할 일을 알아서 진행해" → 실제 5-job Shadow Army 임무가 project 목표에 배정됨(`job` 아님) 확인 → scout/researcher/builder/deterministic verify/semantic verify 전부 완료까지 실제로 기다림 → 실제 프로젝트 마일스톤 + 실제 Memory Event 생성 확인 → Homunculus Heartbeat(Stage 2)의 `currentQuest`가 임무 진행 중엔 이미 배정된 project 목표를 후보에서 제외하고 남은 목표를 가리킴을 확인 → 다음 "정해줘"(재계획)가 완료된 목표를 다시 실행하지 않고 남은 목표(project 없음이므로 기존 단일 job 경로)를 정확히 고름을 확인 → 재시작 후 임무·마일스톤·Memory Event·Core 상태 전부 보존 확인. (2) project 목표에 이미 활성 Shadow 임무가 있으면 "정해줘"가 두 번째 임무를 만들지 않고 정직하게 409(`선택할 수 있는 저장된 목표가 없습니다`)를 반환함을 확인.
+- 영향받는 기존 시험(변경 없이 재실행, 전부 pass): `decide.test.mjs`(10) · `jarvis-shadow-bridge.test.mjs`(3) · `shadow-army.test.mjs`(9) · `quest-api.test.mjs`(4) · `quests.test.mjs`(12) · `quest-autorun-boundary.test.mjs`(2) · `command-request.test.mjs`(10) · `voice-ui.test.mjs`(9) · `closed-loop.test.mjs`(5) · `phone-acceptance.test.mjs`(3, project 없는 목표 경로라 동작 완전히 동일).
+- `npm test`(전체 975개 = 973 + 신규 2개): **945 pass · 23 fail(이름까지 기존과 정확히 동일) · 7 skip** — 신규 실패 0개.
+- exact-head CI(developer-worker): **실제 조회 결과** — run #112(`id:35521509812`), head `9ce7c97`, `status:completed`, `conclusion:success`. PR #39는 이후 docs 전용 커밋(`3137525`)까지 clean·mergeable·미병합·리뷰 코멘트 없음(2026-09-23 재확인).
+
+### STRUCTURAL/SYNTHETIC/LIVE/PHYSICAL
+STRUCTURAL·SYNTHETIC: 위 자동 시험(합성 provider 전송). LIVE: 해당 없음. PHYSICAL: 해당 없음(`apps/controller` 미변경).
+
+### ARTIFACT/HASH
+APK 없음(backend only). CI 아티팩트 ID/해시는 push 후 실제 조회해 기록.
+
+### ROLLBACK
+`git revert`로 이 커밋을 되돌리면 `decideAndRunQuest()`가 project 유무와 무관하게 항상 단일 job을 만들던 이전 동작(STAGE 2 head)으로 정확히 복원된다. `/api/shadow-army/missions` 자체는 변경하지 않았다(내부 로직만 추출·재사용).
+
+### BLOCKER
+없음.
+
 ### NEXT SINGLE ACTION
-R3(실제 폰 사용 흐름 1건 — 명령 접수→실제 job→artifact→검증→조회→앱 종료/재접속→같은 결과→stop→명시적 resume) 검증으로 진행. 이미 `phone-acceptance.test.mjs`가 일부를 다루고 있으므로, 이번 R1/R2에서 추가된 소스 검색·Shadow UI가 그 흐름과 실제로 맞물리는지(예: 폰에서 목표 실행 후 Project Universe에서 Shadow Army 상태를 실제로 확인) 별도 slice로 검사한다.
+지시 §2에 따라 재확인 없이 STAGE 4(멀티 프로바이더 라우터: OpenAI/Anthropic/Gemini/xAI Grok/Kimi/local-fallback 실제 상태 확장 — `model-router.mjs`가 AGENTS.md에 이미 순수 정책 계층으로 존재함을 먼저 실제 감사)로 진행한다.
+
+### STRUCTURAL/SYNTHETIC/LIVE/PHYSICAL
+STRUCTURAL·SYNTHETIC: 위 자동 시험. LIVE: 해당 없음(provider 호출 없음). PHYSICAL: 해당 없음(`apps/controller` 미변경, 새 APK 없음).
+
+### ARTIFACT/HASH
+APK 없음(backend only). 개발자 워커 CI 아티팩트 ID/해시: push 후 실제 실행을 재조회해 기록.
+
+### ROLLBACK
+`git revert`로 이 브랜치 커밋을 되돌리면 PR #37 head(`a57d6dd`) 상태로 복원된다. Additive-only(새 Core 필드는 전부 기본값 존재, 기존 `/api/core`·`/api/state` 응답 필드는 그대로 유지)이므로 기존 저장 데이터를 파괴하지 않는다.
+
+### BLOCKER
+없음. owner 승인이 필요한 항목(배포/결제/외부 게시/거래/권한 변경/삭제/계정 연결/민감정보 반출/대규모 비용/무제한 자기복제) 중 STAGE 2는 어느 것도 필요로 하지 않는다.
+
+### NEXT SINGLE ACTION
+지시 §2(각 단계 완료 시 자동으로 다음 단계 진행, 재확인 요청 안 함)에 따라 STAGE 3(Jarvis-to-Shadow 닫힌 고리: "블랙홀, 지금 내가 해야 할 가장 중요한 일을 알아서 진행해"가 목표→퀘스트→Shadow 임무→실행→검증→재계획까지 실제로 끝까지 이어지는지)으로 즉시 진행한다. 기존 `decide.mjs`/`jarvis-shadow-bridge.mjs`/`shadow-army.mjs`/`semantic-verification.mjs`를 재사용하며 두 번째 실행 엔진을 만들지 않는다.
 
 즉시 실행 가능한 명령:
 ```
-git checkout blackhole/r2-verify-shadow-ui-claude-20260920
+git checkout blackhole/homunculus-heartbeat-claude-20260920
 npm test
 ```
+
+## 16. STAGE 4 + STAGE 5 실제 감사 결과 — 이미 배선·시험되어 있다 (코드 변경 없음, 추측 아닌 실제 확인)
+
+지시 §2에 따라 STAGE 4로 넘어가기 전 실제 코드 상태를 먼저 감사했다. **AGENTS.md의 2026-09-15 항목들이 "배선 없음"이라고 적어 둔 이후, 이 저장소에서 이미 실제로 배선이 진행됐다** — 문서의 과거 기록을 새 사실로 가정하지 않고 코드를 직접 읽어 확인했다.
+
+- **STAGE 4(멀티 프로바이더 라우터)**: `runtime/lib/model-router.mjs`(순수 정책, 7개 시험 재확인 pass)는 `runtime/lib/brain-routing.mjs`를 통해 **이미 실제 job 배정에 배선돼 있다** — `server.mjs`가 `routeAgentJob`/`transportAuthority`/`callTransportFor`/`settleRouting`을 import해 일반 agent job 생성(line 119)과 Gemini Live 실시간 음성 세션 오픈(line 1345) 양쪽에서 실제로 호출한다. `DECLARED_BRAIN_POOL`은 `env.YENO_BRAIN_POOL`(소유자 선언, 미설정 시 빈 배열)에서만 오므로 기존 단일 provider 설정(`legacyConfig`) 동작은 변경되지 않았다 — 순수 추가·opt-in. `readiness.mjs`의 `modelRouter` 항목이 이미 실제 `routedJobs`/`liveEvidence`로 이 배선의 실사용 여부를 정직하게 보고한다. **결론: STAGE 4의 핵심 요구(실제 provider 상태·failover·CI 합성 전송만)는 이미 충족돼 있다.** 코드 변경 없음.
+- **STAGE 5(커비 능력 레지스트리 일반화)**: `runtime/lib/closed-loop.mjs`의 `kirbyStage()`가 이미 `capability-discovery.mjs`의 `requiredCapability`/`discoverCapability`/`qualifyCandidate`/`projectInput`을 import해 사용하고 있다 — 예전 고정 표(`ARCHETYPE_CAPABILITY`)는 `LEGACY_ARCHETYPE_CAPABILITY`로 이름이 바뀌어 `legacyCapabilityId`라는 부가 참조 필드로만 남아 있고, 실제 격차 판정 경로는 이미 일반화된 증거 기반 탐색이다. **결론: capability-discovery.mjs의 AGENTS.md 항목이 예고했던 "PR #15 merge 후 배선"이 이미 실제로 일어났다.** 코드 변경 없음.
+
+이 두 항목은 새 코드·새 시험이 필요 없다 — 실제 상태를 정직하게 기록하는 것 자체가 이 단계의 완료 조건("실제 상태 확인")을 만족한다.
+
+## 17. STAGE 6 실제 감사 결과 — GitHub 계열만 구현됨, 나머지 원천은 대부분 owner 승인 경계(외부 계정 연결)에 걸림
+
+`runtime/lib/ecosystem.mjs`(공개 GitHub topic 검색 6개, README·LICENSE·SKILL.md만 읽음)와 `runtime/lib/discovery.mjs`(고정된 GitHub Releases 피드 워처)만 실제로 존재한다. 지시가 나열한 9개 원천(GitHub Trending·공식 문서·Releases·Product Hunt·Reddit·X·Threads·Instagram·MCP Registry·공개 논문) 중 **GitHub 계열(2개)만 구현돼 있고 나머지 7개는 코드가 전혀 없다.**
+
+Product Hunt·Reddit·X·Threads·Instagram은 전부 실제 API 키/OAuth 앱 등록 또는 계정 연결이 필요하다 — 지시 자체가 "외부 계정 연결"을 owner 승인 필수 항목으로 명시했으므로, 이 5개 원천을 실제로 붙이는 작업은 이 세션이 임의로 진행하지 않는다. 반면 **MCP Registry(공개, 인증 불필요, GitHub topic 검색과 동일한 성격)와 공개 논문(예: arXiv 공개 API, 인증 불필요)은 계정 연결 없이 안전하게 추가할 수 있는 후보**다.
+
+### BLOCKER
+Product Hunt/Reddit/X/Threads/Instagram 연동: owner의 명시적 계정 연결·API 키 발급 승인 필요(지시의 owner 승인 경계). 전체 작업은 멈추지 않는다 — MCP Registry/공개 논문처럼 승인이 필요 없는 원천 확장이 다음 안전한 개발 조각이다.
+
+### NEXT SINGLE ACTION
+지시 §2("승인이 필요 없는 다음 개발·테스트·문서·sandbox 단계는 계속 진행한다")에 따라, 계정 연결이 필요 없는 MCP Registry 공개 카탈로그 읽기를 `ecosystem.mjs`와 동일한 읽기 전용·미설치·미실행 원칙으로 별도 slice로 설계·구현한다.
+
+### 실제 확인한 API 사양(추측 아님 — WebSearch+실제 curl로 직접 검증, 2026-09-20)
+공식 MCP Registry는 인증 없이 공개 읽기가 가능하다. `curl https://registry.modelcontextprotocol.io/v0.1/servers?limit=2`와 `?search=github`를 실제로 호출해 확인한 실제 응답 모양:
+```json
+{"servers":[{"server":{"$schema":"...","name":"ai.smithery/smithery-ai-github","description":"...","repository":{"url":"https://github.com/...","source":"github"},"version":"1.0.0","remotes":[{"type":"streamable-http","url":"..."}]},"_meta":{"io.modelcontextprotocol.registry/official":{"status":"active","statusChangedAt":"...","publishedAt":"...","updatedAt":"...","isLatest":true}}}],"metadata":{"nextCursor":"...","count":2}}
+```
+- 베이스 URL: `https://registry.modelcontextprotocol.io`(운영), `https://staging.registry.modelcontextprotocol.io`(스테이징) — 둘 다 실제 프로젝트 소유가 아닌 공개 제3자 서비스이므로, 붙일 때 `ecosystem.mjs`의 GitHub API 호출과 동일하게 응답 스키마를 엄격히 검증(모르는 필드·형식 오류는 실패 폐쇄)해야 한다.
+- `GET /v0.1/servers?search=<질의>&limit=<n>` — `search`는 이름 부분일치, `limit`/커서 기반 페이지네이션(`metadata.nextCursor`), `updated_since`(RFC3339)로 증분 조회 가능.
+- `server.name`(고유), `server.title`(선택), `server.description`, `server.version`, `server.repository.url`/`source`(있을 때만), `server.remotes[].url/type`(원격 엔드포인트, 있을 때만) — `sources.mjs`의 `url`(repository.url 있을 때)/`sourceLocator`(없을 때, name 사용)·`title`·`summary`(description)·`aliases`([name])로 그대로 매핑 가능.
+- `_meta["io.modelcontextprotocol.registry/official"].status/publishedAt/updatedAt/isLatest` — 레지스트리 자체의 등재 상태일 뿐, YENO가 그 서버를 검토·설치했다는 뜻이 아니다(반드시 `readingStatus:'unread'`, `decision:'pending'`으로 시작).
+
+다음 세션이 이 사양으로 바로 구현을 시작할 수 있도록 기록한다 — 이번 세션은 API 존재·모양 확인까지만 하고 코드는 작성하지 않았다(같은 커밋 묶음에 세 번째 신규 기능을 무리하게 쌓지 않기 위한 의도적 경계).
 
