@@ -15,13 +15,13 @@
 | F05 | candidate | `4068f5e`, 수정 전 2/3 실패→3/3 통과, fabric/migration 회귀 PASS | 실제 Supabase/Obsidian 목적지 전송은 자격증명 필요(BLOCKED) |
 | F06 | candidate | `1624721`, 단위+UI+통합 PASS | v2: 임무당 역할 1회 키 여부 결정 |
 | F07 | candidate(회수) | `f1094c7` 기억 회수+회수 id/사유 job에 기록, 라벨된 데이터로만 프롬프트 전달; 검사 2건 PASS | 의도→기존 작업 계약 자동 변환은 미착수(G2) |
-| F08 | planned | 미착수(9/23 조사만: 어댑터 계약·JEV 결정 권한은 이미 있음, 구현체 없음) | 실제 브라우저 worker/transport 연결(G3) — 다음 재개 1순위 |
+| F08 | candidate(v1 read-only) | `84a0da3` runtime/lib/browser-adapter.mjs: 실제 fetch() 기반 fetchPublicPage + no-model-call BLOCKED-only decisionProvider, YENO_BROWSER_SANDBOX_ENABLED=true일 때만 기본 연결(off by default, 기존 'no adapter' 검사 불변). 4개 파일 20 검사 PASS, 그중 1건은 실제 https://example.com/ 실통신(LIVE) — 실제 sha256 아티팩트 확인 | v1은 읽기 전용 1페이지·BLOCKED만 반환(DONE은 harness의 독립 검증 요구로 크래시하므로 제외); 실제 클릭/입력/다중 페이지 탐색과 독립 semantic 검증자 연결은 다음 단계(v2) |
 | F09 | candidate | `0e0c55a` identity 노출+Home 표시 + `9437dac` 점검 도구가 실제 `/api/v1/state.runtimeIdentity`를 읽어 대조(isolated 종단 검증됨) | 실제 Koyeb 배포 SHA와의 라이브 대조는 YENO_TOKEN 필요(BLOCKED, 소유자 게이트) |
 | F10 | planned | 미착수 | 서명키·버전 원장·기존 설치 위 업데이트 검증(G5) — 소유자 서명키 필요 |
 | F11 | planned | 미착수 | 독립 보관 백업 회수→빈 환경 복원 실증(G5) |
 | F12 | candidate | `59bd320` 점검 도구 + 검사 3건 PASS, 실제 Koyeb basic PASS | live 모드 실행(YENO_TOKEN) — 소유자 게이트 |
 | F13 | candidate | `7c7a091` 소유 하위트리 01_DRAFTS/BLACKHOLE 기본·00_INBOX_RAW 금지, 검사 PASS | 실제 Vault 연결은 소유자 활성화 결정(기본 OFF) |
-| F14 | candidate | `9437dac` `lib/cost-ledger.mjs` + `agent-engine.mjs` runAgent 게이트, 단위 5건+기존 agent 회귀 PASS(synthetic) | 단가는 provider당 1개 수동 스냅샷(모델별 아님) — 실제 청구서 대조는 다음 단계 |
+| F14 | candidate(동시성 수정) | `13a0640`: 동시 worker 검사로 실제 결함 재현(cap $0.03, 2 worker 동시 실행 → 실 정산 $0.036, 20% 초과 — reserved 상태 호출이 dailyCostUsage에서 누락되어 발생) 후 `pendingCostReservationsToday()`로 수정, 재검증 PASS. f14-concurrency 2건+cost-ledger 5건+agent 계열 36건 PASS(synthetic) | 단가는 provider당 1개 수동 스냅샷(모델별 아님) — 실제 청구서 대조는 다음 단계. 동시성은 같은 Node 프로세스 내 비동기 인터리빙 기준(멀티 프로세스/실기기 다중 worker는 미검증) |
 
 ## 필수 요구 R01~R52
 
@@ -65,8 +65,8 @@
 | R36 | 인증·기기 등록·폐기 | candidate | PASS(synthetic)+PASS(basic live) | 부분 | 점검 도구: enroll/revoke/401 PASS(격리), Koyeb 401 PASS |
 | R37 | 비상 정지 | 기존 | PASS(synthetic) | NOT_RUN | 변경 없음 |
 | R38 | 비밀·격리 | 기존+점검 도구 | PASS(synthetic) | NOT_RUN | 보고서 토큰 미포함 검사 |
-| R39 | 백업·복구 | 기존 | PASS(synthetic) | BLOCKED | F11 실증 필요 |
-| R40 | 릴리스 서명 | planned | NOT_RUN | BLOCKED | F10 서명키 |
+| R39 | 백업·복구 | candidate | PASS(synthetic, 9/23 재확인) | BLOCKED(외부 보관·실기기만) | `runtime/lib/backup.mjs`+`scripts/backup.mjs` CLI: keygen/export(암호화)/restore가 실제로 존재하고, backup-api.test.mjs가 완전히 새 빈 디렉터리로 restore 후 실제 서버를 그 디렉터리에서 기동해 원본과 동일한 job/artifact 바이트·해시를 검증함(1건 PASS, 재실행 확인). 소프트웨어 경로는 이미 구현·시험됨. 남은 차단은 정확히 두 가지뿐: (1) 암호화된 백업 파일을 실제 외부 저장 위치(클라우드 드라이브·USB 등)에 올리고 내려받는 단계는 자동화되어 있지 않음(설계상 소유자가 직접 옮김) — 이번 코드는 그 파일을 만들고 그 파일로부터 복원하는 것만 보장, (2) 진짜 별개 물리 기기에서의 복원은 미실증 |
+| R40 | 릴리스 서명 | in_progress | PASS(synthetic) | BLOCKED(서명키만) | `scripts/android-release.mjs`: 버전 원장, 서명자 연속성 검사(SIGNER_CHANGED — 이전 릴리스와 다른 인증서로 서명 시 실패), keystore.properties 기반 Gradle signingConfig 삽입, ANDROID_SIGNING_SECRET 부재 시 fail-closed(BLOCKED 상태, exit 2). android-release.test.mjs 9/23 재확인 PASS(21/22 — 나머지 1건은 native-config.test.mjs의 URLPattern 미지원으로 이 환경의 Node 22 제약, 이번 변경과 무관·기존 환경 한계). F09의 deploymentSha/deploymentMatchesSource(기존 설치 위 업데이트 식별)도 이미 검증됨. 남은 차단은 정확히 하나: 실제 서명 인증서(Android keystore) 자체는 소유자 소유이며 위조·대체 불가 |
 | R41 | 배포·migration·rollback | planned | NOT_RUN | BLOCKED | G5 |
 | R42 | 관측·진단 | candidate | PASS(synthetic) | PASS(basic) | 점검 도구 |
 | R43 | 성능·품질 비교 | planned | NOT_RUN | NOT_RUN | G5 |

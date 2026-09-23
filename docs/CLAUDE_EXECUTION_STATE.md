@@ -233,3 +233,37 @@ npm test
 ### 남은 코드 작업 (키 불필요, 다음 우선순위)
 - **F08**(실제 브라우저 worker/transport): `server.mjs`가 `options.browserHarnessAdapter`를 이미 플러그형으로 호출하는 자리(1305행 부근)가 있고 `lib/browser-harness.mjs`/`browser-decision.mjs`(JEV 권한)/`browser-provider-routing.mjs`가 이미 있음 — 즉 어댑터 계약과 결정 권한 체계는 있는데 실제 어댑터 구현체가 아직 없음(`browserAutomation:false`). 이번 세션엔 조사만 하고 구현은 다음 재개로 미룸: 외부 사이트로 나가는 실제 네트워크 행위(SSRF·권한 우회 위험)라서 근거 문서 없이 서두르면 오히려 "실패 닫힘" 원칙을 어길 수 있다고 판단 — 다음 재개 때 `browser-decision.mjs`/`browser-harness.mjs` 전체를 먼저 읽고 최소 read-only 어댑터(공개 페이지 GET만, JEV 결정 게이트 통과 필수)부터 설계 기록을 남기고 구현.
 - R40(서명키)·R39(백업→빈 환경 복원 실증)은 이전과 동일하게 미착수 — 완료 기준은 원장에 이미 기재됨(원장 §5-4 참고), 서명키/실제 복원 환경 모두 소유자 행동 필요.
+
+## §16 재개 기록 (2026-09-23, d31fded 이후 로컬 후보: 84a0da3 → 13a0640 → 0aa8701)
+
+로컬 후보를 계속 보존(`d31fded`는 이 시점의 이전 후보로 보존됨, push는 여전히 미실행). 이번 재개에서 완료한 항목:
+
+### 1) F08 v1 — read-only 브라우저 sandbox adapter (`84a0da3`)
+- `runtime/lib/browser-adapter.mjs`(신규): 의존성 없는 순수 Node `fetch()` 기반 `fetchPublicPage()`(정규식 기반 title/body/links/elements 추출, package.json에 런타임 의존성이 전혀 없는 프로젝트라 파서 라이브러리를 새로 들이지 않음) + 모델 호출 없는 결정론적 `deterministicReadOnlyDecisionProvider`(항상 `BLOCKED` 반환).
+- 설계 근거: `runSandboxBrowserHarness`(`browser-harness.mjs`, 기존)의 `safeActionPlan()`이 `independentOutcome`을 항상 `null`로 넘기므로, decisionProvider가 `DONE`을 반환하면 `done_requires_independent_evidence`로 무조건 크래시한다 — 독립 semantic 검증자가 없는 v1은 절대 `DONE`을 반환해서는 안 되고, `BLOCKED`만이 루프를 안전하게 종료시키면서 그 시점까지의 실제 fetch 결과(snapshot/artifact)를 보존한다.
+- `server.mjs`: `YENO_BROWSER_SANDBOX_ENABLED==='true'`일 때만 이 어댑터를 기본 연결(소유자 명시적 옵트인 없이는 기존 동작 완전히 그대로 — `browser-live-harness.test.mjs`의 "no adapter stays unavailable" 검사가 수정 없이 그대로 통과함으로 확인). `evidenceClass`는 실제 fetch 구현이 쓰였을 때만 `LIVE`로 표시(테스트가 주입한 합성 transport는 `SANDBOX_SYNTHETIC`으로 정직하게 구분 — 첫 구현에서 항상 `LIVE`로 잘못 표시하던 버그를 검사로 발견해 즉시 수정).
+- `runtime/test/browser-adapter.test.mjs`(신규 3건) + 기존 browser-* 3개 파일(17건) 전부 PASS. 그중 1건은 `https://example.com/`에 대한 **실제 네트워크 GET**(합성 아님) — 실제 sha256 아티팩트·`evidenceClass:'LIVE'` 확인.
+- 알려진 v1 한계(설계상 의도): semantic 검증자가 없어 job은 `deterministicVerification.status:'verified'`까지는 도달하지만 `job.status`는 `completed`가 될 수 없음(`finalizeBrowserJob`이 독립 semantic pass를 요구) — `failed`/`semantic_verification_unavailable`로 정직하게 멈추고, 실제 snapshot/artifact/보류(REF, decision:'pending') source는 그대로 보존되어 소유자 검토 가능.
+
+### 2) F14 — 동시 worker 하에서 진짜 결함을 발견하고 수정 (`13a0640`)
+- 기존 F14(비용 상한)는 단일 job 순차 시나리오에서만 검증되어 있었음. 동시 worker 검사를 새로 작성해 실행한 결과 **실제 결함 재현**: `dailyCostUsage()`가 `status==='settled'`인 호출만 집계하고 `status==='reserved'`(응답 대기 중)인 호출은 집계하지 않음 → 두 worker가 거의 동시에 예약하면 둘 다 "아직 예산 이내"로 통과한 뒤 둘 다 정산되어 실제 합계가 상한을 넘김. 수정 전 코드로 재현: cap $0.03에 두 worker(각 $0.018) 모두 통과 → 실 정산 $0.036(20% 초과) — `settledCount=2, impliedUsd=0.036 > cap 0.03` 로 assertion 실패를 직접 관찰.
+- 수정: `pendingCostReservationsToday()` 신규 + `dailyCostLimitStatus()`가 오늘자 미정산(reserved) 호출이 하나라도 있으면 기존 "unpriced settled call" 처리와 동일하게 `cost_pricing_unknown`으로 fail-closed. `runAgent()` 자체는 수정 불필요(이미 공유 게이트를 통과하고 있었음).
+- 재검증: 동일 검사가 수정 후 PASS(정확히 한 worker만 차단됨, 실 정산 합계가 상한 이내임을 확인). `f14-concurrency.test.mjs`(신규 2건) + `cost-ledger.test.mjs`(5건, 기존) + `agent.test.mjs`/`agent-provider-selection.test.mjs`/`agent-security-intake.test.mjs`(36건, 기존) 전부 PASS.
+
+### 3) 스케줄러 수정(`a847357`) 심화 검증 (`0aa8701`)
+- `tick()`에 테스트 전용 관찰 훅(`options.debugSchedulerTick`, 기본 no-op, 프로덕션에서 설정되지 않음) 추가 — 의도적으로 자신의 try/catch 없이 배치해, 던지면 다른 모든 단계와 동일한 바깥쪽 `try/finally` 안전망을 그대로 거치게 함(단, 실제 검사에서는 **던지지 않는** 타임스탬프 관찰용으로만 사용 — 동일 위치에서 실제로 예외를 던지는 합성 훅은 `discovery.tick()`/`ecosystem.tick()`/`processMemorySyncBatch()`가 모두 `async function`이라 동기적으로 절대 던지지 않는 것과 달리, 순수 동기 함수로 던지면 `setTimeout` 콜백 밖으로 예외가 전파되어 미처리 예외로 **프로세스 자체가 죽을 위험**이 있음을 코드 검토로 확인했기 때문 — 안전하게 검증 가능한 실제 실패 경로를 대신 사용).
+- 예외 주입은 합성 훅 대신 **실제 실패 경로**로 검증: 저장소를 16MiB 백업 용량 한도를 넘겨 미리 채워 넣고(`x`.repeat(17MB) 이벤트) autopilot을 미리 켠 상태로 서버를 기동 → 다음 `runAutopilot()`이 진짜 `ProductionCapacityError`를 던짐. 관찰: `autopilot.retryAt`이 정확히 기록됨(≈1시간 후), 실패 이벤트가 **정확히 1회만** 로그됨(≈150ms 주기로 1.2초간 추가 tick 기회가 8회 이상 있었음에도 재시도 억제됨 — `autopilot.mjs`의 `eligible()`의 `retryAt` 게이트가 실제로 작동), 서버는 죽지 않고 무관한 요청을 계속 처리함(직후 `/api/jobs` 201 확인).
+- tick 중복 방지: 5개의 동시 요청(각각 자체적으로 `save()+schedule()` 호출)을 병렬 발사한 뒤 실제 관찰된 tick 간격이 한 번도 100ms 미만으로 좁혀지지 않음을 확인 — `schedulerTimer` 가드가 실제로 타이머 중복 적재를 막고 있음을 실측으로 확인(합성 타이머 모킹 아님).
+- `planAutopilot`/`getAutopilotStatus`의 `retryAt` 게이팅은 순수 함수 단위 검사로도 별도 확인.
+- `runtime/test/scheduler-fix.test.mjs`(신규 3건) 전부 PASS + closed-loop(38건)·autopilot 계열 회귀 확인.
+
+### 4) R39/R40 — 실제로 필요한 owner-blocked 항목만 남기기 (구현 변경 없음, 재확인 + 원장 갱신)
+- R39(백업·복구): `runtime/lib/backup.mjs` + `scripts/backup.mjs` CLI(keygen/export/restore)는 이미 구현·시험되어 있었음. `backup-api.test.mjs`를 이번 세션에 재실행해 재확인: 완전히 새 빈 디렉터리로 실제 restore → 그 디렉터리에서 새 서버를 기동 → 원본과 동일한 artifact 바이트·sha256 해시 확인(1건 PASS). 즉 "빈 환경으로의 복원" 자체는 이미 실증되어 있음. 남는 owner-blocked는 정확히: (1) 암호화된 백업 파일을 실제 외부 저장소(클라우드/USB 등)에 올리고 받아오는 과정은 설계상 자동화 대상이 아님(소유자가 직접 이동), (2) 진짜 별도 물리 기기에서의 복원은 미실증.
+- R40(릴리스 서명): `scripts/android-release.mjs`(서명자 연속성 검사 SIGNER_CHANGED, keystore.properties 기반 Gradle 삽입, 서명키 부재 시 fail-closed)는 이미 상당 부분 구현되어 있었음. `android-release.test.mjs` 재확인: 21/22 PASS(나머지 1건은 `native-config.test.mjs`의 `URLPattern` 미지원 — 이 기기 셸의 Node 22 환경 제약이며 package.json이 요구하는 Node>=24와 무관하게 이번 변경과 무관한 기존 환경 한계, 코드 결함 아님). 남는 owner-blocked는 정확히 하나: 실제 Android 서명 인증서(keystore) 자체.
+- 두 항목 모두 "소프트웨어가 할 수 있는 부분"은 이미 candidate/in_progress로 원장에 반영, 남은 차단 사유를 실제 서명키·외부 보관·실기기로 명확히 좁힘(`docs/BLACKHOLE_REQUIREMENTS_LEDGER_20260923.md` R39/R40 행 갱신).
+
+### 아직 완료 아님 / 정직하게 열어둠
+- push·Draft PR 생성은 여전히 미실행(GitHub push 인증이 이 세션 도달 범위 밖). base가 `blackhole/mobile-tools-back-codex-20260921`이어야 한다는 §15의 결론은 유효.
+- F08은 v1(읽기 전용, 클릭/입력 없음, 단일 페이지)까지만 — v2(실제 액션 디스패치, 독립 semantic 검증자)는 미착수.
+- 이번 세션에서 검증한 "동시성"은 단일 Node 프로세스 내부의 실제 비동기 인터리빙(진짜 동시 in-flight 요청)이며, 여러 프로세스·여러 실기기에 걸친 동시 worker는 검증 범위 밖.
+- 실모델(YENO_TOKEN 필요)·실기기 증거는 여전히 없음 — RC 완료를 보고하지 않음.
