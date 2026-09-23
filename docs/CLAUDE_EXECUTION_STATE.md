@@ -312,3 +312,23 @@ npm test
 ### 남은 사항
 - jsdom 11개 파일의 실제 pass/fail은 **이 device_bash 샌드박스에서는 확인 불가**. 사용자 실PC의 PowerShell에서 `npm test` 또는 `node --test runtime/test/*-ui.test.mjs runtime/test/voice-view-live.test.mjs`를 직접 실행해 확인하는 것을 다음 재개 항목으로 남긴다(이 세션은 클립보드 붙여넣기 방식으로 실행은 가능하나, 결과가 길어 자동 캡처는 사용자 협조가 필요).
 - 코드 변경 없음 — 이 커밋은 순수 기록용.
+
+## §19 재개 기록 (2026-09-24, 41ed3fc 이후 — 임시 검증 파일 삭제 확인 · Android 실기기 연동 직전 상태)
+
+### 1) 임시 파일 삭제 확인 (연호님 명시 요구사항, 실제 결과 관찰 전까지 완료로 기록 금지)
+- 실행: `Remove-Item -Force -ErrorAction SilentlyContinue "$env:TEMP\yeno-memory-embeddings-live-store.json"; Test-Path "$env:TEMP\yeno-memory-embeddings-live-store.json"`
+- 사용자가 PC에서 직접 붙여넣기 실행, 화면 캡처로 실제 출력 확인: `False`.
+- 화면은 잠겨있지 않았고, 이전 세션에서 있었던 캡처 실패는 도구 쪽 일시적 문제였다(연호님 지적대로 잠금으로 단정하지 않음, 재시도 후 즉시 성공).
+- **통과. 이제 완료로 기록함.**
+
+### 2) 남은 항목 (다음 재개 지점, 순서대로)
+- Windows 방화벽: YENO 서버 LAN 노출 포트를 집 사설 네트워크 내 특정 휴대폰(또는 사설 서브넷)으로만 제한하는 인바운드 규칙 — 아직 설계·적용 전.
+  - `YENO_ALLOWED_HOSTS`는 Host 헤더 문자열만 검사하며 소스 IP를 제한하지 않는다는 점을 확인함(연호님 지적) — 방화벽 규칙이 별도로 필요.
+- `YENO_HOST=0.0.0.0` + `YENO_ALLOWED_HOSTS=<PC LAN IP>:<port>` 설정 및 PC의 실제 LAN IP 확인 — 아직 미실행.
+- 방화벽 규칙 적용 후 서버 재기동, 휴대폰에서 동일 Wi-Fi로 PC URL 접속 → 기존 `web-pairing.mjs` 브라우저 페어링 승인 플로우 → 실제 `/api/voice` 요청.
+- `qwen2.5:3b` 처리 확인 + `job.memoryRecall.semantic`을 통한 로컬 기억 회수 증거가 앱에 보이는지 확인.
+- 인터넷 차단 + 동일 LAN 상태에서 폰↔PC 플로우 동작 확인.
+- 기기 페어링 해제(`revokeDevice`) 후 해당 기기 요청이 거부(401)되는지 확인.
+- Ollama 11434는 PC 내부 주소 유지, 공유기 포트 전달 금지 — 계속 준수.
+- 11개 jsdom 의존 테스트 파일은 사용자 실PC(device_bash 샌드박스 밖)에서 재확인 필요 — 아직 미실행.
+- push/원격 반영 없음(로컬 커밋만) — 계속 준수.
