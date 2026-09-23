@@ -5,6 +5,7 @@ import {validateRouting} from './brain-routing.mjs';
 import {validateSelfTests} from './readiness.mjs';
 import {validateBootRecords} from './https-evidence.mjs';
 import {validateDeviceAcceptances} from './device-evidence.mjs';
+import {validateMemoryEmbeddingRecord} from './memory-embeddings.mjs';
 import {validateConnectors,validateReadings} from './outcome-connector.mjs';
 import {validateOutcomeEvidences} from './outcome-verification.mjs';
 import {initialCapabilities,validateCapabilities,validateCapabilityRequest,capabilityInputSha256,disableAllCapabilitiesForRestore} from './capabilities.mjs';
@@ -47,7 +48,7 @@ export function atomicWrite(file, content) {
 export function initialState() {
  return {revision:0, emergencyStop:false, concurrency:1,
  modules:{memory:true,documents:true,diagnostics:true,ai:false},
- jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), capabilities:initialCapabilities(), capabilityInbox:initialCapabilityInbox(), codeWorkshop:initialCodeWorkshop(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem(), blackholeCore:initialCoreState(), memoryEvents:[], memorySyncOutbox:[], jevShadowLog:[], grokQuarantined:false, grokMultiAgentApproval:null, persistentBots:initialPersistentBots()};
+ jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), capabilities:initialCapabilities(), capabilityInbox:initialCapabilityInbox(), codeWorkshop:initialCodeWorkshop(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem(), blackholeCore:initialCoreState(), memoryEvents:[], memoryEmbeddings:[], memorySyncOutbox:[], jevShadowLog:[], grokQuarantined:false, grokMultiAgentApproval:null, persistentBots:initialPersistentBots()};
 }
 function initializeQuestCollections(state) {
  // Missing collections identify older stores. Present malformed data must fail
@@ -74,6 +75,7 @@ function initializeQuestCollections(state) {
  validateSelfTests(state.selfTests);
  if(Object.hasOwn(state,'runtimeBoots'))validateBootRecords(state.runtimeBoots);
  if(Object.hasOwn(state,'deviceAcceptances'))validateDeviceAcceptances(state.deviceAcceptances);
+ if(Object.hasOwn(state,'memoryEmbeddings')){if(!Array.isArray(state.memoryEmbeddings))throw new Error('memoryEmbeddings must be an array');for(const record of state.memoryEmbeddings)validateMemoryEmbeddingRecord(record);}else state.memoryEmbeddings=[];
  if(Object.hasOwn(state,'outcomeConnectors'))validateConnectors(state.outcomeConnectors);
  if(Object.hasOwn(state,'outcomeReadings'))validateReadings(state.outcomeReadings);
  if(Object.hasOwn(state,'outcomeEvidence'))validateOutcomeEvidences(state.outcomeEvidence);
