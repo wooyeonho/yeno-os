@@ -11,7 +11,7 @@ export const AGENT_ENDPOINTS = Object.freeze({
 const PROVIDERS = Object.keys(AGENT_ENDPOINTS);
 export class AgentError extends Error { constructor(code) { super(`Agent: ${code}`); this.code = code; } }
 
-function entry(env, provider, legacy, dailyCallLimit) {
+function entry(env, provider, legacy, dailyCallLimit, dailyCostLimitUsd) {
   const prefix = `YENO_${provider.toUpperCase()}`;
   // Never mix a scoped model with a generic key (or the reverse). An explicit
   // provider can keep its old complete YENO_AGENT_* credential/model pair.
@@ -20,17 +20,30 @@ function entry(env, provider, legacy, dailyCallLimit) {
   const key = (scoped ? env[`${prefix}_API_KEY`] : legacy ? env.YENO_AGENT_API_KEY : '') || '';
   const valid = typeof model === 'string' && typeof key === 'string' && model.length <= 120 && !/[\u0000-\u001f\u007f]/.test(model + key);
   const missing = !valid ? ['invalidConfiguration'] : [!model.trim() && 'model', !key.trim() && 'key', !dailyCallLimit && 'callLimit'].filter(Boolean);
-  return {provider, model: valid ? model : '', key: valid ? key : '', endpoint: AGENT_ENDPOINTS[provider], dailyCallLimit, ready: missing.length === 0, valid, missing};
+  return {provider, model: valid ? model : '', key: valid ? key : '', endpoint: AGENT_ENDPOINTS[provider], dailyCallLimit, dailyCostLimitUsd, ready: missing.length === 0, valid, missing};
+}
+
+// F14: an OPTIONAL estimated-USD total cap layered on top of the existing
+// per-day call-COUNT limit above. Absent/blank -> null (disabled; the call
+// count remains the only enforced rail, unchanged default behavior). Present
+// -> must be a finite non-negative number string; anything else fails the
+// same way an invalid call limit already does (fail closed on bad config,
+// never silently ignored).
+function parseCostLimit(raw) {
+  if (raw === undefined || raw === null || raw === '') return null;
+  if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(raw)) throw new AgentError('invalid_configuration');
+  return Number(raw);
 }
 
 export function agentConfig(env) {
   const requested = env.YENO_AGENT_PROVIDER || 'anthropic';
   const limit = env.YENO_AGENT_DAILY_CALL_LIMIT || '0';
+  const costLimit = parseCostLimit(env.YENO_AGENT_DAILY_COST_LIMIT_USD);
   if ((requested !== 'auto' && !Object.hasOwn(AGENT_ENDPOINTS, requested)) || !/^(?:0|[1-9]|1[0-9]|20)$/.test(limit)) throw new AgentError('invalid_configuration');
   const automatic = requested === 'auto';
   const order = automatic ? (env.YENO_AGENT_PROVIDER_ORDER || PROVIDERS.join(',')).split(',').map(s => s.trim()) : [requested];
   if (!order.length || new Set(order).size !== order.length || order.some(p => !Object.hasOwn(AGENT_ENDPOINTS, p))) throw new AgentError('invalid_provider_order');
-  const choices = PROVIDERS.map(provider => entry(env, provider, !automatic && provider === requested, Number(limit)));
+  const choices = PROVIDERS.map(provider => entry(env, provider, !automatic && provider === requested, Number(limit), costLimit));
   const selected = (automatic && order.map(provider => choices.find(c => c.provider === provider)).find(c => c.ready)) || choices.find(c => c.provider === order[0]);
   if (!automatic && !selected.valid) throw new AgentError('invalid_configuration');
   const {valid, missing, ...config} = selected;

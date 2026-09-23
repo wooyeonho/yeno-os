@@ -26,6 +26,14 @@ test('isolated mode passes the full loop on a throwaway runtime and reports the 
   assert.equal(report.deviceRevokeStatus, 'success');
   assert.equal(report.errorMessage, null);
   assert.equal(report.restartReadback, 'PASS(process_restart)');
+  // F09: the isolated runtime is started from this same checked-out source
+  // tree, so the identity the core reports about itself (never something the
+  // tool assumes or is told) must equal this tool's own git HEAD - proving
+  // the comparison is real, not a hardcoded true.
+  assert.equal(report.deploymentSha, report.sourceSha);
+  assert.equal(report.deployment, 'local');
+  assert.equal(report.deploymentMatchesSource, true);
+  assert.ok(report.steps.find(s => s.name === 'deployment_identity')?.ok);
   assert.equal(report.outcome, 'PASS');
   assert.ok(report.steps.find(s => s.name === 'revoked_token_rejected')?.ok);
   const text = out.join('\n') + fs.readFileSync(jsonPath, 'utf8');

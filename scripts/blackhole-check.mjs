@@ -54,7 +54,8 @@ function emptyReport(mode, core) {
   return {
     testRunId: randomUUID(), mode, at: new Date().toISOString(), core,
     sourceSha: gitSha(), deploymentSha: null, clientBuild: 'scripts/blackhole-check.mjs', apiVersion: null, schemaVersion: null,
-    requirementIds: ['R12', 'R36', 'R42'],
+    requirementIds: ['R12', 'R36', 'R42', 'R35', 'F09'],
+    deploymentOrigin: null, deployment: null, deploymentMatchesSource: 'NOT_RUN',
     // minimal compatible fields
     jobStatus: 'NOT_RUN', sameJobIdSameArtifactHash: 'NOT_RUN', artifactSha256: null, deviceRevokeStatus: 'NOT_RUN', errorMessage: null,
     // extended evidence
@@ -86,6 +87,17 @@ async function runLoop(report, {base, pairingToken, reconnect}) {
 
   const state1 = await http(base, '/api/v1/state', {token: deviceToken});
   step('authenticated_state', state1.status === 200, `status ${state1.status}`);
+  // F09: which candidate/commit the core is actually running never comes from
+  // the branch or SHA a person types - it is read from the core's own signed
+  // response, the same way every other check in this tool works. A mismatch
+  // is expected and NOT a failure here (this candidate is local-only, not yet
+  // deployed): the field exists so the owner can see the real relationship
+  // (same / ahead / behind / unrelated) rather than assume it.
+  report.deploymentSha = state1.json?.runtimeIdentity?.sourceCommit ?? null;
+  report.deploymentOrigin = state1.json?.runtimeIdentity?.sourceCommitOrigin ?? null;
+  report.deployment = state1.json?.runtimeIdentity?.deployment ?? null;
+  report.deploymentMatchesSource = (report.sourceSha && report.deploymentSha) ? report.sourceSha === report.deploymentSha : 'NOT_RUN';
+  report.steps.push({name: 'deployment_identity', ok: true, detail: `deploymentSha=${report.deploymentSha ?? 'unknown'} sourceSha=${report.sourceSha ?? 'unknown'} matches=${report.deploymentMatchesSource}`});
 
   const cmdReq = randomUUID(); report.requestId = cmdReq;
   const cmd = await http(base, '/api/v1/commands', {method: 'POST', token: deviceToken, body: {text: `문서 만들어: BLACKHOLE 연결·실행 점검 ${report.testRunId} (외부 발송·결제·삭제 없음)`, requestId: cmdReq}});
