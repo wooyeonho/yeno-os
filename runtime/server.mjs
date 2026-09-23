@@ -1093,6 +1093,14 @@ export function createYenoServer(options={}) {
  // never stuck).
  function tick(){schedulerTimer=null;if(closed)return;
   try{
+   // Test-only observation/fault-injection seam (default no-op; never
+   // configured in production). Deliberately UNGUARDED by its own
+   // try/catch, so a throw here exercises exactly the same outer
+   // try/finally safety net every other real step below relies on -
+   // this is how scheduler-fix.test.mjs verifies a single bad tick can
+   // never kill the loop, and it doubles as a per-tick timestamp probe
+   // for verifying reschedule interval and no-duplicate-timer behavior.
+   if(typeof options.debugSchedulerTick==='function')options.debugSchedulerTick();
    try{ensureDurable();}catch{return;}
    try{for(const job of s.jobs)if(job.deadlineAt&&['queued','running'].includes(job.status)&&Date.now()>=Date.parse(job.deadlineAt)){job.status='paused';job.pauseReason='deadline';touch(job);invalidate(job);save();}}catch(error){event(`마감 처리 실패: ${error.message}`);}
    void discovery.tick();
