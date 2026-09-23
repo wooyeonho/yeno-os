@@ -180,14 +180,47 @@ test('recentArtifactRef is only the most recently updated completed quest job th
   validateCoreState(core, state);
 });
 
-test('verifiedResultRef can never be non-null: validateCoreState fails closed the moment anything tries to populate it', () => {
-  const state = baseState();
-  const core = initialCoreState();
-  assert.throws(
-    () => validateCoreState({...core, verifiedResultRef: {type: 'quest', questId: randomUUID(), jobId: randomUUID(), artifactId: 'x'}}, state),
-    BlackholeCoreError,
-    'no durable outcome-verification verdict store exists yet, so this must always fail closed',
-  );
+// F04 fixtures: a full Shadow Army mission as the store persists it - builder
+// (artifact), deterministic verify job (verifyResult), semanticVerifier job
+// (semanticVerdict). Only this combination may ever become verifiedResultRef.
+function verifiedMissionFixture({verdict = 'pass', deterministic = true} = {}) {
+  const missionId = randomUUID(), builderId = randomUUID(), verifierId = randomUUID(), semanticId = randomUUID(), artifactId = randomUUID();
+  const builder = job(builderId, {status: 'completed', artifacts: [{id: artifactId, name: 'a.md'}], shadowAssignment: {missionId, role: 'builder'}});
+  const verifier = job(verifierId, {status: 'completed', type: 'verify', verifyResult: {verified: deterministic, reasons: [], subjects: []}, shadowAssignment: {missionId, role: 'verifier'}});
+  const semanticVerdict = {version: 1, missionId, plannerQuestId: null, builderJobId: builderId, verifierJobId: verifierId, artifactRefs: [artifactId], verdict, confidence: 0.9, criteria: [], summary: 's', provider: 'openai', model: 'm', createdAt: at()};
+  const semantic = job(semanticId, {status: 'completed', type: 'agent', updatedAt: '2026-09-01T00:00:00.000Z', semanticVerifyRequest: {missionId, builderJobId: builderId, verifierJobId: verifierId, plannerQuestId: null}, semanticVerdict, shadowAssignment: {missionId, role: 'semanticVerifier'}});
+  const artifacts = {[artifactId]: {id: artifactId, name: 'a.md', filename: `${artifactId}.md`, sha256: 'e'.repeat(64), bytes: 1, jobId: builderId}};
+  return {state: baseState({jobs: [builder, verifier, semantic], artifacts}), ids: {missionId, builderId, verifierId, semanticId, artifactId}};
+}
+
+test('F04: verifiedResultRef is derived only from a persisted semantic PASS whose deterministic gate, builder artifact and registered sha still resolve', () => {
+  const {state, ids} = verifiedMissionFixture();
+  const {core} = evaluateHeartbeat(initialCoreState(), state, {at: at()});
+  assert.deepEqual(core.verifiedResultRef, {type: 'semantic', missionId: ids.missionId, semanticJobId: ids.semanticId, verifierJobId: ids.verifierId, builderJobId: ids.builderId, artifactId: ids.artifactId, artifactSha256: 'e'.repeat(64), verdict: 'pass', verdictVersion: 1, verifiedAt: state.jobs[2].semanticVerdict.createdAt});
+  validateCoreState(core, state);
+  assert.equal(coreSummary({...state, blackholeCore: core}).verifiedResult.artifactId, ids.artifactId);
+});
+
+test('F04: deterministic PASS + semantic FAIL/UNCERTAIN, or deterministic FAIL + semantic PASS, never become a verified result', () => {
+  for (const opts of [{verdict: 'fail'}, {verdict: 'uncertain'}, {deterministic: false}]) {
+    const {state} = verifiedMissionFixture(opts);
+    const {core} = evaluateHeartbeat(initialCoreState(), state, {at: at()});
+    assert.equal(core.verifiedResultRef, null, JSON.stringify(opts));
+    validateCoreState(core, state);
+  }
+});
+
+test('F04: a stale or forged verifiedResultRef fails closed - replaced artifact sha, unregistered artifact, other mission, tampered shape', () => {
+  const {state, ids} = verifiedMissionFixture();
+  const {core} = evaluateHeartbeat(initialCoreState(), state, {at: at()});
+  validateCoreState(core, state);
+  const replaced = {...state, artifacts: {[ids.artifactId]: {...state.artifacts[ids.artifactId], sha256: 'f'.repeat(64)}}};
+  assert.throws(() => validateCoreState(core, replaced), BlackholeCoreError, 'artifact bytes changed after the verdict');
+  assert.equal(evaluateHeartbeat(initialCoreState(), {...state, artifacts: {}}, {at: at()}).core.verifiedResultRef, null, 'deleted artifact re-derives to null');
+  assert.throws(() => validateCoreState(core, {...state, artifacts: {}}), BlackholeCoreError, 'deleted artifact rejects a persisted claim');
+  assert.throws(() => validateCoreState({...core, verifiedResultRef: {...core.verifiedResultRef, missionId: randomUUID()}}, state), BlackholeCoreError, 'other mission');
+  assert.throws(() => validateCoreState({...core, verifiedResultRef: {type: 'quest', questId: randomUUID(), jobId: randomUUID(), artifactId: 'x'}}, state), BlackholeCoreError, 'wrong shape');
+  assert.throws(() => validateCoreState({...core, verifiedResultRef: {...core.verifiedResultRef, verdict: 'fail'}}, state), BlackholeCoreError, 'a fail can never be a verified result');
 });
 
 test('relationshipMemoryPointer is re-derived fresh every heartbeat from the most recent relationship memory event, never an independently settable field', () => {

@@ -44,6 +44,26 @@ export const HEARTBEAT_TRIGGERS = Object.freeze([
 ]);
 const HEARTBEAT_ENTRY_FIELDS = Object.freeze(['id', 'at', 'trigger', 'reason', 'previousActivity', 'nextActivity', 'changedFields']);
 const RESULT_REF_FIELDS = Object.freeze(['type', 'questId', 'jobId', 'artifactId']);
+// F04 design record - verifiedResultRef contract.
+// A durable outcome-verification verdict DOES exist in this codebase: the
+// Shadow Army semanticVerifier job persists `semanticVerdict` (versioned;
+// missionId/builderJobId/verifierJobId/artifactRefs/verdict/createdAt) in the
+// same single-writer store as every other job. No second verdict store is
+// added. verifiedResultRef is re-derived on every heartbeat from that record
+// and only ever points at CONTENT verification that actually passed:
+//   - semanticVerdict.verdict === 'pass'   (deterministic-only never counts;
+//     deterministic PASS + semantic FAIL/UNCERTAIN is NOT a verified result)
+//   - the deterministic verify job it gates on exists, completed, verified
+//   - the builder job exists, completed, and its first artifact is the one
+//     the verdict was issued for (artifactRefs[0])
+//   - that artifact is still registered to the builder job; its stored
+//     sha256 is captured so a later replacement is detectable
+// Anything stale (deleted/replaced artifact, other mission, tampered ids)
+// resolves to null on heartbeat and makes validateCoreState() throw if a
+// persisted ref still claims it. Old persisted cores with null keep loading.
+// This is integrity + content verification only - never external business
+// outcome; that remains outcome-verification.mjs's separate ledger.
+const VERIFIED_REF_FIELDS = Object.freeze(['type', 'missionId', 'semanticJobId', 'verifierJobId', 'builderJobId', 'artifactId', 'artifactSha256', 'verdict', 'verdictVersion', 'verifiedAt']);
 const MAX_ACTIVE_SHADOWS = 50;
 const MAX_HEARTBEAT_LOG = 20;
 const DRIVE_IDS = Object.freeze(SEVEN_DRIVES.map(d => d.id));
@@ -99,6 +119,33 @@ export function initialCoreState(at = null) {
 // proves a quest job completed and attached a file, exactly quests.mjs's own
 // "artifact_recorded" status - not outcome-verification.mjs's much stronger
 // outcomeVerified verdict (which nothing in this codebase persists yet).
+// Resolve the verified-result reference a given semanticVerifier job would
+// justify RIGHT NOW against the given state, or null with a reason. Shared by
+// evaluateHeartbeat (derivation) and validateCoreState (fail-closed check) so
+// the two can never disagree about what counts as verified.
+function resolveVerifiedResult(semanticJob, state) {
+  const v = semanticJob?.semanticVerdict;
+  if (!semanticJob || semanticJob.status !== 'completed' || !object(v)) return {ref: null, reason: 'no_completed_semantic_verdict'};
+  if (v.verdict !== 'pass') return {ref: null, reason: `semantic_${v.verdict}`};
+  if (!uuid(v.missionId) || !uuid(v.verifierJobId) || !uuid(v.builderJobId) || !iso(v.createdAt)) return {ref: null, reason: 'invalid_verdict_identifiers'};
+  const jobs = state.jobs ?? [];
+  const verifier = jobs.find(j => j.id === v.verifierJobId);
+  if (!verifier || verifier.status !== 'completed' || verifier.verifyResult?.verified !== true) return {ref: null, reason: 'deterministic_gate_not_passed'};
+  const builder = jobs.find(j => j.id === v.builderJobId);
+  const artifactId = builder?.artifacts?.[0]?.id ?? null;
+  if (!builder || builder.status !== 'completed' || !artifactId || v.artifactRefs?.[0] !== artifactId) return {ref: null, reason: 'builder_artifact_mismatch'};
+  const stored = (state.artifacts ?? {})[artifactId];
+  if (!stored || stored.jobId !== builder.id || typeof stored.sha256 !== 'string' || !stored.sha256) return {ref: null, reason: 'artifact_not_registered'};
+  return {ref: {type: 'semantic', missionId: v.missionId, semanticJobId: semanticJob.id, verifierJobId: v.verifierJobId, builderJobId: v.builderJobId, artifactId, artifactSha256: stored.sha256, verdict: 'pass', verdictVersion: v.version, verifiedAt: v.createdAt}, reason: null};
+}
+function validateVerifiedResultRef(ref, state) {
+  if (ref === null) return;
+  if (!exactKeys(ref, VERIFIED_REF_FIELDS) || ref.type !== 'semantic' || ref.verdict !== 'pass') throw new BlackholeCoreError('Invalid Core verifiedResultRef shape');
+  const semanticJob = (state.jobs ?? []).find(j => j.id === ref.semanticJobId);
+  const {ref: expected, reason} = resolveVerifiedResult(semanticJob, state);
+  if (!expected) throw new BlackholeCoreError(`Core verifiedResultRef no longer resolves to a real passed verdict (${reason})`);
+  if (JSON.stringify(expected) !== JSON.stringify(ref)) throw new BlackholeCoreError('Core verifiedResultRef does not match the persisted verdict/artifact evidence');
+}
 function validateArtifactRef(ref, state) {
   if (ref === null) return;
   if (!exactKeys(ref, RESULT_REF_FIELDS) || ref.type !== 'quest') throw new BlackholeCoreError('Invalid Core recentArtifactRef shape');
@@ -154,12 +201,7 @@ export function validateCoreState(core, state) {
   for (const id of core.activeShadowIds) if (!(state.jobs ?? []).some(j => j.id === id && isShadowJob(j))) throw new BlackholeCoreError('Core activeShadowIds references a non-shadow job');
   if (new Set(core.activeShadowIds).size !== core.activeShadowIds.length) throw new BlackholeCoreError('Core activeShadowIds contains a duplicate');
   validateArtifactRef(core.recentArtifactRef, state);
-  // No durable outcome-verification verdict store exists in this codebase
-  // yet, so a genuinely verified result can never be represented safely -
-  // this must stay null rather than ever being filled from an artifact
-  // alone. Fails closed the moment a future change tries to populate it
-  // without also adding the real verdict store this validation would need.
-  if (core.verifiedResultRef !== null) throw new BlackholeCoreError('Core verifiedResultRef must remain null until a durable outcome-verification verdict store exists');
+  validateVerifiedResultRef(core.verifiedResultRef, state);
   if (core.relationshipMemoryPointer !== null && (!uuid(core.relationshipMemoryPointer) || !(state.memoryEvents ?? []).some(e => e.id === core.relationshipMemoryPointer && e.type === 'relationship'))) throw new BlackholeCoreError('Core relationshipMemoryPointer does not reference a real relationship memory event');
   if (core.lastHeartbeatAt !== null && !iso(core.lastHeartbeatAt)) throw new BlackholeCoreError('Invalid Core lastHeartbeatAt');
   if (!Number.isSafeInteger(core.heartbeatCount) || core.heartbeatCount < 0) throw new BlackholeCoreError('Invalid Core heartbeatCount');
@@ -212,14 +254,24 @@ export function evaluateHeartbeat(previousCore, state, {at, trigger = 'state_cha
 
   // Recent artifact: the most recently updated completed quest job that
   // actually produced an artifact - quests.mjs's own "artifact_recorded",
-  // deliberately NOT called "verified" (see verifiedResultRef above: this
-  // codebase has no durable outcome-verification verdict to point at yet).
+  // deliberately NOT called "verified" - verifiedResultRef (below) is the
+  // only field that may claim content verification, and only from a real
+  // persisted semantic verdict.
   const resultCandidates = quests
     .map(quest => ({quest, job: jobs.find(j => j.id === quest.jobId)}))
     .filter(({job}) => job && job.status === 'completed' && (job.artifacts ?? []).length > 0)
     .sort((a, b) => b.job.updatedAt.localeCompare(a.job.updatedAt));
   const top = resultCandidates[0] ?? null;
   const recentArtifactRef = top ? {type: 'quest', questId: top.quest.id, jobId: top.job.id, artifactId: top.job.artifacts[0].id} : null;
+
+  // Verified result (F04): the most recently updated semanticVerifier job
+  // whose persisted verdict still resolves against the current state (see
+  // resolveVerifiedResult) - never derived from an artifact alone.
+  const verifiedCandidates = jobs
+    .filter(j => j.semanticVerifyRequest && j.status === 'completed' && j.semanticVerdict?.verdict === 'pass')
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  let verifiedResultRef = null;
+  for (const candidate of verifiedCandidates) { const {ref} = resolveVerifiedResult(candidate, state); if (ref) { verifiedResultRef = ref; break; } }
 
   // Relationship memory pointer: the most recent relationship-type memory
   // event, re-derived every time rather than held as an independently
@@ -235,6 +287,7 @@ export function evaluateHeartbeat(previousCore, state, {at, trigger = 'state_cha
   if (previousCore.dominantDriveId !== dominantDriveId) changedFields.push('dominantDriveId');
   if (JSON.stringify(previousCore.activeShadowIds) !== JSON.stringify(activeShadowIds)) changedFields.push('activeShadowIds');
   if (JSON.stringify(previousCore.recentArtifactRef) !== JSON.stringify(recentArtifactRef)) changedFields.push('recentArtifactRef');
+  if (JSON.stringify(previousCore.verifiedResultRef) !== JSON.stringify(verifiedResultRef)) changedFields.push('verifiedResultRef');
   if (previousCore.relationshipMemoryPointer !== relationshipMemoryPointer) changedFields.push('relationshipMemoryPointer');
 
   const entry = {
@@ -256,7 +309,7 @@ export function evaluateHeartbeat(previousCore, state, {at, trigger = 'state_cha
     dominantDriveId,
     activeShadowIds,
     recentArtifactRef,
-    verifiedResultRef: null,
+    verifiedResultRef,
     relationshipMemoryPointer,
     lastHeartbeatAt: at,
     heartbeatCount: (previousCore.heartbeatCount ?? 0) + 1,
@@ -295,8 +348,9 @@ export function coreSummary(state) {
     activeShadowIds: core.activeShadowIds,
     // recentArtifactResult: a completed quest job's attached artifact - real,
     // but only integrity evidence (quests.mjs's own "artifact_recorded").
-    // verifiedResult: stays null until a durable outcome-verification verdict
-    // exists in this codebase; never backfilled from the artifact alone.
+    // verifiedResult: null until a persisted semantic verdict (pass) still
+    // resolves against the current jobs/artifacts; never backfilled from the
+    // artifact alone (F04).
     recentArtifactResult: core.recentArtifactRef,
     verifiedResult: core.verifiedResultRef,
     relationshipMemory: relationshipMemory ? {id: relationshipMemory.id, type: relationshipMemory.type, text: relationshipMemory.text, createdAt: relationshipMemory.createdAt} : null,

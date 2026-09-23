@@ -27,11 +27,12 @@ async function setup(t, {obsidian = false} = {}) {
   const agentFetch = async (url, req) => { const body = JSON.parse(req.body); return ok(isSemanticRequest(body) ? JSON.stringify(PASS_VERDICT) : '실제 Shadow 산출물 본문'); };
   let runtime = await start({host: '127.0.0.1', port: 0, dataDir: dir, token, env, agentFetch});
   const base = () => `http://127.0.0.1:${runtime.server.address().port}`;
+  const get = async p => { const r = await fetch(base() + p, {headers: {Authorization: `Bearer ${token}`}}); return {status: r.status, body: await r.json()}; };
   const post = async (p, body) => { const r = await fetch(base() + p, {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: `Bearer ${token}`}, body: JSON.stringify({requestId: randomUUID(), ...body})}); return {status: r.status, body: await r.json()}; };
   const wait = async (id, statuses = ['completed', 'failed', 'paused']) => { for (let i = 0; i < 400; i++) { const j = openStore(dir).state.jobs.find(j => j.id === id); if (j && statuses.includes(j.status)) return j; await new Promise(r => setTimeout(r, 20)); } assert.fail('job did not reach target state'); };
   const restart = async () => { runtime.shutdown(); runtime = await start({host: '127.0.0.1', port: 0, dataDir: dir, token, env, agentFetch}); };
   t.after(() => { runtime.shutdown(); fs.rmSync(dir, {recursive: true, force: true}); });
-  return {dir, post, wait, restart, disk: () => openStore(dir).state};
+  return {dir, get, post, wait, restart, disk: () => openStore(dir).state};
 }
 
 async function verifiedMission(h) {
@@ -84,4 +85,18 @@ test('F05: restart + re-processing never duplicates milestone, memory event or o
   assert.equal(milestonesFor(after, project.id, missionId).length, 1);
   assert.equal(after.memorySyncOutbox.filter(i => i.eventId === resultEventsFor(before, semanticJob.id)[0].id).length, 1);
   assert.equal(after.jobs.find(j => j.id === semanticJob.id).status, 'completed', 'a completed verifier job stays completed across restart');
+});
+
+test('F04 (integration): after a real verified mission, Living Core exposes verifiedResult pointing at that mission/artifact, and it survives restart', async t => {
+  const h = await setup(t);
+  const {missionId, semanticJob} = await verifiedMission(h);
+  const core = await h.get('/api/core');
+  assert.equal(core.status, 200);
+  const ref = core.body.verifiedResult;
+  assert.ok(ref, 'verifiedResult must be populated from the persisted semantic verdict');
+  assert.equal(ref.type, 'semantic'); assert.equal(ref.missionId, missionId); assert.equal(ref.semanticJobId, semanticJob.id); assert.equal(ref.verdict, 'pass');
+  assert.equal(ref.artifactSha256, h.disk().artifacts[ref.artifactId].sha256);
+  await h.restart();
+  const again = await h.get('/api/core');
+  assert.deepEqual(again.body.verifiedResult, ref, 'same evidence re-read after restart');
 });
