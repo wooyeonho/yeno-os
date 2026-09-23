@@ -9,7 +9,10 @@
   },
   "scripts": {
     "start": "node launch.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "check": "node ../scripts/blackhole-check.mjs --mode isolated",
+    "check:core": "node ../scripts/blackhole-check.mjs --mode basic",
+    "check:live": "node ../scripts/blackhole-check.mjs --mode live"
   },
   "dependencies": {
     "quickjs-emscripten": "0.32.0"
