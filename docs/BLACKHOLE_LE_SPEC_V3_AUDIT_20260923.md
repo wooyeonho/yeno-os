@@ -80,7 +80,7 @@
 
 | ID | 상태 | 근거 |
 |---|---|---|
-| A01 오프라인 개인 과제(로컬 모델, 외부 호출 0건) | **미구현 — 첫 실사용 최우선 차단** | 로컬 provider가 없어 "외부 호출 0건으로 초안 저장"이 원천적으로 불가능. |
+| A01 오프라인 개인 과제(로컬 모델, 외부 호출 0건) | **일부구현 — 배선 완료, 실행 검증 대기** | `local` provider(`a12dd3f`, loopback-only `AGENT_ENDPOINTS.local`, 무인증, `YENO_LOCAL_BASE_URL` 오버라이드는 loopback으로만 fail-closed 검증)를 `provider-config-engine.mjs`에 추가하고 `desktop-provider-config.mjs`까지 정합성 맞춤(75/75 테스트 통과). `/api/jobs`의 일반 agent job 경로(`model-router.mjs`의 `PROVIDERS`가 `AGENT_ENDPOINTS`에서 자동 파생)는 이미 `local`을 받아들임. **단, 실제 llama.cpp/Ollama 같은 로컬 모델 런타임과 가중치가 이 기기에 설치돼 있지 않음(`which ollama llama-server` 없음) — 실제 오프라인 실행 증거는 아직 없음. 설치는 되돌리기 어려운 실사용 작업이라 사용자 승인 필요, 아직 미실행.** 범위 참고: `quests.mjs`/`research.mjs`는 각자 독립된 하드코딩 provider 목록(`local` 미포함)을 유지 — A01이 쓰는 일반 document/agent job 경로와 무관하므로 의도적으로 손대지 않음. |
 | A02 검색(근거·원문 위치 대조) | 미구현 | LE-01 검색 경로 자체가 없음. |
 | A03 한 임무 연결(같은 ID로 추적) | 일부구현 | job 단위 추적은 있으나 missionId 개념 없음. |
 | A04 중복·재시작 | 구현됨 | 기존 회귀(F04~F06)로 검증됨. |
@@ -97,8 +97,8 @@
 
 ## 결론 — 첫 실사용(A01)에 필요한 최소 구현
 
-v3 §0은 "학습·양자 모듈 전체 인수를 기다리지 말라"고 명시한다. A01만 놓고 보면 막는 것은 정확히 하나: **로컬 모델을 기존 provider 계약에 연결하는 7번째 provider가 없다는 것**뿐이다. sources.mjs(자료 읽기)·job 엔진·검증·비용 원장은 이미 provider-무관 구조라 재사용 가능하다.
+v3 §0은 "학습·양자 모듈 전체 인수를 기다리지 말라"고 명시한다. A01만 놓고 보면 막던 것은 정확히 하나였다: **로컬 모델을 기존 provider 계약에 연결하는 7번째 provider가 없다는 것.** sources.mjs(자료 읽기)·job 엔진·검증·비용 원장은 이미 provider-무관 구조라 재사용됨.
 
-제안하는 최소 범위(이번에 구현 착수): `AGENT_ENDPOINTS`에 `local` provider 추가(기본 loopback, 무인증), `provider-config-engine.mjs`가 `YENO_LOCAL_BASE_URL`(기본 `http://127.0.0.1:8080/v1/chat/completions`)·`YENO_LOCAL_MODEL`을 읽도록 확장. 이렇게 하면 llama.cpp/ollama 같은 OpenAI 호환 로컬 서버가 켜져 있을 때 기존 `runAgent()`/검증/비용원장을 그대로 통과한다.
+**2026-09-23 갱신 — 코드 배선 완료(`a12dd3f`, HEAD 기준 커밋 6개째: `0db4d70`→...→`a12dd3f`)**: `AGENT_ENDPOINTS`에 `local` provider 추가(기본 `http://127.0.0.1:8080/v1/chat/completions`, 무인증, `YENO_LOCAL_BASE_URL` 오버라이드는 loopback만 허용·fail-closed), `desktop-provider-config.mjs`의 스키마 검증도 `local`의 apiKey는 반드시 빈 문자열이어야 함으로 맞춤. 관련 테스트(provider-config/desktop-provider-config/agent-provider-selection/model-router/quests/research/f14-concurrency/cost-ledger/agent) 75/75 통과. 일반 `/api/jobs` agent job 경로가 이미 `local`을 받아들이는 것도 확인함.
 
-**중요 — 사용자 결정 필요**: 실제 로컬 모델 런타임(llama.cpp 서버 또는 ollama)과 모델 가중치(수 GB)는 이 기기에 설치돼 있지 않다. 설치는 디스크 용량·다운로드 시간을 쓰는 되돌리기 어려운 작업이라 제가 임의로 설치하지 않는다. 배선(코드)까지는 지금 진행하고, 설치 여부는 사용자에게 확인한다.
+**아직 완료 아님 — 정직하게 열어둠**: 이것은 provider *설정 계층*일 뿐이다. 실제 로컬 모델 런타임(llama.cpp `llama-server` 또는 Ollama)과 모델 가중치(수 GB)는 이 기기에 설치돼 있지 않음(`which ollama llama-server llama-cpp` 결과 없음, 이번 세션 재확인). 실제 오프라인 job 실행(로컬 서버 기동 → job 생성 → 외부 호출 0건으로 완료) 증거는 아직 없다. 설치는 디스크 용량·다운로드 시간을 쓰는 되돌리기 어려운 실사용 작업이라 임의로 진행하지 않았다 — **사용자 결정 필요**: (1) 어떤 로컬 런타임(llama.cpp vs Ollama), (2) 어떤 모델(용량·성능 트레이드오프), (3) 설치 진행 여부/시점을 사용자에게 확인 후 진행한다.
