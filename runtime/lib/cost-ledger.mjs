@@ -84,13 +84,42 @@ export function dailyCostUsage(jobs, at = new Date().toISOString(), snapshot = P
   };
 }
 
+// Concurrency guard (F14 hardening, 2026-09-23): dailyCostUsage() only ever
+// counts SETTLED calls - a call that is reserved (in flight, not yet
+// responded to) is invisible to it by design (its token counts are not known
+// yet, so it cannot be priced). Under a single worker that is fine, because
+// the previous call always settles (or is marked 'unknown') before the next
+// reservation is checked. Under concurrent workers it is NOT fine: two
+// reservations can both pass the same "are we under budget" check before
+// either settles, and both settle over budget afterward. This counts
+// same-day reservations that have not yet settled, so the cap check below
+// can fail closed on them exactly like it already fails closed on an
+// unpriced settled call - an in-flight call's eventual cost is just as
+// unknown right now as an unpriced one is.
+export function pendingCostReservationsToday(jobs, at = new Date().toISOString()) {
+  const day = at.slice(0, 10);
+  let pending = 0;
+  for (const job of jobs) {
+    for (const call of job.agentJournal?.calls ?? []) {
+      if (call.status === 'reserved' && call.at?.slice(0, 10) === day) pending++;
+    }
+  }
+  return pending;
+}
+
 // dailyCostLimitUsd: null/undefined means no cap is configured (the existing
 // per-day call-count limit remains the primary safety rail in that case).
 export function dailyCostLimitStatus(jobs, dailyCostLimitUsd, at = new Date().toISOString(), snapshot = PROVIDER_UNIT_PRICES_SNAPSHOT) {
   const usage = dailyCostUsage(jobs, at, snapshot);
-  if (dailyCostLimitUsd === null || dailyCostLimitUsd === undefined) return {...usage, limitUsd: null, blocked: false, reason: null};
+  if (dailyCostLimitUsd === null || dailyCostLimitUsd === undefined) return {...usage, limitUsd: null, blocked: false, reason: null, pendingReservedCalls: 0};
   if (!finite(dailyCostLimitUsd)) throw new RangeError('invalid_daily_cost_limit');
-  if (usage.unpricedCalls > 0) return {...usage, limitUsd: dailyCostLimitUsd, blocked: true, reason: 'cost_pricing_unknown'};
+  const pendingReservedCalls = pendingCostReservationsToday(jobs, at);
+  if (usage.unpricedCalls > 0) return {...usage, limitUsd: dailyCostLimitUsd, blocked: true, reason: 'cost_pricing_unknown', pendingReservedCalls};
+  // A same-day reservation still in flight makes today's true total just as
+  // unknowable as an unpriced settled call - fail closed the same way,
+  // rather than letting a second concurrent worker reserve against a budget
+  // that a first worker's still-unsettled call may already have used up.
+  if (pendingReservedCalls > 0) return {...usage, limitUsd: dailyCostLimitUsd, blocked: true, reason: 'cost_pricing_unknown', pendingReservedCalls};
   const blocked = usage.estimatedTotalUsd >= dailyCostLimitUsd;
-  return {...usage, limitUsd: dailyCostLimitUsd, blocked, reason: blocked ? 'daily_cost_limit' : null};
+  return {...usage, limitUsd: dailyCostLimitUsd, blocked, reason: blocked ? 'daily_cost_limit' : null, pendingReservedCalls};
 }

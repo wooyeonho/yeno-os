@@ -12,6 +12,7 @@ export {
   runAgent,
   dailyCostUsage,
   dailyCostLimitStatus,
+  pendingCostReservationsToday,
   estimateCallCostUsd,
   priceFor,
   PROVIDER_UNIT_PRICES_SNAPSHOT,
