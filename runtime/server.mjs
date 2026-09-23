@@ -542,16 +542,31 @@ export function createYenoServer(options={}) {
    if(!b.requestId)throw new HttpError(400,'Persistent requestId required');
    const {requestId,...claim}=b;
    let memoryEvent;
-   try{memoryEvent=createMemoryEvent(claim,s,{at:now()});}catch(error){memoryEventError(error);}
-   try{s.memoryEvents=addMemoryEvent(s.memoryEvents,memoryEvent,s);}catch(error){memoryEventError(error);}
-   // Durable Memory Fabric (Phase B): queue delivery to whichever external
-   // destinations are actually configured. Enqueueing is pure bookkeeping -
-   // no network/filesystem call happens here; a bounded scheduler tick (see
-   // processMemorySyncBatch) does the actual bounded work later.
-   const destinations=[...(supabaseMemoryConfig.enabled?['supabase']:[]),...(obsidianMemoryConfig.enabled?['obsidian']:[])];
-   if(destinations.length)s.memorySyncOutbox=enqueue(s.memorySyncOutbox,memoryEvent,destinations,now());
+   try{memoryEvent=recordMemoryEvent(claim,{at:now()});}catch(error){memoryEventError(error);}
    event(`기억 이벤트 기록: ${memoryEvent.type}`);
    return {status:201,payload:{memoryEvent},trigger:'memory_recorded'};
+ }
+ // The ONE write path for a canonical Memory Event: construct + append to the
+ // bounded list + queue for every configured external destination, in the
+ // same in-memory state snapshot (the single-writer JSON store persists it
+ // atomically on the next save()). Both the /api/memory-events route and
+ // internal producers (Shadow Army mission finalization, F05) go through here
+ // so no producer can record a memory that silently never reaches Supabase/
+ // Obsidian. Enqueueing is pure bookkeeping - no network/filesystem call
+ // happens here; the bounded scheduler tick (processMemorySyncBatch) does the
+ // real bounded work later, and enqueue() itself is idempotent per
+ // (eventId, destination).
+ function configuredMemoryDestinations(){return [...(supabaseMemoryConfig.enabled?['supabase']:[]),...(obsidianMemoryConfig.enabled?['obsidian']:[])];}
+ function recordMemoryEvent(claim,{at}){
+   const memoryEvent=createMemoryEvent(claim,s,{at});
+   const nextEvents=addMemoryEvent(s.memoryEvents,memoryEvent,s);
+   const destinations=configuredMemoryDestinations();
+   // Compute the outbox BEFORE committing the event list, so a validation
+   // failure in either leaves the state untouched (no event without outbox,
+   // no outbox without event).
+   const nextOutbox=destinations.length?enqueue(s.memorySyncOutbox,memoryEvent,destinations,at):s.memorySyncOutbox;
+   s.memoryEvents=nextEvents;s.memorySyncOutbox=nextOutbox;
+   return memoryEvent;
  }
  function readinessState(req,principal,versioned){
    return buildReadiness({state:s,sourceCommit:SOURCE_COMMIT,runtimeVersion:VERSION,apiVersion:API_VERSION,store:{directory:path.basename(dataDir),durable:!persistencePending&&fs.existsSync(path.join(dataDir,'state.json')),recovered:store.recovered},
@@ -840,6 +855,12 @@ export function createYenoServer(options={}) {
    const index=s.projects.findIndex(p=>p.id===verifyJob.projectId);
    if(index<0)return;
    const at=now(),missionId=verifyJob.shadowAssignment.missionId;
+   // Idempotent finalization (F05): the stable key for "this mission was
+   // finalized" is a 'result' memory event whose sourceRefs point at this
+   // exact semanticVerifier job. A re-delivered completion, a restart that
+   // re-runs the last step, or a duplicate scheduler tick must not create a
+   // second milestone / memory event / outbox item for the same verdict.
+   if(s.memoryEvents.some(e=>e.type==='result'&&e.sourceRefs.some(ref=>ref.type==='job'&&ref.id===verifyJob.id))){event(`Shadow Army mission already finalized, skipped duplicate: ${missionId.slice(0,8)}`);return;}
    try{
      const {project,milestone}=addMilestone(s.projects[index],`Shadow Army 임무 완료 · ${missionId.slice(0,8)}`,at);
      s.projects[index]=setMilestoneCompletion(project,milestone.id,true,at);
@@ -847,8 +868,10 @@ export function createYenoServer(options={}) {
    }catch(error){event(`Shadow Army milestone update skipped: ${error.message}`);return;}
    try{
      const claim={type:'result',text:`Shadow Army 임무(${missionId})가 검증을 통과해 프로젝트 마일스톤을 갱신했습니다.`,confidence:1,projectId:s.projects[index].id,questId:null,sourceRefs:[{type:'job',id:verifyJob.id}]};
-     const memoryEvent=createMemoryEvent(claim,s,{at});
-     s.memoryEvents=addMemoryEvent(s.memoryEvents,memoryEvent,s);
+     // Same write path as /api/memory-events: store + outbox for every
+     // configured destination (F05 - previously this only appended to
+     // memoryEvents, so a verified mission never reached Supabase/Obsidian).
+     recordMemoryEvent(claim,{at});
    }catch(error){event(`Shadow Army memory event failed (milestone preserved): ${error.message}`);}
  }
  function addMemory(body){requireModule('memory');const memory={id:uid(),text:requiredText(body.text,20000),createdAt:now()};s.memories.unshift(memory);event('Memory saved.');return memory;}
