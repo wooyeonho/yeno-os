@@ -109,9 +109,9 @@ test('a declared memory event is mirrored to both a fake Supabase transport and 
   assert.ok(app.fake.table.has(eventId), 'the fake Supabase table must actually contain the mirrored row');
   assert.equal(app.fake.table.get(eventId).fingerprint, declared.body.memoryEvent.fingerprint);
 
-  const vaultFiles = fs.readdirSync(path.join(app.vaultDir, 'BLACKHOLE', '30_Episodes'));
+  const vaultFiles = fs.readdirSync(path.join(app.vaultDir, '01_DRAFTS', 'BLACKHOLE', '30_Episodes'));
   assert.equal(vaultFiles.length, 1, 'exactly one episode file must be written to the real temp vault');
-  const content = fs.readFileSync(path.join(app.vaultDir, 'BLACKHOLE', '30_Episodes', vaultFiles[0]), 'utf8');
+  const content = fs.readFileSync(path.join(app.vaultDir, '01_DRAFTS', 'BLACKHOLE', '30_Episodes', vaultFiles[0]), 'utf8');
   assert.match(content, /Phase B end-to-end mirror test\./);
 
   const finalStatus = await app.get('/api/core');
@@ -150,7 +150,7 @@ test('a genuine second memory event still triggers exactly one clean index regen
   await waitFor(async () => (await app.get('/api/core')).body.memory.obsidian.readiness === 'LIVE_VERIFIED');
   await app.declareEvent({type: 'decision', text: 'second'});
   await waitFor(async () => (await app.get('/api/core')).body.memory.localCount === 2 && (await app.get('/api/core')).body.memory.obsidian.pendingCount === 0);
-  const indexContent = fs.readFileSync(path.join(app.vaultDir, 'BLACKHOLE', '_Index', 'Memory_Index.md'), 'utf8');
+  const indexContent = fs.readFileSync(path.join(app.vaultDir, '01_DRAFTS', 'BLACKHOLE', '_Index', 'Memory_Index.md'), 'utf8');
   assert.match(indexContent, /Episode: 1/);
   assert.match(indexContent, /Decision: 1/);
   const walk = dir => fs.readdirSync(dir, {withFileTypes: true}).flatMap(entry => entry.isDirectory() ? walk(path.join(dir, entry.name)) : [path.join(dir, entry.name)]);

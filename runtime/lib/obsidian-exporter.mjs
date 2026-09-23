@@ -45,7 +45,22 @@ export function loadObsidianConfig(env) {
   let stat;
   try {stat = fs.lstatSync(real);} catch {return {...disabled, configError: 'vault_unavailable'};}
   if (!stat.isDirectory()) return {...disabled, configError: 'vault_not_directory'};
-  return {enabled: true, vaultRoot: real, configError: null};
+  // Owner vault policy (AI_OPERATING_RULES.md): generated output goes to a NEW
+  // draft location under 01_DRAFTS, never over originals and never anywhere
+  // near 00_INBOX_RAW (read-only). The owned subtree is configurable but
+  // fails closed on the forbidden locations and on unsafe segments.
+  const subtree = parseSubtree(env.YENO_OBSIDIAN_SUBTREE ?? DEFAULT_SUBTREE);
+  if (!subtree) return {...disabled, configError: 'subtree_forbidden'};
+  return {enabled: true, vaultRoot: real, subtree, configError: null};
+}
+export const DEFAULT_SUBTREE = '01_DRAFTS/BLACKHOLE';
+const FORBIDDEN_TOP = new Set(['00_INBOX_RAW', '00_inbox_raw']);
+export function parseSubtree(value) {
+  const segments = String(value ?? '').split(/[\\/]+/).filter(Boolean);
+  if (!segments.length) return null;
+  if (segments.some(seg => !SAFE_SEGMENT.test(seg) || seg === '.' || seg === '..')) return null;
+  if (FORBIDDEN_TOP.has(segments[0])) return null;
+  return segments;
 }
 
 // Every path this module ever writes to is built ONLY from these validated,
@@ -53,12 +68,13 @@ export function loadObsidianConfig(env) {
 // final resolved real directory is re-checked to still be inside the vault's
 // real BLACKHOLE root before any write, so a symlink swapped in after
 // mkdir cannot redirect a write outside the owned subtree.
-function resolveInVault(vaultRoot, segments) {
+function resolveInVault(vaultRoot, segments, subtree = parseSubtree(DEFAULT_SUBTREE)) {
   for (const segment of segments) if (typeof segment !== 'string' || !SAFE_SEGMENT.test(segment) || segment === '.' || segment === '..') fail(`Unsafe vault path segment: ${String(segment)}`, 'vault_conflict');
-  const blackholeRoot = path.join(vaultRoot, 'BLACKHOLE');
+  if (!Array.isArray(subtree) || !subtree.length || FORBIDDEN_TOP.has(subtree[0])) fail('Owned subtree is forbidden or missing', 'vault_conflict');
+  const blackholeRoot = path.join(vaultRoot, ...subtree);
   fs.mkdirSync(blackholeRoot, {recursive: true, mode: 0o700});
   const realBlackholeRoot = fs.realpathSync(blackholeRoot);
-  if (realBlackholeRoot !== path.join(fs.realpathSync(vaultRoot), 'BLACKHOLE')) fail('BLACKHOLE subtree is not a real directory inside the configured vault', 'vault_conflict');
+  if (realBlackholeRoot !== path.join(fs.realpathSync(vaultRoot), ...subtree)) fail('Owned subtree is not a real directory inside the configured vault', 'vault_conflict');
   const target = path.join(realBlackholeRoot, ...segments);
   const dir = path.dirname(target);
   fs.mkdirSync(dir, {recursive: true, mode: 0o700});
@@ -129,8 +145,8 @@ export function renderEventMarkdown(event, {core, project = null, quest = null})
 // and ANY mismatch (foreign file, hand-edited generated file, or a stale
 // fingerprint) is treated as a real conflict - never an overwrite, the new
 // content is preserved side-by-side instead.
-function writeGenerated(vaultRoot, segments, content, fingerprint, at) {
-  const {absolute, relative} = resolveInVault(vaultRoot, segments);
+function writeGenerated(vaultRoot, segments, content, fingerprint, at, subtree) {
+  const {absolute, relative} = resolveInVault(vaultRoot, segments, subtree);
   const existing = readExistingFingerprint(absolute);
   if (!existing.exists) {
     atomicWrite(absolute, content);
@@ -138,7 +154,7 @@ function writeGenerated(vaultRoot, segments, content, fingerprint, at) {
   }
   if (existing.generated && existing.fingerprint === fingerprint) return {result: 'synced', relativePath: relative};
   const pendingSegments = [...segments.slice(0, -1), `${path.basename(segments.at(-1), '.md')}.pending-${at.replace(/[:.]/g, '-')}.md`];
-  const {absolute: pendingAbsolute, relative: pendingRelative} = resolveInVault(vaultRoot, pendingSegments);
+  const {absolute: pendingAbsolute, relative: pendingRelative} = resolveInVault(vaultRoot, pendingSegments, subtree);
   atomicWrite(pendingAbsolute, content);
   return {result: 'blocked', errorCode: existing.generated ? 'fingerprint_mismatch' : 'vault_conflict', relativePath: relative, pendingRelativePath: pendingRelative};
 }
@@ -154,12 +170,12 @@ function writeGenerated(vaultRoot, segments, content, fingerprint, at) {
 // stays free to refresh it. This is what keeps a genuine data change (e.g. a
 // new memory event changing the index counts) a clean overwrite instead of
 // a spurious blocked "conflict" on every regeneration.
-function writeManaged(vaultRoot, segments, content, at) {
-  const {absolute, relative} = resolveInVault(vaultRoot, segments);
+function writeManaged(vaultRoot, segments, content, at, subtree) {
+  const {absolute, relative} = resolveInVault(vaultRoot, segments, subtree);
   const existing = readExistingFingerprint(absolute);
   if (existing.exists && !existing.generated) {
     const pendingSegments = [...segments.slice(0, -1), `${path.basename(segments.at(-1), '.md')}.pending-${at.replace(/[:.]/g, '-')}.md`];
-    const {absolute: pendingAbsolute, relative: pendingRelative} = resolveInVault(vaultRoot, pendingSegments);
+    const {absolute: pendingAbsolute, relative: pendingRelative} = resolveInVault(vaultRoot, pendingSegments, subtree);
     atomicWrite(pendingAbsolute, content);
     return {result: 'blocked', errorCode: 'vault_conflict', relativePath: relative, pendingRelativePath: pendingRelative};
   }
@@ -173,7 +189,7 @@ export function exportEvent(config, event, context, at) {
   if (!config.enabled) return {result: 'failed', errorCode: 'not_configured'};
   const segments = eventRelativeSegments(event);
   const content = renderEventMarkdown(event, context);
-  try {return writeGenerated(config.vaultRoot, segments, content, event.fingerprint, at);}
+  try {return writeGenerated(config.vaultRoot, segments, content, event.fingerprint, at, config.subtree);}
   catch (error) {if (error instanceof ObsidianExportError) return {result: 'blocked', errorCode: error.code === 'vault_conflict' ? 'vault_conflict' : 'vault_unavailable'}; throw error;}
 }
 
@@ -184,7 +200,7 @@ export function exportEvent(config, event, context, at) {
 // stay fixed like an event's.
 export function exportGenerated(config, segments, content, at) {
   if (!config.enabled) return {result: 'failed', errorCode: 'not_configured'};
-  try {return writeManaged(config.vaultRoot, segments, content, at);}
+  try {return writeManaged(config.vaultRoot, segments, content, at, config.subtree);}
   catch (error) {if (error instanceof ObsidianExportError) return {result: 'blocked', errorCode: 'vault_conflict'}; throw error;}
 }
 

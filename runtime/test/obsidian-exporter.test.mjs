@@ -47,8 +47,8 @@ test('exportEvent writes a new event to a deterministic path under BLACKHOLE/, r
   const result = exportEvent(config, e, {core}, at());
   assert.equal(result.result, 'synced');
   const segments = eventRelativeSegments(e);
-  assert.equal(result.relativePath, path.join('BLACKHOLE', ...segments));
-  const content = fs.readFileSync(path.join(vault, 'BLACKHOLE', ...segments), 'utf8');
+  assert.equal(result.relativePath, path.join('01_DRAFTS', 'BLACKHOLE', ...segments));
+  const content = fs.readFileSync(path.join(vault, '01_DRAFTS', 'BLACKHOLE', ...segments), 'utf8');
   assert.match(content, /generated: true/);
   assert.match(content, new RegExp(`fingerprint: ${e.fingerprint}`));
   assert.match(content, /# Episode/);
@@ -63,10 +63,10 @@ test('exportEvent re-exporting the identical event is a true idempotent no-op: n
   const e = memoryEvent({text: 'idempotent export'});
   exportEvent(config, e, {core}, at());
   const segments = eventRelativeSegments(e);
-  const before = fs.statSync(path.join(vault, 'BLACKHOLE', ...segments)).mtimeMs;
+  const before = fs.statSync(path.join(vault, '01_DRAFTS', 'BLACKHOLE', ...segments)).mtimeMs;
   const second = exportEvent(config, e, {core}, at());
   assert.equal(second.result, 'synced');
-  const files = fs.readdirSync(path.join(vault, 'BLACKHOLE', ...segments.slice(0, -1)));
+  const files = fs.readdirSync(path.join(vault, '01_DRAFTS', 'BLACKHOLE', ...segments.slice(0, -1)));
   assert.equal(files.length, 1, 'a real no-op must never create a pending sibling file');
   fs.rmSync(vault, {recursive: true, force: true});
 });
@@ -77,7 +77,7 @@ test('exportEvent leaves an owner-appended note in a matching-fingerprint file c
   const e = memoryEvent({text: 'original content'});
   exportEvent(config, e, {core}, at());
   const segments = eventRelativeSegments(e);
-  const absolute = path.join(vault, 'BLACKHOLE', ...segments);
+  const absolute = path.join(vault, '01_DRAFTS', 'BLACKHOLE', ...segments);
   const original = fs.readFileSync(absolute, 'utf8');
   fs.writeFileSync(absolute, original + '\n\nThe owner added their own note here.\n');
   const result = exportEvent(config, e, {core}, at());
@@ -93,7 +93,7 @@ test('exportEvent detects a file whose recorded fingerprint disagrees with the e
   const e = memoryEvent({text: 'original content'});
   exportEvent(config, e, {core}, at());
   const segments = eventRelativeSegments(e);
-  const absolute = path.join(vault, 'BLACKHOLE', ...segments);
+  const absolute = path.join(vault, '01_DRAFTS', 'BLACKHOLE', ...segments);
   const original = fs.readFileSync(absolute, 'utf8');
   const tampered = original.replace(/fingerprint: [a-f0-9]{64}/, `fingerprint: ${'a'.repeat(64)}`) + '\n\nThe owner rewrote this entry entirely.\n';
   fs.writeFileSync(absolute, tampered);
@@ -122,9 +122,9 @@ test('exportEvent never writes outside the BLACKHOLE subtree even given an adver
 test('exportEvent rejects a symlink swapped in for the BLACKHOLE root after creation, never following it out of the vault', () => {
   const vault = tempVault();
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'obsidian-outside-'));
-  fs.mkdirSync(path.join(vault, 'BLACKHOLE'));
-  fs.rmdirSync(path.join(vault, 'BLACKHOLE'));
-  fs.symlinkSync(outside, path.join(vault, 'BLACKHOLE'));
+  fs.mkdirSync(path.join(vault, '01_DRAFTS', 'BLACKHOLE'), {recursive: true});
+  fs.rmdirSync(path.join(vault, '01_DRAFTS', 'BLACKHOLE'));
+  fs.symlinkSync(outside, path.join(vault, '01_DRAFTS', 'BLACKHOLE'));
   const config = loadObsidianConfig({YENO_OBSIDIAN_EXPORT_ENABLED: 'true', YENO_OBSIDIAN_VAULT_PATH: vault});
   const e = memoryEvent();
   const result = exportEvent(config, e, {core}, at());
@@ -172,23 +172,23 @@ test('exportGenerated freely overwrites a dashboard file it already owns when th
   const second = renderCurrentStateMarkdown({identity: core.identity, activity: 'working', mission: null, dominantDriveName: null, activeShadowCount: 1}, at(), 'digest-two');
   const r2 = exportGenerated(config, ['00_Core', 'Current_State.md'], second, at());
   assert.equal(r2.result, 'synced');
-  const onDisk = fs.readFileSync(path.join(vault, 'BLACKHOLE', '00_Core', 'Current_State.md'), 'utf8');
+  const onDisk = fs.readFileSync(path.join(vault, '01_DRAFTS', 'BLACKHOLE', '00_Core', 'Current_State.md'), 'utf8');
   assert.match(onDisk, /\*\*Activity:\*\* working/);
-  const files = fs.readdirSync(path.join(vault, 'BLACKHOLE', '00_Core'));
+  const files = fs.readdirSync(path.join(vault, '01_DRAFTS', 'BLACKHOLE', '00_Core'));
   assert.equal(files.filter(f => f.includes('.pending-')).length, 0, 'a legitimate dashboard content change must never look like a conflict');
   fs.rmSync(vault, {recursive: true, force: true});
 });
 
 test('exportGenerated still blocks and preserves a genuinely foreign (non-generated) file at a dashboard path', () => {
   const vault = tempVault();
-  fs.mkdirSync(path.join(vault, 'BLACKHOLE', '00_Core'), {recursive: true});
-  fs.writeFileSync(path.join(vault, 'BLACKHOLE', '00_Core', 'Identity.md'), '# My own notes\nNothing to do with BLACKHOLE.\n');
+  fs.mkdirSync(path.join(vault, '01_DRAFTS', 'BLACKHOLE', '00_Core'), {recursive: true});
+  fs.writeFileSync(path.join(vault, '01_DRAFTS', 'BLACKHOLE', '00_Core', 'Identity.md'), '# My own notes\nNothing to do with BLACKHOLE.\n');
   const config = loadObsidianConfig({YENO_OBSIDIAN_EXPORT_ENABLED: 'true', YENO_OBSIDIAN_VAULT_PATH: vault});
   const content = renderIdentityMarkdown(core, 'digest');
   const result = exportGenerated(config, ['00_Core', 'Identity.md'], content, at());
   assert.equal(result.result, 'blocked');
   assert.equal(result.errorCode, 'vault_conflict');
-  const owner = fs.readFileSync(path.join(vault, 'BLACKHOLE', '00_Core', 'Identity.md'), 'utf8');
+  const owner = fs.readFileSync(path.join(vault, '01_DRAFTS', 'BLACKHOLE', '00_Core', 'Identity.md'), 'utf8');
   assert.match(owner, /My own notes/, 'a foreign file at a dashboard path must never be overwritten');
   fs.rmSync(vault, {recursive: true, force: true});
 });
@@ -210,4 +210,23 @@ test('renderSyncStatusMarkdown never leaks a URL, service key, vault path or raw
   assert.equal(/https?:\/\//.test(md), false);
   assert.equal(/\/home\/|\/Users\//.test(md), false);
   assert.match(md, /synced.*pending.*failed.*blocked/s);
+});
+
+test('F13: the owned subtree defaults to 01_DRAFTS/BLACKHOLE, can be configured, and never resolves into 00_INBOX_RAW or the vault root', () => {
+  const vault = tempVault();
+  const def = loadObsidianConfig({YENO_OBSIDIAN_EXPORT_ENABLED: 'true', YENO_OBSIDIAN_VAULT_PATH: vault});
+  assert.deepEqual(def.subtree, ['01_DRAFTS', 'BLACKHOLE']);
+  const custom = loadObsidianConfig({YENO_OBSIDIAN_EXPORT_ENABLED: 'true', YENO_OBSIDIAN_VAULT_PATH: vault, YENO_OBSIDIAN_SUBTREE: '01_DRAFTS/BLACKHOLE_TEST'});
+  assert.deepEqual(custom.subtree, ['01_DRAFTS', 'BLACKHOLE_TEST']);
+  for (const bad of ['00_INBOX_RAW', '00_INBOX_RAW/x', '', '/', '../escape', 'a/../b']) {
+    const cfg = loadObsidianConfig({YENO_OBSIDIAN_EXPORT_ENABLED: 'true', YENO_OBSIDIAN_VAULT_PATH: vault, YENO_OBSIDIAN_SUBTREE: bad});
+    assert.equal(cfg.enabled, false, bad); assert.equal(cfg.configError, 'subtree_forbidden', bad);
+  }
+  const e = memoryEvent();
+  const result = exportEvent(def, e, {core}, at());
+  assert.equal(result.result, 'synced');
+  assert.ok(fs.existsSync(path.join(vault, '01_DRAFTS', 'BLACKHOLE')));
+  assert.ok(!fs.existsSync(path.join(vault, 'BLACKHOLE')), 'the old vault-root BLACKHOLE folder is no longer created');
+  assert.ok(!fs.existsSync(path.join(vault, '00_INBOX_RAW')), 'nothing is created under the read-only inbox');
+  fs.rmSync(vault, {recursive: true, force: true});
 });
