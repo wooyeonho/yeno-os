@@ -85,7 +85,8 @@ import {SemanticVerificationError,parseSemanticVerdictDraft,buildSemanticVerdict
 import {JEV_ENGINE_VERSION,JEV_CALIBRATION_VERSION,JEV_SHADOW_LOG_CAP,evaluateDecisions,buildShadowDispatchRequest,buildVerifierEscalateRequest,shadowDispatchLogEntry,calibrateShadowLog} from './lib/jev.mjs';
 import {GrokAdapterError,GROK_PROVIDER,GROK_MAX_MULTI_AGENT_COUNT,grokStatus,validateGrokStatus,validateGrokMultiAgentApproval,grokCapabilityReport} from './lib/grok-adapter.mjs';
 import {browserDecisionStatus,indexedDomDecisionInput,planBrowserAction} from './lib/browser-decision.mjs';
-import {BrowserHarnessError,browserHarnessStatus,deterministicBrowserVerification,typesafeJevProviderStatus,validatePublicHttpsUrl} from './lib/browser-harness.mjs';
+import {BrowserHarnessError,browserHarnessStatus,deterministicBrowserVerification,runSandboxBrowserHarness,typesafeJevProviderStatus,validatePublicHttpsUrl} from './lib/browser-harness.mjs';
+import {deterministicReadOnlyDecisionProvider,fetchPublicPage as sandboxFetchPublicPage,resolveHostViaDns} from './lib/browser-adapter.mjs';
 import {routeBrowserDecision,validateBrowserDecisionProviderSnapshot} from './lib/browser-provider-routing.mjs';
 import {browserBenchmarkStatus} from './lib/browser-benchmark.mjs';
 import {browserCanaryStatus} from './lib/browser-live-canary.mjs';
@@ -93,8 +94,33 @@ import {PersistentBotError,appendPersistentMemory,putPersistentRoutine,recordPer
 function publicSnapshot(snapshot){const {data,...out}=snapshot;return out;}
 const examples=['세계 현황','흡수 현황','자율 점검','자율 임무: 공식 자료를 읽고 다음 개선 초안을 만들어줘','운영 브리핑','운영 현황','기억해: 이번 주에는 YENO 한 프로젝트에 집중한다','찾아줘: YENO','문서 만들어: YENO의 첫 목표는 기억과 실행이다','프로젝트 목록','프로젝트 브리핑: 프로젝트 이름','프로젝트 작업: 프로젝트 이름 | 준비할 작업','자료 목록','자료 브리핑: 자료 ID','개선 후보: 자료 ID','진단해','개선점 찾아줘'];
 
+// BLACKHOLE F08 v1 default sandbox browser adapter - read-only, one real
+// public-HTTPS GET per browser job, no model call, never DONE (see
+// browser-adapter.mjs header for why). Off by default: only wired in when
+// the owner explicitly sets YENO_BROWSER_SANDBOX_ENABLED=true, so every
+// existing 'no adapter configured' test/behavior is unchanged unless the
+// owner opts in, and a caller-supplied options.browserHarnessAdapter (tests
+// injecting a synthetic adapter) always wins over this default.
+async function defaultBrowserSandboxAdapter({job,signal,resolveHost,fetchPublicPage,decisionProvider,executeAction}){
+ const result=await runSandboxBrowserHarness({goal:job.browserRequest.goal,sourceUrl:job.browserRequest.sourceUrl,resolveHost,fetchPublicPage,decisionProvider,executeAction,signal,maxActions:1});
+ // evidenceClass is honest about the TRANSPORT actually used, not the mode
+ // this default adapter was designed for - a caller (test) can still inject
+ // its own browserFetch even with sandbox mode enabled, and that must never
+ // be reported as LIVE. Only the real network implementation earns 'LIVE'.
+ return {...result,provider:'sandbox-v1-read-only',model:null,providerOutcome:'settled',evidenceClass:fetchPublicPage===sandboxFetchPublicPage?'LIVE':'SANDBOX_SYNTHETIC'};
+}
 export function createYenoServer(options={}) {
  const env=options.env??process.env;
+ // Explicit owner opt-in only (see defaultBrowserSandboxAdapter above); a
+ // caller-supplied adapter (tests, future real Chrome adapter) always wins.
+ if(env.YENO_BROWSER_SANDBOX_ENABLED==='true'){
+   options={...options,
+     browserHarnessAdapter:options.browserHarnessAdapter??defaultBrowserSandboxAdapter,
+     browserResolveHost:options.browserResolveHost??resolveHostViaDns,
+     browserFetch:options.browserFetch??sandboxFetchPublicPage,
+     browserDecisionProvider:options.browserDecisionProvider??deterministicReadOnlyDecisionProvider,
+   };
+ }
  const profiles=agentProfiles(env), agentSettings=profiles.primary;
  // BLACKHOLE Durable Memory Fabric (Phase B): both destinations are disabled
  // by default and only ever configured from explicit YENO_MEMORY_*/
