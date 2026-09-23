@@ -267,3 +267,33 @@ npm test
 - F08은 v1(읽기 전용, 클릭/입력 없음, 단일 페이지)까지만 — v2(실제 액션 디스패치, 독립 semantic 검증자)는 미착수.
 - 이번 세션에서 검증한 "동시성"은 단일 Node 프로세스 내부의 실제 비동기 인터리빙(진짜 동시 in-flight 요청)이며, 여러 프로세스·여러 실기기에 걸친 동시 worker는 검증 범위 밖.
 - 실모델(YENO_TOKEN 필요)·실기기 증거는 여전히 없음 — RC 완료를 보고하지 않음.
+
+## §17 재개 기록 (2026-09-23/24, ef08d0c 이후 — 로컬 메모리 임베딩 실기기 라이브 검증)
+
+이전 §16까지의 F08/F14/스케줄러/R39/R40 작업과는 별도 트랙인 P2(로컬 임베딩·기억) 작업의 실기기 검증 결과를 기록한다. 코드 자체(`runtime/lib/memory-embeddings.mjs`, `runtime/test/memory-embeddings.test.mjs`, `scripts/verify-local-memory-live.mjs`)는 이미 `4e99f19`/`ef08d0c`로 커밋되어 있었고, 이번 재개에서는 **사용자 실제 PC에서 그 스크립트를 실행해 라이브 증거를 확보**했다(코드 변경 없음, 문서 기록만 추가).
+
+### 실행 환경
+- 사용자 PC, 저장소 로컬 clone(`C:\Users\우연호\Documents\Projects\yeno-os`), Ollama 0.34.3, 임베딩 모델 `bge-m3`(1.2GB, 이번 재개에서 `ollama pull bge-m3`로 설치).
+- 실행은 Cowork 세션의 컴퓨터 사용 도구(클릭+클립보드 붙여넣기 방식 — 이 세션은 터미널에 직접 타이핑할 수 없어, 명령을 클립보드에 올리고 사용자가 Ctrl+V로 실행)로 진행했다.
+
+### 1) 저장 → 재시작 → 다른 표현 질의 (P2 §3)
+- `store "YENO 프로젝트의 비공개 백업 코드명은 자수정-7이다"` → `stored id: 7f19bf2e-9349-44ee-9fdc-7cb09cd232af`, model `bge-m3`, `external calls: 0`.
+- Ollama 프로세스를 실제로 종료(`Stop-Process -Force`)한 뒤 앱을 재실행 — 트레이 앱만으로는 서버가 자동으로 뜨지 않아 `Start-Process ollama serve`로 서버를 직접 재기동, `Invoke-WebRequest http://127.0.0.1:11434` 200 OK로 재기동 확인.
+- 재시작된 서버·새 `node` 프로세스에서, 저장 시 쓴 문장을 다시 주지 않고 **다른 표현**("우리 프로젝트 백업용 비밀 코드네임이 뭐였지?")으로 `query` 실행 → 정확히 같은 id/원문(`자수정-7`)이 score 0.6489로 1위 회수됨, `external calls: 0`. **통과.**
+
+### 2) 수정·삭제 반영 (P2 §4, 온라인)
+- `edit 7f19bf2e... "...자수정-9로 변경되었다"` → `updated text`에 새 문장 반영 확인.
+- 같은 질문으로 재질의 → 수정된 문장("자수정-9")이 즉시 회수됨(score 0.6565, `updatedAt` 갱신 확인). **통과.**
+- `delete 7f19bf2e...` → 같은 질문으로 재질의 → `records in store: 1 (0 active)`, `top results: []` — 삭제된 기억이 어떤 limit에서도 다시 나오지 않음을 실기기에서 확인. **통과.**
+
+### 3) 오프라인 검증 (P2 §4, 인터넷 차단)
+- 사용자가 Wi-Fi/인터넷을 실제로 끈 상태에서, 미리 클립보드에 올려둔 명령으로 새 사실 저장(`stored id: 1b21d119-f53c-468e-999e-b3793214c536`, "청금석-3")과 다른 표현 질의("예노 프로젝트 두 번째 백업의 암호명이 뭐야?")를 연속 실행 — 저장·검색 모두 성공, `fetch targets`는 매번 `127.0.0.1:11434` 단 하나, `external calls: 0`. 사용자가 인터넷이 꺼져 있었음을 확인함. **통과.**
+- 이 세션은 Cowork의 컴퓨터 제어 자체가 사용자 PC의 인터넷 연결에 의존하므로, 인터넷 차단 구간 동안은 세션이 실시간으로 개입하지 않고 미리 준비한 명령을 사용자가 혼자 실행하는 방식으로 진행했다(재연결 후 결과 화면만 전달받음) — A01(로컬 생성 모델) 검증 때와 동일한 제약·동일한 해법이다.
+
+### 4) 정식 위치·실행 명령 (P2 §5)
+- 변경 없음: `scripts/verify-local-memory-live.mjs`가 이미 그 정식 위치다(레포의 기존 `scripts/verify-*-live.mjs` 관례를 그대로 따름, `npm test`/`package.json`의 `scripts`에는 의도적으로 미포함). 실행법은 스크립트 헤더 주석에 이미 기재됨(`store|query|edit|delete|list`).
+
+### 남은 항목 / 다음 재개 지점
+- 이번 세션은 전체 회귀(`npm test`, 132개 파일·1000+ 테스트)를 device_bash의 180초 타임아웃 안에서 끝까지 실행하지 못했다 — 대신 `memory-embeddings.test.mjs` + provider/agent-provider-selection/desktop-provider-config 4개 파일(25/25 PASS)만 표적 재확인했다. 다음 재개에서 전체 회귀를 20개 묶음으로 나눠 재실행해 `not ok` 0건을 다시 확인하는 것을 권장한다.
+- `docs/BLACKHOLE_LE_SPEC_V3_AUDIT_20260923.md`에는 이 P2 메모리 작업에 정확히 대응하는 기존 행이 없다(A02 "검색"은 LE-01 검색 경로 자체를 가리키며 별개 개념) — 필요하면 다음 재개에서 신규 행을 추가할지 owner 판단이 필요하다.
+- push·Draft PR·원격 반영은 여전히 하지 않았다(로컬 커밋만, 지시대로).
