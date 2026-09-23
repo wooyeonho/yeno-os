@@ -7,20 +7,53 @@ export const AGENT_ENDPOINTS = Object.freeze({
   xai: 'https://api.x.ai/v1/chat/completions',
   anthropic: 'https://api.anthropic.com/v1/messages',
   nvidia: 'https://integrate.api.nvidia.com/v1/chat/completions',
+  // BLACKHOLE LE spec v3 §3 "모델 실행 프로세스": a local OpenAI-compatible
+  // server (llama.cpp's `llama-server`, Ollama's OpenAI-compat endpoint,
+  // etc). "기본 접속은 loopback 또는 인증된 worker 경계" - this default is
+  // loopback-only and the actual endpoint used is re-validated as loopback
+  // even when overridden by YENO_LOCAL_BASE_URL (see localEndpoint below),
+  // so this provider can never be pointed at an arbitrary remote host.
+  local: 'http://127.0.0.1:8080/v1/chat/completions',
 });
 const PROVIDERS = Object.keys(AGENT_ENDPOINTS);
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
 export class AgentError extends Error { constructor(code) { super(`Agent: ${code}`); this.code = code; } }
+
+// The 'local' provider's endpoint is the one exception to "fixed endpoint
+// per provider": different local model servers use different ports. An
+// owner may override it with YENO_LOCAL_BASE_URL, but it must still resolve
+// to loopback - this is a local-inference convenience, never a way to add
+// an eighth arbitrary HTTPS provider without going through AGENT_ENDPOINTS.
+// A malformed or non-loopback override fails closed (same 'invalidConfiguration'
+// path every other bad credential already takes), it is never silently
+// replaced with the default.
+function localEndpoint(env) {
+  const raw = env.YENO_LOCAL_BASE_URL;
+  if (raw === undefined || raw === '') return AGENT_ENDPOINTS.local;
+  let url;
+  try { url = new URL(raw); } catch { return null; }
+  if (url.protocol !== 'http:' || url.username || url.password || url.search || url.hash) return null;
+  if (!LOOPBACK_HOSTS.has(url.hostname)) return null;
+  return url.href;
+}
 
 function entry(env, provider, legacy, dailyCallLimit, dailyCostLimitUsd) {
   const prefix = `YENO_${provider.toUpperCase()}`;
+  const isLocal = provider === 'local';
   // Never mix a scoped model with a generic key (or the reverse). An explicit
   // provider can keep its old complete YENO_AGENT_* credential/model pair.
-  const scoped = env[`${prefix}_MODEL`] !== undefined || env[`${prefix}_API_KEY`] !== undefined;
+  // A local server has no owner credential to scope on, so its "scoped"
+  // signal is the model name alone (or the base-URL override).
+  const scoped = env[`${prefix}_MODEL`] !== undefined || env[`${prefix}_API_KEY`] !== undefined || (isLocal && env.YENO_LOCAL_BASE_URL !== undefined);
   const model = (scoped ? env[`${prefix}_MODEL`] : legacy ? env.YENO_AGENT_MODEL : '') || '';
-  const key = (scoped ? env[`${prefix}_API_KEY`] : legacy ? env.YENO_AGENT_API_KEY : '') || '';
-  const valid = typeof model === 'string' && typeof key === 'string' && model.length <= 120 && !/[\u0000-\u001f\u007f]/.test(model + key);
-  const missing = !valid ? ['invalidConfiguration'] : [!model.trim() && 'model', !key.trim() && 'key', !dailyCallLimit && 'callLimit'].filter(Boolean);
-  return {provider, model: valid ? model : '', key: valid ? key : '', endpoint: AGENT_ENDPOINTS[provider], dailyCallLimit, dailyCostLimitUsd, ready: missing.length === 0, valid, missing};
+  // Loopback trust, not "no auth required anywhere": a local provider never
+  // needs an API key (see AGENT_ENDPOINTS.local comment), everything else
+  // still does.
+  const key = isLocal ? '' : (scoped ? env[`${prefix}_API_KEY`] : legacy ? env.YENO_AGENT_API_KEY : '') || '';
+  const endpoint = isLocal ? localEndpoint(env) : AGENT_ENDPOINTS[provider];
+  const valid = endpoint !== null && typeof model === 'string' && typeof key === 'string' && model.length <= 120 && !/[\u0000-\u001f\u007f]/.test(model + key);
+  const missing = !valid ? ['invalidConfiguration'] : [!model.trim() && 'model', !isLocal && !key.trim() && 'key', !dailyCallLimit && 'callLimit'].filter(Boolean);
+  return {provider, model: valid ? model : '', key: valid ? key : '', endpoint: valid ? endpoint : AGENT_ENDPOINTS[provider], dailyCallLimit, dailyCostLimitUsd, ready: missing.length === 0, valid, missing};
 }
 
 // F14: an OPTIONAL estimated-USD total cap layered on top of the existing

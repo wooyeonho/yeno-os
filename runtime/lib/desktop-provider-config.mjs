@@ -56,14 +56,21 @@ export function validateDesktopProviders(input) {
     // provider's model identifier. Disallow common credentials pasted as a model.
     if (typeof model !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,119}$/.test(model)
       || model.includes('://') || /^(?:sk-|nvapi-|AIza)/.test(model)) invalid();
-    if (typeof apiKey !== 'string' || apiKey.length < 8 || apiKey.length > 4096 || !/^[\x21-\x7e]+$/.test(apiKey)) invalid();
+    // 'local' is loopback-trust by design (see provider-config-engine.mjs's
+    // entry()): it never takes or uses an API key, so the desktop config must
+    // not persist an unused secret for it - the field must be the empty
+    // string, never a real-looking credential. Every other provider keeps the
+    // original mandatory 8-4096 char printable-ASCII key requirement.
+    if (provider === 'local') {
+      if (typeof apiKey !== 'string' || apiKey !== '') invalid();
+    } else if (typeof apiKey !== 'string' || apiKey.length < 8 || apiKey.length > 4096 || !/^[\x21-\x7e]+$/.test(apiKey)) invalid();
     seen.add(provider);
     return { provider, model, apiKey };
   });
   if (providers.length ? (typeof input.primaryProvider !== 'string' || !seen.has(input.primaryProvider)) : input.primaryProvider !== null) invalid();
   // A mistakenly pasted key must not become a public model label, even if it
   // belongs to a different provider in this same saved configuration.
-  if (providers.some(entry => providers.some(secret => entry.model.includes(secret.apiKey)))) invalid();
+  if (providers.some(entry => providers.some(secret => secret.apiKey && entry.model.includes(secret.apiKey)))) invalid();
   return { version: 1, providers, primaryProvider: input.primaryProvider, dailyCallLimit: input.dailyCallLimit };
 }
 

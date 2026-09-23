@@ -22,8 +22,10 @@ test('explicit provider pins all six own endpoints and credentials without cross
   for(const provider of Object.keys(AGENT_ENDPOINTS)){
     const selected=agentConfigForProvider(all,provider);
     assert.equal(selected.provider,provider);assert.equal(selected.endpoint,AGENT_ENDPOINTS[provider]);
-    assert.equal(selected.ready,true);assert.equal(selected.key,`synthetic-${provider}-key`);
-    assert.equal(JSON.stringify(selected.providers).includes(selected.key),false);
+    assert.equal(selected.ready,true);
+    // 'local' is loopback-trust by design: no API key is ever required or used.
+    assert.equal(selected.key,provider==='local'?'':`synthetic-${provider}-key`);
+    if(selected.key)assert.equal(JSON.stringify(selected.providers).includes(selected.key),false);
   }
   const missing=agentConfigForProvider({...env,YENO_AGENT_MODEL:'synthetic-legacy-model',YENO_AGENT_API_KEY:'synthetic-legacy-key'},'nvidia');
   assert.equal(missing.provider,'nvidia');assert.equal(missing.ready,false);assert.equal(missing.key,'');

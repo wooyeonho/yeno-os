@@ -9,12 +9,16 @@ import { openStore } from '../lib/store.mjs';
 import { runAgent } from '../lib/agent-engine.mjs';
 import { DesktopProviderConfigError, validateDesktopProviders, desktopProviderEnvironment, desktopProviderSummary } from '../lib/desktop-provider-config.mjs';
 
+// 'local' is loopback-trust by design (see provider-config-engine.mjs's entry()
+// and desktop-provider-config.mjs's validateDesktopProviders()): it never
+// takes or uses an API key, so the desktop config must carry the empty string
+// for it rather than an unused-but-real-looking secret.
 const fixture = () => ({ version: 1, primaryProvider: 'openai', dailyCallLimit: 6,
-  providers: Object.keys(AGENT_ENDPOINTS).map(provider => ({ provider, model: `fixture-${provider}-model`, apiKey: `synthetic-key-for-${provider}-NOT-LIVE` })) });
+  providers: Object.keys(AGENT_ENDPOINTS).map(provider => ({ provider, model: `fixture-${provider}-model`, apiKey: provider === 'local' ? '' : `synthetic-key-for-${provider}-NOT-LIVE` })) });
 const bad = input => assert.throws(() => validateDesktopProviders(input), error => error instanceof DesktopProviderConfigError
   && error.code === 'invalid_desktop_provider_configuration' && error.message === 'Desktop provider configuration is invalid.');
 
-test('six desktop providers reuse the real engine with their own fixed endpoint/key/model and one shared daily bound', () => {
+test('seven desktop providers reuse the real engine with their own fixed endpoint/key/model and one shared daily bound', () => {
   const input = fixture();
   const env = desktopProviderEnvironment(input);
   for (const entry of input.providers) {
@@ -41,9 +45,9 @@ test('configuration presence never authenticates a model, enables AI settings, o
   assert.equal(summary.configured, true);
   assert.equal(summary.liveVerification, 'not_checked');
   assert.equal(summary.automaticCalls, false);
-  assert.equal(summary.providers.length, 6);
+  assert.equal(summary.providers.length, 7);
   assert(summary.providers.every(entry => entry.status === 'configured' && entry.liveVerification === 'not_checked'));
-  for (const entry of input.providers) assert(!JSON.stringify(summary).includes(entry.apiKey));
+  for (const entry of input.providers) if (entry.apiKey) assert(!JSON.stringify(summary).includes(entry.apiKey));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'blackhole-desktop-provider-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const store = openStore(dir);
@@ -77,6 +81,13 @@ test('strict schema rejects arbitrary endpoints, aliases, model guesses, secrets
     { model: 'sk-secret-accidentally-pasted' }, { model: 'bad\nmodel' }, { model: ' model' }, { apiKey: '' }, { apiKey: 'short' },
     { apiKey: 'secret\nheader' }, { apiKey: 'secret with space' }, { apiKey: 'secret\u007fheader' }, { apiKey: 'k'.repeat(4097) }]) {
     const input = fixture(); input.providers[0] = { ...input.providers[0], ...patch }; bad(input);
+  }
+  // The 'local' entry's mandatory-empty apiKey is its own strict rule: any
+  // non-empty value (even one that would otherwise be a valid key elsewhere)
+  // must be rejected, since 'local' never uses a key.
+  for (const patch of [{ apiKey: 'k'.repeat(8) }, { apiKey: ' ' }]) {
+    const input = fixture(); const localIndex = input.providers.findIndex(entry => entry.provider === 'local');
+    input.providers[localIndex] = { ...input.providers[localIndex], ...patch }; bad(input);
   }
   const duplicate = fixture(); duplicate.providers[1] = { ...duplicate.providers[0] }; bad(duplicate);
   const leaked = fixture(); leaked.providers[0].model = leaked.providers[1].apiKey; bad(leaked);

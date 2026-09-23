@@ -43,11 +43,14 @@ for(const outcome of ['settled','unknown'])test(`AI writing with both configurat
 
 test('each provider works without NVIDIA and never borrows a generic or another provider key',()=>{
   for(const provider of Object.keys(AGENT_ENDPOINTS)){
+    // 'local' is loopback-trust by design (see provider-config-engine.mjs):
+    // it never takes or needs an API key, unlike every remote HTTPS provider.
     const config=agentConfig({...base,...configured(provider),YENO_AGENT_API_KEY:'synthetic-legacy-key',YENO_AGENT_MODEL:'legacy-model'});
     assert.equal(config.ready,true);assert.equal(config.provider,provider);
-    assert.equal(config.endpoint,AGENT_ENDPOINTS[provider]);assert.equal(config.key,`synthetic-${provider}-key`);
+    assert.equal(config.endpoint,AGENT_ENDPOINTS[provider]);
+    assert.equal(config.key,provider==='local'?'':`synthetic-${provider}-key`);
     assert.equal(JSON.stringify(config.providers).includes('synthetic-legacy-key'),false);
-    assert.equal(JSON.stringify(config.providers).includes(config.key),false);
+    if(config.key)assert.equal(JSON.stringify(config.providers).includes(config.key),false);
   }
   assert.equal(agentConfig({...base,YENO_OPENAI_MODEL:'synthetic',YENO_NVIDIA_API_KEY:'synthetic-nvidia',YENO_AGENT_API_KEY:'synthetic-legacy'}).ready,false);
   assert.equal(agentConfig({YENO_AGENT_PROVIDER:'openai',YENO_OPENAI_MODEL:'synthetic',YENO_AGENT_API_KEY:'synthetic-legacy',YENO_AGENT_DAILY_CALL_LIMIT:'4'}).ready,false);
