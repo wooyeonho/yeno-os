@@ -59,6 +59,7 @@ import {createLiveSession,setupMessage,audioChunkMessage,audioStreamEndMessage,t
 import {isWebSocketUpgrade,acceptUpgrade} from './lib/live-ws.mjs';
 import {coreSummary,coreHomeSummary} from './lib/blackhole-core.mjs';
 import {shadowGrowthFromState} from './lib/shadow-growth.mjs';
+import {recallMemories,recallPromptBlock} from './lib/memory-recall.mjs';
 import {createMemoryEvent,addMemoryEvent,MemoryEventError} from './lib/memory-events.mjs';
 import {enqueue,applyOutcome,pendingItems,outboxSummary,MemorySyncError} from './lib/memory-sync-outbox.mjs';
 import {loadSupabaseMemoryConfig,createSupabaseAdapter} from './lib/memory-supabase-adapter.mjs';
@@ -1855,8 +1856,15 @@ export function createYenoServer(options={}) {
            if(outcome)return {status:outcome.pendingOwnerAction?200:201,payload:{jobId:outcome.job?.id??null,job:outcome.job,...(outcome.kind==='shadowMission'?{missionId:outcome.missionId,mission:outcome.mission}:{}),...(outcome.pendingOwnerAction?{pendingOwnerAction:true,quest:outcome.quest,message:outcome.message}:{}),decision:{goal:outcome.decision.top.goal,successCriterion:outcome.decision.top.successCriterion,dominantDrives:outcome.decision.top.motivation.dominantDrives,announcement:decisionAnnouncement(outcome.decision)}}};
          }
          const context=`코어의 실제 요약: ${JSON.stringify({running:s.jobs.filter(j=>j.status==='running').map(j=>({title:j.title,type:j.type})),projects:s.projects.length,codeCapabilities:getCodeStatus(s.codeWorkshop).map(e=>({name:e.name,active:!!e.activeHash})),automatic:s.autopilot.enabled,aiCalls:agentUsage(s.jobs).attempts})}\n`;
-         const prompt=context+(history.length?`이전 대화는 맥락 자료입니다. 현재 요청에 한국어로 답하세요.\n${JSON.stringify(history)}\n현재 요청: ${text}`:text);
-         const job=newJob({type:'agent',text:prompt,title:'음성 대화 · '+text.slice(0,100)},{questExecution:true});job.voiceConversation=true;job.callLimit=1;return {status:201,payload:{jobId:job.id,job:publicJob(job)}};
+         // F07: the ordinary conversation path recalls stored memory (canonical
+         // memoryEvents + legacy notes) by bounded token overlap, hands it to
+         // the model as LABELED DATA (never instructions), and records exactly
+         // which ids were used and why on the job so the recall is traceable.
+         // No tool authority is added here - the one-shot/self-test tool-free
+         // boundary is unchanged.
+         const recall=recallMemories(s,text);
+         const prompt=context+recallPromptBlock(recall)+(history.length?`이전 대화는 맥락 자료입니다. 현재 요청에 한국어로 답하세요.\n${JSON.stringify(history)}\n현재 요청: ${text}`:text);
+         const job=newJob({type:'agent',text:prompt,title:'음성 대화 · '+text.slice(0,100)},{questExecution:true});job.voiceConversation=true;job.callLimit=1;job.memoryRecall={version:recall.version,ids:recall.recalled.map(r=>r.id),reason:recall.reason,recalledCount:recall.recalled.length,at:now()};return {status:201,payload:{jobId:job.id,job:publicJob(job)}};
        }
        const capabilityMatch=url.pathname.match(/^\/api\/capabilities\/(import|verify|activate|disable|rollback|run)$/);
        if(capabilityMatch)return capabilityMutation(capabilityMatch[1],b);
