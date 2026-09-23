@@ -14,13 +14,13 @@
 | F04 | candidate | `7e5cdbb`, 단위+통합(/api/core, 재시작) PASS | UI 상세 화면의 verifiedResult 표시(Home 요약은 core.verifiedResult로 노출됨) |
 | F05 | candidate | `4068f5e`, 수정 전 2/3 실패→3/3 통과, fabric/migration 회귀 PASS | 실제 Supabase/Obsidian 목적지 전송은 자격증명 필요(BLOCKED) |
 | F06 | candidate | `1624721`, 단위+UI+통합 PASS | v2: 임무당 역할 1회 키 여부 결정 |
-| F07 | planned | 미착수 | `/api/voice` 일반 경로에 저장 기억 회수+의도→기존 작업 계약 변환(G2) |
+| F07 | candidate(회수) | `f1094c7` 기억 회수+회수 id/사유 job에 기록, 라벨된 데이터로만 프롬프트 전달; 검사 2건 PASS | 의도→기존 작업 계약 자동 변환은 미착수(G2) |
 | F08 | planned | 미착수 | 실제 브라우저 worker/transport 연결(G3) |
-| F09 | planned | 미착수 | 주 코어=Koyeb 확정·클라이언트에 코어/배포 SHA 표시(G3/G5) |
+| F09 | in_progress | `0e0c55a` runtimeIdentity 노출+Home 표시(UI 검사 PASS) | Koyeb 실제 배포 SHA 대조·주 코어 확정(운영 단계) |
 | F10 | planned | 미착수 | 서명키·버전 원장·기존 설치 위 업데이트 검증(G5) — 소유자 서명키 필요 |
 | F11 | planned | 미착수 | 독립 보관 백업 회수→빈 환경 복원 실증(G5) |
 | F12 | candidate | `59bd320` 점검 도구 + 검사 3건 PASS, 실제 Koyeb basic PASS | live 모드 실행(YENO_TOKEN) — 소유자 게이트 |
-| F13 | planned | 미착수 | Obsidian exporter를 01_DRAFTS 규칙에 맞추기 전 활성화 금지(현재 활성화 안 됨) |
+| F13 | candidate | `7c7a091` 소유 하위트리 01_DRAFTS/BLACKHOLE 기본·00_INBOX_RAW 금지, 검사 PASS | 실제 Vault 연결은 소유자 활성화 결정(기본 OFF) |
 | F14 | planned | 미착수 | 통화 총액 한도·단가 스냅샷(G2) |
 
 ## 필수 요구 R01~R52
@@ -39,10 +39,10 @@
 | R10 | Shadow 기억·routine·handoff | candidate | PASS(synthetic) | NOT_RUN | #22 통합 + fabric 브리지 |
 | R11 | 검증·성과 구분 | candidate | PASS(synthetic) | NOT_RUN | F04: semantic pass만 verified; 사업 성과는 별도 원장 |
 | R12 | 작업·요청 원장·재접속 | candidate | PASS(synthetic) | PASS(basic만) | 점검 도구 isolated PASS; Koyeb health/401 PASS; live 루프는 토큰 게이트 |
-| R13 | 지속 기억·맥락 검색 | planned | NOT_RUN | NOT_RUN | F07(G2) |
+| R13 | 지속 기억·맥락 검색 | candidate | PASS(synthetic) | NOT_RUN | F07 회수 경로; 의도→작업 변환은 G2 |
 | R14 | 결과→기억 동기화 | candidate | PASS(synthetic) | BLOCKED | F05; 실제 목적지 자격증명 없음 |
 | R15 | 관계·결정·에피소드 기억 | 기존 | PASS(synthetic) | NOT_RUN | memory-events 검사(기존) |
-| R16 | Obsidian 초안 출력 | planned | NOT_RUN | NOT_RUN | F13 |
+| R16 | Obsidian 초안 출력 | candidate | PASS(synthetic) | NOT_RUN | F13; 실제 Vault 활성화는 소유자 결정 |
 | R17 | Project Universe | 기존 | PASS(synthetic) | NOT_RUN | 변경 없음 |
 | R18 | 프로젝트 완료 판정 | candidate | PASS(synthetic) | NOT_RUN | 독립 검증 뒤에만 milestone(F05/G1) |
 | R19 | Kirby 입력 접수 | 기존 | PASS(synthetic) | NOT_RUN | sources 검사(기존) |
@@ -61,7 +61,7 @@
 | R32 | Windows 사용성 | 기존 | PASS(CI, #55) | NOT_RUN | 후보 SHA 미빌드 |
 | R33 | PC 파일·화면 | planned | NOT_RUN | NOT_RUN | G3 |
 | R34 | Living Core UI | candidate | PASS(synthetic) | NOT_RUN | F03/F04/F06 화면 일치 검사 |
-| R35 | 단일 주 코어·버전 식별 | planned | NOT_RUN | NOT_RUN | F09; Koyeb 배포 SHA 미확인 |
+| R35 | 단일 주 코어·버전 식별 | in_progress | PASS(synthetic, UI) | NOT_RUN | F09 식별 노출; Koyeb 배포 SHA 미확인 |
 | R36 | 인증·기기 등록·폐기 | candidate | PASS(synthetic)+PASS(basic live) | 부분 | 점검 도구: enroll/revoke/401 PASS(격리), Koyeb 401 PASS |
 | R37 | 비상 정지 | 기존 | PASS(synthetic) | NOT_RUN | 변경 없음 |
 | R38 | 비밀·격리 | 기존+점검 도구 | PASS(synthetic) | NOT_RUN | 보고서 토큰 미포함 검사 |

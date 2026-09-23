@@ -195,3 +195,10 @@ npm test
 - push 게이트가 열리면: CI 결과·아티팩트 SHA-256을 manifest로 기록(§10), 실패 시 재현→수정.
 - 코드 작업(키 불필요, 바로 가능): F07(`/api/voice` 기억 회수+의도→기존 작업 계약), F14(비용 총액 한도), F13(Obsidian exporter 01_DRAFTS 규칙), F09(코어/배포 SHA 클라이언트 표시). 순서 제안: F07 → F14 → F09 → F13.
 - 재실행 금지 외부 효과: 없음(이 세션은 외부 발송·결제·배포·삭제를 하지 않았고, Koyeb에는 GET health/state만 보냄).
+
+### 2026-09-23 추가 — G1 이후 코드 작업 3건 + 최종 회귀 (재개 기록 갱신)
+- 추가 커밋: `f1094c7` F07(`/api/voice` 기억 회수, `lib/memory-recall.mjs`, job.memoryRecall) · `7c7a091` F13(Obsidian exporter 소유 하위트리 `01_DRAFTS/BLACKHOLE` 기본, `00_INBOX_RAW` 금지) · `0e0c55a` F09 식별 절반(`/api/state.runtimeIdentity` + Home 풋터). 각 커밋 메시지에 설계 기록.
+- 최종 회귀(HEAD `0e0c55a`, 132개 파일, 6개씩 55s 묶음 + UI 2개씩 175s): tests 1026 · pass 1018 · **fail 1 (묶음 실행에서만)** · skipped 7(video env-gate).
+  - 그 1건 = `test/closed-loop.test.mjs` "Loop 2 - autopilot opt-in…"(scheduler 타이밍 대기). **단독 실행 2회 연속 5/5 통과** → 55s 묶음 경합에서의 타이밍 민감 검사로 분류. 후보 회귀로 단정하지 않되, push 후 CI의 묶음 없는 `npm test`를 최종 판정으로 삼는다. 이 후보의 F07/F09/F13 변경은 autopilot/scheduler 경로를 건드리지 않았다(정적 확인).
+- 미착수(키 불필요, 다음 재개 1순위): **F14** 통화 총액 한도(단가 스냅샷·토큰/시간 상한·예약/정산; `agent-engine.mjs` 호출 회계 조사부터). 그다음 F08(브라우저 worker transport)·F09 나머지(Koyeb 배포 SHA 대조).
+- 외부 게이트는 위 §14 항목 그대로(push/PR/CI, YENO_TOKEN, provider 키, 실기기).
