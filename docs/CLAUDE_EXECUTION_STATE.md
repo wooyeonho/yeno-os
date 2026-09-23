@@ -202,3 +202,34 @@ npm test
   - 그 1건 = `test/closed-loop.test.mjs` "Loop 2 - autopilot opt-in…"(scheduler 타이밍 대기). **단독 실행 2회 연속 5/5 통과** → 55s 묶음 경합에서의 타이밍 민감 검사로 분류. 후보 회귀로 단정하지 않되, push 후 CI의 묶음 없는 `npm test`를 최종 판정으로 삼는다. 이 후보의 F07/F09/F13 변경은 autopilot/scheduler 경로를 건드리지 않았다(정적 확인).
 - 미착수(키 불필요, 다음 재개 1순위): **F14** 통화 총액 한도(단가 스냅샷·토큰/시간 상한·예약/정산; `agent-engine.mjs` 호출 회계 조사부터). 그다음 F08(브라우저 worker transport)·F09 나머지(Koyeb 배포 SHA 대조).
 - 외부 게이트는 위 §14 항목 그대로(push/PR/CI, YENO_TOKEN, provider 키, 실기기).
+
+## 2026-09-23 (Claude, Cowork) — closed-loop 근본 원인 수정 + F09 나머지·F14 + base 검토 (§15)
+
+### 현재 위치
+- 브랜치 `blackhole/g1-integration-claude-20260922`, HEAD `9437dac`(base PR #55 head `84d6f27c`, 이 후보 자체 커밋 16개), 로컬 전용 — **원격 push 안 됨**(자격증명 없음, 아래 §15-3). 작업 트리 clean.
+- 새 커밋: `a847357` 스케줄러 근본 원인 수정 · `9437dac` F14(비용 총액 한도) + F09 나머지(배포 SHA 실제 대조) + base 브랜치 검토 결과 기록.
+
+### 1) closed-loop.test.mjs "Loop 2" — 근본 원인을 찾아 수정함 (단독 통과로 넘기지 않음)
+- 원인: `server.mjs`의 스케줄러 `tick()`은 자기 자신을 150ms마다 재호출하는 `schedule()`을 함수 **끝**에서만 호출했고, 데드라인 정리·자동 자료 검토 작업 생성 두 곳은 어떤 try/catch에도 감싸이지 않았다. 이 둘 중 하나가 어떤 이유로든(예: 전체 회귀처럼 여러 node 프로세스가 동시에 도는 실제 CPU/디스크 경합 상황에서의 일시적 실패) 예외를 던지면 `tick()`이 마지막 `schedule()`에 도달하지 못하고 그 서버 프로세스의 나머지 수명 동안 스케줄러 전체가 영구히 멈춘다 — autopilot의 목표 합성·closed loop 진행이 다시는 일어나지 않는다. 단독 실행은 경합이 없어 이 경로를 절대 건드리지 않으므로 항상 통과했던 것이고, 묶음 실행에서만 간헐적으로 재현된 것과 정확히 일치한다.
+- 수정: `tick()` 전체를 `try{...}finally{schedule();}`로 감싸 어떤 단계에서 무엇이 터지든 매 tick마다 정확히 한 번 재무장하도록 보장. 이전에 감싸이지 않았던 두 단계도 다른 모든 단계와 같은 방식(로그 후 계속)으로 try/catch 추가. 부수적으로 `controlAutopilot()`이 켜질 때 `schedule()`을 즉시 호출하도록 추가(지연 축소 + 자가 치유).
+- 검증: 수정 전/후 모두 `test/closed-loop.test.mjs` 단독 5회 연속 5/5 통과(이건 원래도 항상 통과했음, 참고용). **실제 재현 조건**(다른 11개 파일과 함께, 실 병렬 경합 하에서 2회 실행, 그중 한 번은 Loop 2가 4.08초 소요 — 이 검사의 6초 대기 예산에 근접) — 수정 후 **두 번 모두 Loop 2 포함 5/5 통과**. 전체 132개 파일을 20개 묶음으로 나눠 재실행: `not ok` 0건.
+- 커밋 후 정확한 HEAD(`a847357`)에서 다시 전체 132개 파일을 재실행: **tests 993 · pass 986 · fail 0 · skipped 7**(첫 배치 방식, 파일 수 동일하나 node --test의 다중 파일 집계 방식 차이로 총 subtest 수 표기가 이전 "1026" 표기와 다름 — fail 0/not ok 0이 판정 근거).
+
+### 2) F09 나머지 — Koyeb 배포 SHA 대조
+- 실제 Koyeb 코어(`https://global-iris-gyeol-98386a17.koyeb.app`, `verify-blackhole-live-loop.ps1`에 기록된 URL) `/api/v1/health` 확인: `{"name":"YENO OS","version":"0.2.2","apiVersion":"1","authRequired":true}` — 인증 필요(정상). `/api/v1/state`의 `runtimeIdentity.sourceCommit` 비교는 YENO_TOKEN 필요 → **여기서부터는 여전히 소유자 게이트**(외부 차단, 코드 결함 아님).
+- 코드 쪽은 완성: `scripts/blackhole-check.mjs`가 예약만 해두고 채우지 않던 `report.deploymentSha` 필드를 이제 인증된 `/api/v1/state`의 `runtimeIdentity.sourceCommit`(F09가 이미 넣어둔 필드)에서 실제로 읽어 `report.deploymentMatchesSource`를 계산한다. isolated 모드로 종단 검증: 이 정확한 체크아웃에서 시작한 임시 로컬 런타임이 자기 자신의 HEAD SHA(`a8473579…`)를 그대로 보고 `deploymentMatchesSource:true` — 하드코딩이 아니라 실제 대조임을 증명. `blackhole-check.test.mjs`에 회귀 고정.
+
+### 3) F14 — 통화 총액 한도(단가 스냅샷)
+- 새 `runtime/lib/cost-ledger.mjs`: provider별(모델별 아님, 일부러 거친 기준) USD/1k 토큰 스냅샷(버전·기준일 동봉) + `dailyCostUsage`/`dailyCostLimitStatus`. 오늘 settled(확정) 호출의 실제 토큰만 합산, 미확정·미등재 provider는 절대 0원으로 취급하지 않고 `unpriced`로 집계.
+- 실패 닫힘: 한도를 설정했는데 오늘 unpriced 호출이 하나라도 있으면 총액을 정직하게 알 수 없으므로 `cost_pricing_unknown`으로 즉시 차단(한도 미달로 임의 간주하지 않음).
+- 집행 지점: `agent-engine.mjs`의 `runAgent` 예약 게이트 1곳 — 모든 job 종류(bot/research/code/voice/repository/semantic/shadow)가 기존 `daily_call_limit` 검사와 공유하는 실제 유일한 관문이라 별도 경로를 새로 만들지 않음. 새 env `YENO_AGENT_DAILY_COST_LIMIT_USD`(미설정 시 기존 동작 그대로, 호출 횟수 한도만 유효). `/api/state`의 `agent.costUsage`로 노출.
+- 검사: `test/cost-ledger.test.mjs`(신규 5건) + 기존 agent 계열 회귀 전부 재확인, 회귀 없음.
+
+### 4) push/Draft PR 전 base 검토 결과 (실행하지 않음, 확인만)
+- `git merge-base origin/main HEAD` = `f355c86`(먼 조상), `main`..HEAD = **346개 커밋**. 반면 `84d6f27`(이 후보의 실제 base, PR #55 head)..HEAD = **16개 커밋**(이 후보 전부).
+- GitHub API로 PR #55 확인: 상태 Draft(open), **head 브랜치 = `blackhole/mobile-tools-back-codex-20260921`**(head sha `84d6f27c`, 로컬 기록과 일치), **base 브랜치 = `blackhole/provider-test-safety-apk-smoke-codex-20260921`** — #55 자신도 아직 병합되지 않은 긴 사슬의 한 고리.
+- 결론: 이 후보의 Draft PR은 **base를 `blackhole/mobile-tools-back-codex-20260921`(#55의 head 브랜치)로 지정**해야 diff에 이 후보의 16개 커밋만 나온다. `main`을 base로 하면 346개 커밋(병합 안 된 전체 스택)이 diff에 섞여 들어간다. **아직 push·PR 생성은 하지 않음** — 실행은 연호님 확인 후(§15 하단 행동 목록).
+
+### 남은 코드 작업 (키 불필요, 다음 우선순위)
+- **F08**(실제 브라우저 worker/transport): `server.mjs`가 `options.browserHarnessAdapter`를 이미 플러그형으로 호출하는 자리(1305행 부근)가 있고 `lib/browser-harness.mjs`/`browser-decision.mjs`(JEV 권한)/`browser-provider-routing.mjs`가 이미 있음 — 즉 어댑터 계약과 결정 권한 체계는 있는데 실제 어댑터 구현체가 아직 없음(`browserAutomation:false`). 이번 세션엔 조사만 하고 구현은 다음 재개로 미룸: 외부 사이트로 나가는 실제 네트워크 행위(SSRF·권한 우회 위험)라서 근거 문서 없이 서두르면 오히려 "실패 닫힘" 원칙을 어길 수 있다고 판단 — 다음 재개 때 `browser-decision.mjs`/`browser-harness.mjs` 전체를 먼저 읽고 최소 read-only 어댑터(공개 페이지 GET만, JEV 결정 게이트 통과 필수)부터 설계 기록을 남기고 구현.
+- R40(서명키)·R39(백업→빈 환경 복원 실증)은 이전과 동일하게 미착수 — 완료 기준은 원장에 이미 기재됨(원장 §5-4 참고), 서명키/실제 복원 환경 모두 소유자 행동 필요.

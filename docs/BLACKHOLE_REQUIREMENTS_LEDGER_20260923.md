@@ -15,13 +15,13 @@
 | F05 | candidate | `4068f5e`, 수정 전 2/3 실패→3/3 통과, fabric/migration 회귀 PASS | 실제 Supabase/Obsidian 목적지 전송은 자격증명 필요(BLOCKED) |
 | F06 | candidate | `1624721`, 단위+UI+통합 PASS | v2: 임무당 역할 1회 키 여부 결정 |
 | F07 | candidate(회수) | `f1094c7` 기억 회수+회수 id/사유 job에 기록, 라벨된 데이터로만 프롬프트 전달; 검사 2건 PASS | 의도→기존 작업 계약 자동 변환은 미착수(G2) |
-| F08 | planned | 미착수 | 실제 브라우저 worker/transport 연결(G3) |
-| F09 | in_progress | `0e0c55a` runtimeIdentity 노출+Home 표시(UI 검사 PASS) | Koyeb 실제 배포 SHA 대조·주 코어 확정(운영 단계) |
+| F08 | planned | 미착수(9/23 조사만: 어댑터 계약·JEV 결정 권한은 이미 있음, 구현체 없음) | 실제 브라우저 worker/transport 연결(G3) — 다음 재개 1순위 |
+| F09 | candidate | `0e0c55a` identity 노출+Home 표시 + `9437dac` 점검 도구가 실제 `/api/v1/state.runtimeIdentity`를 읽어 대조(isolated 종단 검증됨) | 실제 Koyeb 배포 SHA와의 라이브 대조는 YENO_TOKEN 필요(BLOCKED, 소유자 게이트) |
 | F10 | planned | 미착수 | 서명키·버전 원장·기존 설치 위 업데이트 검증(G5) — 소유자 서명키 필요 |
 | F11 | planned | 미착수 | 독립 보관 백업 회수→빈 환경 복원 실증(G5) |
 | F12 | candidate | `59bd320` 점검 도구 + 검사 3건 PASS, 실제 Koyeb basic PASS | live 모드 실행(YENO_TOKEN) — 소유자 게이트 |
 | F13 | candidate | `7c7a091` 소유 하위트리 01_DRAFTS/BLACKHOLE 기본·00_INBOX_RAW 금지, 검사 PASS | 실제 Vault 연결은 소유자 활성화 결정(기본 OFF) |
-| F14 | planned | 미착수 | 통화 총액 한도·단가 스냅샷(G2) |
+| F14 | candidate | `9437dac` `lib/cost-ledger.mjs` + `agent-engine.mjs` runAgent 게이트, 단위 5건+기존 agent 회귀 PASS(synthetic) | 단가는 provider당 1개 수동 스냅샷(모델별 아님) — 실제 청구서 대조는 다음 단계 |
 
 ## 필수 요구 R01~R52
 
@@ -34,7 +34,7 @@
 | R05 | 내부 JEV | 기존(shadow mode) | PASS(synthetic) | NOT_RUN | 권한 승격 없음(변경 없음) |
 | R06 | Brain Pool | 기존 | PASS(synthetic) | NOT_RUN | 변경 없음 |
 | R07 | 실제 모델 호출 | 기존 코드 | NOT_RUN | BLOCKED | provider 키 없음 → `providerMissing`. 합성 transport만 |
-| R08 | 금액·토큰 한도 | planned | NOT_RUN | NOT_RUN | F14 |
+| R08 | 금액·토큰 한도 | candidate | PASS(synthetic) | NOT_RUN | F14: 추정 USD 한도 + 실패 닫힘(unpriced 시 차단) |
 | R09 | Shadow 역할 동시 실행 | candidate | PASS(synthetic) | BLOCKED | 실모델 2역할은 키 필요 |
 | R10 | Shadow 기억·routine·handoff | candidate | PASS(synthetic) | NOT_RUN | #22 통합 + fabric 브리지 |
 | R11 | 검증·성과 구분 | candidate | PASS(synthetic) | NOT_RUN | F04: semantic pass만 verified; 사업 성과는 별도 원장 |
@@ -61,7 +61,7 @@
 | R32 | Windows 사용성 | 기존 | PASS(CI, #55) | NOT_RUN | 후보 SHA 미빌드 |
 | R33 | PC 파일·화면 | planned | NOT_RUN | NOT_RUN | G3 |
 | R34 | Living Core UI | candidate | PASS(synthetic) | NOT_RUN | F03/F04/F06 화면 일치 검사 |
-| R35 | 단일 주 코어·버전 식별 | in_progress | PASS(synthetic, UI) | NOT_RUN | F09 식별 노출; Koyeb 배포 SHA 미확인 |
+| R35 | 단일 주 코어·버전 식별 | candidate | PASS(synthetic, isolated 종단) | BLOCKED | F09: 점검 도구가 실제 runtimeIdentity를 대조; 실 Koyeb 대조는 YENO_TOKEN 필요 |
 | R36 | 인증·기기 등록·폐기 | candidate | PASS(synthetic)+PASS(basic live) | 부분 | 점검 도구: enroll/revoke/401 PASS(격리), Koyeb 401 PASS |
 | R37 | 비상 정지 | 기존 | PASS(synthetic) | NOT_RUN | 변경 없음 |
 | R38 | 비밀·격리 | 기존+점검 도구 | PASS(synthetic) | NOT_RUN | 보고서 토큰 미포함 검사 |
