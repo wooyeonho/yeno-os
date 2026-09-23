@@ -45,14 +45,21 @@ export function shadowGrowthEventsFromState(state) {
   const jobs = state.jobs ?? [];
   const seen = new Set();
   const events = [];
-  const semanticJobs = jobs.filter(j => j.semanticVerifyRequest && j.status === 'completed' && j.semanticVerdict && j.shadowAssignment?.role === 'semanticVerifier');
+  // A semantic FAIL/UNCERTAIN verdict is persisted on a *failed* verifier job
+  // (runStep marks the job failed when verdict !== 'pass'), so failures are
+  // read from completed AND failed verifier jobs that carry a verdict.
+  const semanticJobs = jobs.filter(j => j.semanticVerifyRequest && ['completed', 'failed'].includes(j.status) && j.semanticVerdict && j.shadowAssignment?.role === 'semanticVerifier');
   for (const semantic of semanticJobs) {
     const missionId = semantic.semanticVerdict.missionId;
     const {ref, reason} = resolveVerifiedResult(semantic, state);
     const verdict = semantic.semanticVerdict.verdict;
     const status = ref ? 'valid' : verdict === 'pass' ? 'held' : 'failed';
     for (const job of jobs) {
-      if (job.shadowAssignment?.missionId !== missionId || job.status !== 'completed') continue;
+      // Working roles must have completed to be part of the event; the
+      // semanticVerifier itself is included in either terminal state so a
+      // failed verdict is visible as a failure for that role too.
+      if (job.shadowAssignment?.missionId !== missionId) continue;
+      if (job.status !== 'completed' && !(job.id === semantic.id && job.status === 'failed')) continue;
       const role = job.shadowAssignment.role;
       if (!SHADOW_ROLES.includes(role)) continue;
       const key = `${missionId}:${job.id}`;
