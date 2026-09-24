@@ -332,3 +332,20 @@ npm test
 - Ollama 11434는 PC 내부 주소 유지, 공유기 포트 전달 금지 — 계속 준수.
 - 11개 jsdom 의존 테스트 파일은 사용자 실PC(device_bash 샌드박스 밖)에서 재확인 필요 — 아직 미실행.
 - push/원격 반영 없음(로컬 커밋만) — 계속 준수.
+
+## §20 재개 기록 (2026-09-24 — Android LAN 연동 방화벽 진단, 중요 발견)
+
+### 진단 결과
+- Wi-Fi 네트워크 프로필: **Public** (Private 아님). 전체 프로필 변경은 하지 않기로 함(영향 범위 최소화) — 대신 신규 규칙을 `-Profile Public`으로 맞추는 쪽으로 방향 수정(연호님 결정).
+- 포트 8790 전용 기존 규칙: 없음.
+- **`Node.js JavaScript Runtime` 기존 인바운드 허용 규칙 발견 (Node.js 설치 시 자동 생성 추정)**:
+  - TCP: Profile=Public, Action=Allow, LocalPort=**Any**, RemoteAddress=**Any**, Program=`C:\program files\nodejs\node.exe`
+  - UDP: 동일 (LocalPort=Any, RemoteAddress=Any)
+  - 이 규칙이 살아있는 한, 휴대폰 전용으로 좁힌 새 규칙을 추가해도 node.exe(=YENO 서버) 자체는 이미 Public 프로필의 모든 기기에 모든 포트로 노출되어 있어 새 규칙이 실질적 보호를 제공하지 못함.
+
+### 결정된 다음 단계 (연호님 승인, 아직 미실행 — 방화벽 변경은 에이전트가 직접 수행하지 않음)
+1. 시험 직전: 기존 `Node.js JavaScript Runtime` 규칙 2개(TCP/UDP)를 `Disable-NetFirewallRule`로 임시 비활성화(영구 삭제/변경이 아닌 가역적 조치).
+2. 휴대폰 전용 좁은 규칙(`YENO-Voice-Phone-Only`, TCP 8790, RemoteAddress 192.168.219.105/32, LocalAddress 192.168.219.102, Profile Public) 생성.
+3. 실기기 시험 진행.
+4. 시험 종료 후: `YENO-Voice-Phone-Only` 규칙 제거 + `Node.js JavaScript Runtime` 규칙 2개 `Enable-NetFirewallRule`로 재활성화 + `Get-NetFirewallRule`로 Enabled=True 재확인(원복 검증 없이 완료로 기록하지 않음).
+- 아직 어떤 방화벽 변경도 적용되지 않은 상태(진단만 완료).
