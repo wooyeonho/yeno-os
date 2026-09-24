@@ -369,3 +369,23 @@ npm test
 - Codex 브랜치의 실제 변경분이 이 PC에 없다. push 없이 가져오려면 Codex 세션에서 `git format-patch 84d6f27..be486da`(또는 `git bundle create`)로 패치 파일을 만들어 이 세션에 파일로 전달해야 한다. 현재 전달된 3개 파일(실행 계획 md, 실행 상태 md, 라이브 스크립트)만으로는 서버 변경 없이 이식이 불가능하다.
 - 그 전까지 P3 코드 작업은 이 PC 라인에서 보류(어느 쪽 위에 쌓을지 정해졌으나 자료가 없음).
 - P1 방화벽 1·2번(사용자 직접 실행)은 계속 대기.
+
+## §22 재개 기록 (2026-09-24 — Codex bundle 반입 · 읽기 전용 비교 완료 · 적용 전)
+
+### 실행한 것(README 순서, 적용 없음)
+- bundle `codex-p3-port-20260924.bundle` SHA-256 `5d1a84c56f8366f80f650a01f621ea1c87b177cce9a98e73b8cd7ff3f8c24b23` — 전달값·컨테이너·PC 3곳 일치. 위치: `Desktop\codex-p3-port-20260924.bundle`(저장소 밖).
+- `git bundle verify` okay(요구 ref `84d6f27` 보유). `git fetch` → `refs/remotes/codex/p3-port-20260924` = `be486da`만 추가. 현재 브랜치 `blackhole/g1-integration-claude-20260922`·HEAD·작업 트리 불변(status 0건).
+- Codex 커밋 12개(`7bb706e`…`be486da`): base 대비 65 files / +4211 −233. PC 라인: base 대비 48 files / +4230 −124. 공통 조상 `84d6f27`.
+
+### 비교 결과
+- 양쪽이 모두 건드린 파일 24개. 3-way dry merge(`git merge-tree 84d6f27 HEAD codex`, git 2.34, 읽기 전용) 기준 충돌 hunk 45개.
+  - 큰 충돌: `runtime/server.mjs` 12, `runtime/lib/blackhole-core.mjs` 10, `provider-config-engine.mjs` 3, `store.mjs` 2, `backup.mjs` 2.
+  - **같은 기능을 양쪽이 각자 새로 만든 파일(added in both, 파일 전체 충돌)**: `runtime/lib/memory-embeddings.mjs`(+test), `runtime/lib/cost-ledger.mjs`(+test; PC엔 `f14-concurrency.test.mjs`도 있음), `runtime/lib/shadow-growth.mjs`(+test). 이 3쌍은 merge가 아니라 설계 선택이 필요.
+- Codex만 건드린 파일 41개(예: jev-recovery, recovery-one-of-qpu, memory-write, shadow-mission-finalization, verify-living-loop-live 등 — 다음 단계에서 의존성 확인). PC만 건드린 파일 24개(G1 통합 테스트, memory-recall, obsidian-exporter, persistent-bots, browser-adapter, blackhole-check, live 스크립트 2개 등).
+- 결론: 커밋 단위 cherry-pick/`git am` 일괄 적용은 불가(README 지침과 일치). 파일 단위 이식 필요.
+
+### 제안 이식 순서(연호님 승인 대기, 아직 아무것도 적용 안 함)
+1. Codex 전용 신규 모듈 중 공유 파일에 의존하지 않는 것부터 파일 단위로 가져오고 해당 테스트 실행.
+2. `server.mjs`/`store.mjs`/`backup.mjs`/`blackhole-core.mjs` 배선은 hunk 단위 수작업 병합.
+3. 중복 구현 3쌍은 설계 비교 후 한쪽 선택: `memory-embeddings.mjs`는 PC 쪽이 Ollama 실사용 검증(§17)을 가졌으므로 PC 유지가 기본, Codex의 추가 기능(버전 결속 인덱스·재색인 등)은 필요분만 이식. `cost-ledger`/`shadow-growth`는 비교 후 결정.
+4. 각 단계 집중 테스트 → 마지막에 전체 회귀 → 최종 SHA에서 §17 Ollama 실사용 재검증.
