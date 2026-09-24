@@ -417,3 +417,12 @@ npm test
 - P3 실사용 acceptance에는 PC의 정확한 후보 SHA에서 `qwen2.5:3b`에 대한 실제 local Verifier 요청, 같은 mission ID의 실제 receipt, 실기기/재시작/폐기·정지 시험이 남아 있다. 사용자의 P2 Ollama 검증은 다른 SHA에서 수행된 것이므로 이 후보 SHA의 증거로 간주하지 않는다.
 - P4는 별도 트랙이다: 실제 허가된 학습 평가·rollback 및 승인된 물리 QPU backend의 adapter/cost reservation/submit·unknown receipt 조회·job ID·returned counts·같은 mission readback. 현재 시뮬레이터를 QPU 통과로 표시하지 않는다.
 - 방화벽 변경, push, PR, merge, 배포, 실제 QPU 제출은 하지 않았다.
+
+## §23 재개 기록 (2026-09-24 — Codex JEV recovery 패치 PC 반입·적용·집중 테스트)
+
+- 입력: `pc-p3-jev-recovery-20260924.patch`(Codex가 PC bundle `6c942c3` 기준으로 만든 단일 커밋 패치, SHA-256 `adb4f23f18a709c7f3053a3629eb9d7172a2073833e9c4ff1b657d9a50e08128`, 17 files / +1420 −24). `git apply --check` HEAD(`6c942c3`)에 대해 clean.
+- 적용: g1 브랜치는 그대로 두고 **새 브랜치 `blackhole/p3-jev-recovery-port-20260924`** 에 `git am`으로 적용 → 커밋 `fff1a19`(작성자 Codex 보존). push 없음.
+- 내용: `jev-recovery.mjs`(막힘 진단·자원 스냅샷·대안 후보, `authorizesDispatch:false`), `jev-recovery-verifier.mjs`(로컬 1회 호출 의미 검토), `recovery-one-of-qpu.mjs`(QAOA 회로 산출물·디코더, 실 QPU 없음), server/store/backup/quests/agent-engine 배선, Living Core UI 표시, 테스트 5개 신규.
+- 집중 테스트(device_bash 샌드박스, Node): jev-recovery 4/4, jev-recovery-verifier 3/3, recovery-one-of-qpu 6/6, jev-recovery-server 2/2, backup 11/11, jev 11/11, quests 12/12, blackhole-core-server 12/12, g1-living-loop-integration 2/2, voice-memory-embeddings 4/4 → **67 pass / 0 fail**. `node --check` 15개 파일 통과.
+- 미실행: `living-core-ui.test.mjs`(jsdom — 이 샌드박스에서 멈추는 파일군, 실PC에서 확인 필요), 전체 회귀(같은 이유), Ollama 실사용 재검증(§17 항목) — 이 SHA에서 아직 안 함. **P3 완료 아님**: JEV 한 조각이며 Kirby·기억 회수·실모델·실기기 trace는 미결.
+- 남은 Codex 이식 대상(§22 참조): F14 cost-ledger·shadow-growth·memory-embeddings 중복 3쌍 설계 선택, server/blackhole-core 나머지 hunk, `expectedQuestId` 게이트, `verify-living-loop-live.mjs`.
