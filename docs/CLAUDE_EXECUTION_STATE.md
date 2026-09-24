@@ -349,3 +349,23 @@ npm test
 3. 실기기 시험 진행.
 4. 시험 종료 후: `YENO-Voice-Phone-Only` 규칙 제거 + `Node.js JavaScript Runtime` 규칙 2개 `Enable-NetFirewallRule`로 재활성화 + `Get-NetFirewallRule`로 Enabled=True 재확인(원복 검증 없이 완료로 기록하지 않음).
 - 아직 어떤 방화벽 변경도 적용되지 않은 상태(진단만 완료).
+
+## §21 재개 기록 (2026-09-24 — 두 작업 라인 분기 확인 · 통합 기준 결정 · Vault 저장)
+
+### 확인된 사실
+- 이 PC 저장소: 브랜치 `blackhole/g1-integration-claude-20260922`, HEAD `471f79a`(이 기록 직전). §17의 Ollama 실사용 증거(qwen2.5:3b / bge-m3, 재시작·다른 표현 회수·수정·삭제·오프라인)는 이 라인에만 있다.
+- 별도 Codex 작업공간: 브랜치 `blackhole/p3-connected-codex-20260924`(base `84d6f27`, 코드 커밋 `be486da`, 기록 커밋 `52004b4`). F03~F06, P3 voice→Shadow→JEV 합성 통합, JEV 의미 검토, F14 비용 원장, P4 게이트 회로 코드, `scripts/verify-living-loop-live.mjs`, 전체 회귀 1,108/1,101/0 fail/7 skip. **이 브랜치·커밋·파일은 PC 저장소에 없다**(`git cat-file` 실패, 원격에도 없음). 같은 파일명 `runtime/lib/memory-embeddings.mjs`를 두 라인이 서로 다른 설계로 구현했다.
+- Codex 라이브 스크립트가 요구하는 서버 기능 중 이 PC 서버에 없는 것(아래 grep 결과 참고): `expectedQuestId`, `jev.recentShadowDecisions`, `readiness.sourceCommit`, `persistentStore.durable` 등 — 스크립트만 가져오면 PC에서는 실행 불가.
+
+### 결정(연호님·Codex 합의, 이 세션 기록)
+- **PC 브랜치를 실사용 기준으로 유지한다.** Codex 변경은 통째로 덮어쓰지 않고 파일별로 비교해 필요한 것만 이식한다. 임베딩 구현은 두 설계가 다르므로 특히 통째 교체 금지.
+- 이식 후에는 **최종 동일 SHA에서** 전체 회귀와 Ollama 실사용 검증(§17 항목)을 다시 한다. 이전 SHA의 증거를 새 SHA에 재귀속하지 않는다.
+- 정확한 표현: "Codex는 별도 작업공간에서 코딩했지만, 연호님 PC의 OS에는 아직 적용하지 않았다."
+
+### Vault 저장(이 세션 실행)
+- `Obsidian Vault/01_DRAFTS/BLACKHOLE_OS_통합_실행계획_20260924.md` 신규 생성(Codex의 `docs/BLACKHOLE_EXECUTION_PLAN_20260924.md` 원문 그대로, SHA-256 `e3dc6378…d776a0`, 84,764 bytes, 저장 후 해시 일치 확인). `CHANGELOG.md` (24)번 기록. 기존 노트·`00_INBOX_RAW` 미수정.
+
+### 이식을 시작하기 위해 필요한 것(차단)
+- Codex 브랜치의 실제 변경분이 이 PC에 없다. push 없이 가져오려면 Codex 세션에서 `git format-patch 84d6f27..be486da`(또는 `git bundle create`)로 패치 파일을 만들어 이 세션에 파일로 전달해야 한다. 현재 전달된 3개 파일(실행 계획 md, 실행 상태 md, 라이브 스크립트)만으로는 서버 변경 없이 이식이 불가능하다.
+- 그 전까지 P3 코드 작업은 이 PC 라인에서 보류(어느 쪽 위에 쌓을지 정해졌으나 자료가 없음).
+- P1 방화벽 1·2번(사용자 직접 실행)은 계속 대기.
