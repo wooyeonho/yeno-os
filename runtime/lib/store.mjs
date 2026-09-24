@@ -25,6 +25,8 @@ import {validateBotAssignment} from './project-bots.mjs';
 import {validateShadowAssignment} from './shadow-army.mjs';
 import {validateBrowserJob} from './browser-harness.mjs';
 import {validateJevShadowLog} from './jev.mjs';
+import {validateJevRecoveryLog} from './jev-recovery.mjs';
+import {validateJevRecoveryVerificationRequest,validateJevRecoveryVerificationResult} from './jev-recovery-verifier.mjs';
 import {validateGrokMultiAgentApproval} from './grok-adapter.mjs';
 import {initialPersistentBots,validatePersistentBots} from './persistent-bots.mjs';
 import {validateQuestState} from './quests.mjs';
@@ -48,7 +50,7 @@ export function atomicWrite(file, content) {
 export function initialState() {
  return {revision:0, emergencyStop:false, concurrency:1,
  modules:{memory:true,documents:true,diagnostics:true,ai:false},
- jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), capabilities:initialCapabilities(), capabilityInbox:initialCapabilityInbox(), codeWorkshop:initialCodeWorkshop(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem(), blackholeCore:initialCoreState(), memoryEvents:[], memoryEmbeddings:[], memorySyncOutbox:[], jevShadowLog:[], grokQuarantined:false, grokMultiAgentApproval:null, persistentBots:initialPersistentBots()};
+ jobs:[], quests:[], outcomes:[], studio:emptyStudio(), autopilot:initialAutopilot(), capabilities:initialCapabilities(), capabilityInbox:initialCapabilityInbox(), codeWorkshop:initialCodeWorkshop(), memories:[], snapshots:[], events:[], requests:{}, requestLedger:{}, artifacts:{}, devices:{}, projects:[], sources:[], discovery:initialDiscovery(), ecosystem:initialEcosystem(), blackholeCore:initialCoreState(), memoryEvents:[], memoryEmbeddings:[], memorySyncOutbox:[], jevShadowLog:[], jevRecoveryLog:[], grokQuarantined:false, grokMultiAgentApproval:null, persistentBots:initialPersistentBots()};
 }
 function initializeQuestCollections(state) {
  // Missing collections identify older stores. Present malformed data must fail
@@ -110,6 +112,23 @@ function initializeQuestCollections(state) {
  // migration above - this log is pure bounded telemetry, never authority.
  if(!Object.hasOwn(state,'jevShadowLog'))state.jevShadowLog=[];
  validateJevShadowLog(state.jevShadowLog);
+ // JEV recovery is advisory evidence only. Older stores start with an empty
+ // bounded log; existing malformed evidence fails closed on startup.
+ if(!Object.hasOwn(state,'jevRecoveryLog'))state.jevRecoveryLog=[];
+ validateJevRecoveryLog(state.jevRecoveryLog);
+ for(const job of state.jobs){
+  if(Object.hasOwn(job,'jevRecoveryVerificationResult')&&!Object.hasOwn(job,'jevRecoveryVerificationRequest'))throw new Error('JEV recovery result has no request');
+  if(Object.hasOwn(job,'jevRecoveryVerificationRequest')){
+   validateJevRecoveryVerificationRequest(job.jevRecoveryVerificationRequest);
+   if(job.type!=='agent'||job.callLimit!==1||job.selectedProvider!=='local'||job.agentJournal?.provider!=='local'||job.projectId!==job.jevRecoveryVerificationRequest.projectId||job.id===job.jevRecoveryVerificationRequest.blockedJobId)throw new Error('Invalid JEV recovery verifier job binding');
+   if(job.status==='completed'&&!Object.hasOwn(job,'jevRecoveryVerificationResult'))throw new Error('Completed JEV recovery verifier has no result');
+  }
+  if(Object.hasOwn(job,'jevRecoveryVerificationResult')){
+   validateJevRecoveryVerificationResult(job.jevRecoveryVerificationResult,job.jevRecoveryVerificationRequest);
+   const artifact=state.artifacts[job.jevRecoveryVerificationResult.outputArtifactRef.id];
+   if(job.status!=='completed'||job.jevRecoveryVerificationResult.verifierJobId!==job.id||!artifact||artifact.jobId!==job.id||artifact.sha256!==job.jevRecoveryVerificationResult.outputArtifactRef.sha256||artifact.mimeType!=='application/json'||!job.artifacts.some(item=>item.id===artifact.id))throw new Error('JEV recovery verifier artifact link mismatch');
+  }
+ }
  // xAI Grok Provider Adapter: a store predating this slice gets the honest
  // defaults (not quarantined, no multi-agent approval on file) - additive,
  // same migration idiom as every field above.

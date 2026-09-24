@@ -84,6 +84,8 @@ import {BotError,planProjectBots,botBlockReason,botCanStart,botStatus,botDocumen
 import {ShadowArmyError,planShadowMission,shadowJobFromSpec,shadowDependenciesMet,shadowDependencyFailed,shadowBlockReason,verifyShadowArtifacts,verifyFailureSummary,missionStatus,missionsForQuest} from './lib/shadow-army.mjs';
 import {SemanticVerificationError,parseSemanticVerdictDraft,buildSemanticVerdict,validateSemanticVerdict,semanticVerificationPrompt,renderSemanticVerdictReport} from './lib/semantic-verification.mjs';
 import {JEV_ENGINE_VERSION,JEV_CALIBRATION_VERSION,JEV_SHADOW_LOG_CAP,evaluateDecisions,buildShadowDispatchRequest,buildVerifierEscalateRequest,shadowDispatchLogEntry,calibrateShadowLog} from './lib/jev.mjs';
+import {JEV_RECOVERY_VERSION,JEV_RECOVERY_LOG_CAP,planRecovery} from './lib/jev-recovery.mjs';
+import {jevRecoveryVerificationPrompt,buildJevRecoveryVerificationResult,validateJevRecoveryVerificationRequest} from './lib/jev-recovery-verifier.mjs';
 import {GrokAdapterError,GROK_PROVIDER,GROK_MAX_MULTI_AGENT_COUNT,grokStatus,validateGrokStatus,validateGrokMultiAgentApproval,grokCapabilityReport} from './lib/grok-adapter.mjs';
 import {browserDecisionStatus,indexedDomDecisionInput,planBrowserAction} from './lib/browser-decision.mjs';
 import {BrowserHarnessError,browserHarnessStatus,deterministicBrowserVerification,runSandboxBrowserHarness,typesafeJevProviderStatus,validatePublicHttpsUrl} from './lib/browser-harness.mjs';
@@ -123,6 +125,7 @@ export function createYenoServer(options={}) {
    };
  }
  const profiles=agentProfiles(env), agentSettings=profiles.primary;
+ const localAgentConfig=()=>{try{return agentConfigForProvider(env,'local');}catch{return null;}};
  // BLACKHOLE Durable Memory Fabric (Phase B): both destinations are disabled
  // by default and only ever configured from explicit YENO_MEMORY_*/
  // YENO_OBSIDIAN_* env vars - never inferred, never reusing an unrelated
@@ -133,7 +136,7 @@ export function createYenoServer(options={}) {
  const supabaseMemoryAdapter=createSupabaseAdapter(supabaseMemoryConfig,{transport:options.memorySupabaseTransport});
  const obsidianMemoryConfig=loadObsidianConfig(env);
  // Independent semantic verification (issue #25): prefer a genuinely
- // different, actually-ready provider (grok) over the builder's own
+ // different, actually-ready provider (grok or local) over the builder's own
  // primary provider when one exists - real provider diversity, never
  // asserted. Falls back to primary (same provider, but still a separate
  // job/journal/execution context that never sees the builder's own
@@ -143,7 +146,11 @@ export function createYenoServer(options={}) {
  // quarantine flag is checked at the exact same call site real readiness
  // already is, so the fallback to the primary provider is the same real
  // path a plain not-ready grok already takes.
- const semanticVerifierConfig=()=>(profiles.grok.ready&&!s.grokQuarantined&&profiles.grok.provider!==agentSettings.provider)?profiles.grok:agentSettings;
+ const semanticVerifierConfig=()=>{
+   if(profiles.grok.ready&&!s.grokQuarantined&&profiles.grok.provider!==agentSettings.provider)return profiles.grok;
+   const local=localAgentConfig();
+   return local?.ready&&local.provider!==agentSettings.provider?local:agentSettings;
+ };
  const configFor=job=>job.botAssignment?profiles[job.botAssignment.profile]:job.shadowAssignment?.role==='semanticVerifier'?semanticVerifierConfig():job.selectedProvider?agentConfigForProvider(env,job.selectedProvider):agentSettings;
  // Owner-declared Brain Pool (YENO_BRAIN_POOL). Invalid declarations refuse to start.
  const DECLARED_BRAIN_POOL=declaredBrainPool(env);
@@ -179,7 +186,7 @@ export function createYenoServer(options={}) {
  for(const job of s.jobs)if(['running','queued'].includes(job.status)){job.status='paused';job.pauseReason='restart';if(job.type==='browser'&&job.browser)job.browser.restartState='paused-after-restart';job.updatedAt=now();job.version++;restarted++;}
  if(restarted)event(`${restarted} unfinished job(s) paused after restart; owner resume required.`);
  if(store.recovered)event('State recovered from the verified previous backup.');
- if(store.recovered||(!aiEndpoint&&!agentSettings.ready&&!profiles.grok.ready))s.modules.ai=false;
+ if(store.recovered||(!aiEndpoint&&!agentSettings.ready&&!profiles.grok.ready&&!localAgentConfig()?.ready))s.modules.ai=false;
  recoverAgentJournals(s.jobs);
  // Routing provenance follows the durable receipts: a call reserved before a
  // crash is an unknown outcome, never a fresh send.
@@ -197,7 +204,7 @@ export function createYenoServer(options={}) {
    }catch(error){releaseLock();throw error;}
  }
  event('YENO runtime started.');store.save('runtime_started');
- function state(){return {repositoryDevelopment:{patchDrafting:true,runnerConnected:false,automaticDeployment:false,modelCallsPerPlan:1},growth:growthState(),codeWorkshop:codeState(),autopilot:autopilotState(),bots:{...botStatus(s,profiles),persistent:persistentBotOverview(s.persistentBots)},persistentBots:persistentBotOverview(s.persistentBots),core:coreHomeSummary(s),jev:{engineVersion:JEV_ENGINE_VERSION,calibrationVersion:JEV_CALIBRATION_VERSION,authorizesDispatch:false,recentShadowDecisions:s.jevShadowLog.slice(-20),calibration:calibrateShadowLog(s.jevShadowLog)},name:'YENO OS',version:VERSION,apiVersion:API_VERSION,runtimeIdentity:{sourceCommit:SOURCE_COMMIT?.sha??null,sourceCommitOrigin:SOURCE_COMMIT?.source??null,dataDirName:path.basename(dataDir),deployment:env.KOYEB_SERVICE_ID?'koyeb':env.RENDER?'render':'local'},requestTracking:{retained:Object.keys(s.requestLedger).length,capacity:REQUEST_LEDGER_MAX_ENTRIES,cached:Object.keys(s.requests).length,cacheMaxBytes:REQUEST_CACHE_MAX_BYTES},revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,draftConfigured:!!aiEndpoint,model:agentSettings.ready?agentSettings.model:aiEndpoint?aiModel:null},agent:{providers:providerStatus(),configured:agentSettings.ready,provider:agentSettings.provider,model:agentSettings.model||null,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs),costUsage:dailyCostLimitStatus(s.jobs,agentSettings.dailyCostLimitUsd??null,now()),automaticReviews:agentSettings.ready&&agentSettings.auto&&s.modules.ai&&(s.discovery.enabled||s.ecosystem.enabled)&&!s.emergencyStop,tools:AGENT_TOOLS.map(tool=>tool.name),developmentExecution:false,assignedJavaScriptCoding:true},discovery:{...s.discovery,repositories:DISCOVERY_REPOS},ecosystem:publicEcosystem(s.ecosystem),jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,world:worldOverview(s.jobs),capabilityInbox:listCapabilityInbox(s.capabilityInbox),browserDecision:browserDecisionStatus(),browserHarness:browserHarnessStatus({adapterConfigured:typeof options.browserHarnessAdapter==='function',provider:typesafeJevProviderStatus(env)}),capabilities:{worldEarthquakes:true,projectBots:true,persistentBots:true,externalBotProduct:false,androidControl:false,webIntake:false,paidVideoProvider:false,externalPublishing:false,localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,scheduledSourceDiscovery:true,boundedAgentLoop:true,ecosystemDiscovery:true,skillEvidenceIntake:true,developerWorker:false,javascriptWorker:true,externalCodeExecution:true,voiceConversation:true,autonomousProduction:true,diagnostics:true,evolution:'tested-javascript-versions',ai:!!aiEndpoint||agentSettings.ready||profiles.grok.ready,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
+ function state(){return {repositoryDevelopment:{patchDrafting:true,runnerConnected:false,automaticDeployment:false,modelCallsPerPlan:1},growth:growthState(),codeWorkshop:codeState(),autopilot:autopilotState(),bots:{...botStatus(s,profiles),persistent:persistentBotOverview(s.persistentBots)},persistentBots:persistentBotOverview(s.persistentBots),core:coreHomeSummary(s),jev:{engineVersion:JEV_ENGINE_VERSION,calibrationVersion:JEV_CALIBRATION_VERSION,authorizesDispatch:false,recentShadowDecisions:s.jevShadowLog.slice(-20),recoveryEngineVersion:JEV_RECOVERY_VERSION,recoveryAuthorizesDispatch:false,recentRecoveryDecisions:s.jevRecoveryLog.slice(-10),calibration:calibrateShadowLog(s.jevShadowLog)},name:'YENO OS',version:VERSION,apiVersion:API_VERSION,runtimeIdentity:{sourceCommit:SOURCE_COMMIT?.sha??null,sourceCommitOrigin:SOURCE_COMMIT?.source??null,dataDirName:path.basename(dataDir),deployment:env.KOYEB_SERVICE_ID?'koyeb':env.RENDER?'render':'local'},requestTracking:{retained:Object.keys(s.requestLedger).length,capacity:REQUEST_LEDGER_MAX_ENTRIES,cached:Object.keys(s.requests).length,cacheMaxBytes:REQUEST_CACHE_MAX_BYTES},revision:s.revision,emergencyStop:s.emergencyStop,concurrency:s.concurrency,modules:s.modules,ai:{configured:!!aiEndpoint||agentSettings.ready||profiles.grok.ready||localAgentConfig()?.ready,draftConfigured:!!aiEndpoint,model:agentSettings.ready?agentSettings.model:aiEndpoint?aiModel:null},agent:{providers:providerStatus(),configured:agentSettings.ready,provider:agentSettings.provider,model:agentSettings.model||null,dailyCallLimit:agentSettings.dailyCallLimit,usage:agentUsage(s.jobs),costUsage:dailyCostLimitStatus(s.jobs,agentSettings.dailyCostLimitUsd??null,now()),automaticReviews:agentSettings.ready&&agentSettings.auto&&s.modules.ai&&(s.discovery.enabled||s.ecosystem.enabled)&&!s.emergencyStop,tools:AGENT_TOOLS.map(tool=>tool.name),developmentExecution:false,assignedJavaScriptCoding:true},discovery:{...s.discovery,repositories:DISCOVERY_REPOS},ecosystem:publicEcosystem(s.ecosystem),jobs:s.jobs.map(publicJob),projects:s.projects,sources:s.sources,memories:s.memories,snapshots:s.snapshots.map(publicSnapshot),events:s.events,world:worldOverview(s.jobs),capabilityInbox:listCapabilityInbox(s.capabilityInbox),browserDecision:browserDecisionStatus(),browserHarness:browserHarnessStatus({adapterConfigured:typeof options.browserHarnessAdapter==='function',provider:typesafeJevProviderStatus(env)}),capabilities:{worldEarthquakes:true,projectBots:true,persistentBots:true,externalBotProduct:false,androidControl:false,webIntake:false,paidVideoProvider:false,externalPublishing:false,localDocuments:true,persistentMemory:true,projectManagement:true,sourceIntake:true,scheduledSourceDiscovery:true,boundedAgentLoop:true,ecosystemDiscovery:true,skillEvidenceIntake:true,developerWorker:false,javascriptWorker:true,externalCodeExecution:true,voiceConversation:true,autonomousProduction:true,diagnostics:true,evolution:'tested-javascript-versions',ai:!!aiEndpoint||agentSettings.ready||profiles.grok.ready||localAgentConfig()?.ready,arbitraryShell:false,browserAutomation:false,remotePCControl:false,snapshotScope:['memories','settings'],maxConcurrency:3}};}
  // A failed filesystem write leaves its outcome uncertain. Retain its request
  // identity in memory, but never acknowledge a cached receipt or expose that
  // state through the API until the complete state has been persisted again.
@@ -852,7 +859,7 @@ export function createYenoServer(options={}) {
  function dispatchShadowMission(planBody){
    const plan=planShadowMission(s,planBody),at=now();
    const jobs=plan.specs.map(spec=>shadowJobFromSpec(spec,at));
-   if(agentSettings.ready)s.modules.ai=true;
+   if(agentSettings.ready||localAgentConfig()?.ready)s.modules.ai=true;
    s.jobs.unshift(...jobs);s.concurrency=Math.max(s.concurrency,2);
    event(plan.plannerQuestId
      ? `Jarvis 목표 ${plan.plannerQuestId}를 Shadow Army 임무 ${plan.missionId}에 연결했습니다.`
@@ -871,11 +878,58 @@ export function createYenoServer(options={}) {
  // neither call site below inspects the returned answer at all, only logs
  // it. A JEV failure here never blocks the real job.
  function pushJevLog(entry){s.jevShadowLog.push(entry);if(s.jevShadowLog.length>JEV_SHADOW_LOG_CAP)s.jevShadowLog=s.jevShadowLog.slice(-JEV_SHADOW_LOG_CAP);}
+ function recordJevRecovery(job,blocked,budget){
+   const assignment=job.shadowAssignment,missionId=assignment?.missionId,projectId=job.projectId;
+   if(!missionId||!projectId)return;
+   const blockerCode=blocked??(budget?'dailyBudget':'schedulerHold');
+   const prior=s.jevRecoveryLog.find(entry=>entry.missionId===missionId&&entry.blocker.code===blockerCode&&entry.blocker.evidenceRefs.some(ref=>ref.id===job.id));
+   if(prior)return;
+   const at=now(),validUntil=new Date(Date.parse(at)+5*60*1000).toISOString();
+   const project=s.projects.find(item=>item.id===projectId);
+   let localConfig=null;try{localConfig=agentConfigForProvider(env,'local');}catch{}
+   const facts={jobId:job.id,missionId,projectId,jobStatus:job.status,role:assignment.role,blockerCode,
+     projectVersion:project?.version??null,projectStatus:project?.status??null,
+     providerConfigured:configFor(job).ready,localModelConfigured:!!localConfig?.ready,localModel:localConfig?.ready?localConfig.model:null,
+     aiModuleEnabled:s.modules.ai,emergencyStop:s.emergencyStop,
+     dailyCalls:agentUsage(s.jobs).attempts,dailyCallLimit:configFor(job).dailyCallLimit,
+     unsettledCalls:(job.agentJournal?.calls??[]).filter(call=>call.status!=='settled').map(call=>call.id).sort()};
+   const evidenceRef={type:'job',id:job.id,sha256:digest(JSON.stringify(facts))};
+   const snapshot={version:1,missionId,projectId,capturedAt:at,validUntil,
+     scope:{projectIds:[projectId],actionTypes:['wait','owner_review']},
+     budget:{currency:'USD',limitMinor:0,reservedMinor:0,spentMinor:0},
+     resources:[
+       {id:'model-provider',capabilityIds:['agent.generate'],status:configFor(job).ready?(blockerCode==='providerMissing'?'unavailable':'unknown'):'unavailable',projectIds:[projectId],checkedAt:at,validUntil,evidenceRefs:[evidenceRef]},
+       {id:'local-model-provider',capabilityIds:['agent.generate'],status:localConfig?.ready&&s.modules.ai?'unknown':'unavailable',projectIds:[projectId],checkedAt:at,validUntil,evidenceRefs:[evidenceRef]},
+       {id:'ai-module',capabilityIds:['ai.enabled'],status:s.modules.ai?'available':'unavailable',projectIds:[projectId],checkedAt:at,validUntil,evidenceRefs:[evidenceRef]},
+       {id:'local-job-record',capabilityIds:['job.read'],status:'available',projectIds:[projectId],checkedAt:at,validUntil,evidenceRefs:[evidenceRef]},
+     ],evidenceRefs:[evidenceRef]};
+   const actionTypes=blockerCode==='outcomeUnknown'?['wait','owner_review']:['owner_review','wait'];
+   const alternatives=actionTypes.map(actionType=>({id:actionType==='owner_review'?`owner_review:local_provider:${job.id}`:`${actionType}:${job.id}`,missionId,projectId,actionType,
+     requiredResourceIds:actionType==='owner_review'?['local-model-provider']:[],requiredCapabilityIds:actionType==='owner_review'?['agent.generate']:[],
+     evidenceRefs:[evidenceRef],cost:{currency:'USD',amountMinor:0},riskClass:'low',sideEffects:[],reversible:true,approvalId:null}));
+   const policy={emergencyStop:s.emergencyStop,approvedApprovalIds:[],allowedRiskClasses:['low'],maxCostMinor:0};
+   const decision=planRecovery({missionId,projectId,blocker:{code:blockerCode,evidenceRefs:[evidenceRef]},resourceSnapshot:snapshot,alternatives,verifierReviews:[],policy,at});
+   s.jevRecoveryLog.push(decision);
+   if(s.jevRecoveryLog.length>JEV_RECOVERY_LOG_CAP)s.jevRecoveryLog=s.jevRecoveryLog.slice(-JEV_RECOVERY_LOG_CAP);
+   const alreadyQueued=s.jobs.some(item=>item.jevRecoveryVerificationRequest?.missionId===missionId);
+   if(alreadyQueued||!s.modules.ai||s.emergencyStop||!localConfig?.ready||agentUsage(s.jobs).attempts>=localConfig.dailyCallLimit)return;
+   try{
+     const verificationRequest={version:1,missionId,projectId,blockedJobId:job.id,initialDecisionFingerprint:decision.fingerprint,
+       projectVersion:assignment.projectVersion,projectStatus:assignment.context.status,goal:assignment.goal,successCriterion:assignment.successCriterion,
+       blocker:{code:blockerCode,evidenceRefs:[evidenceRef]},resourceSnapshot:snapshot,alternatives,policy,createdAt:at};
+     validateJevRecoveryVerificationRequest(verificationRequest);
+     const prompt=jevRecoveryVerificationPrompt(verificationRequest);
+     const reviewJob=newJob({type:'agent',provider:'local',projectId,title:`JEV 대안 검증 · ${project?.name??'프로젝트'}`,text:prompt},{questExecution:true});
+     reviewJob.callLimit=1;reviewJob.jevRecoveryVerificationRequest=verificationRequest;touch(reviewJob);
+     event(`JEV 로컬 Verifier 작업 ${reviewJob.id} 생성: 후보는 검토 전까지 실행하지 않습니다.`);
+   }catch(error){event(`JEV 독립 검증 보류: 로컬 Verifier 연결을 확인할 수 없습니다 (${error.code??'configuration'}).`);}
+ }
  function recordJevShadowDispatch(job,blocked,budget){
    try{
      const request=buildShadowDispatchRequest({job,jobs:s.jobs,blockReason:blocked,concurrencyLimit:s.concurrency,activeCount:active(),emergencyStop:s.emergencyStop});
      const response=evaluateDecisions(request,now());
      pushJevLog(shadowDispatchLogEntry({at:now(),job,response,realDecision:(blocked||budget)?'hold':'dispatch'}));
+     if(blocked||budget)recordJevRecovery(job,blocked,budget);
    }catch(error){event(`JEV shadow-mode 관찰 실패(실제 배정에는 영향 없음): ${error.message}`);}
  }
  // `verifyResult` defaults to the deterministic verifier's own field, but a
@@ -1237,6 +1291,36 @@ export function createYenoServer(options={}) {
    });
    job.agentJournal.history=[{role:'user',content:prompt}];save();
  }
+ function prepareJevRecoveryVerification(job){
+   const request=job.jevRecoveryVerificationRequest;
+   validateJevRecoveryVerificationRequest(request);
+   const prompt=jevRecoveryVerificationPrompt(request);
+   const initial=job.agentJournal?.history?.[0];
+   if(job.agentJournal?.history?.length!==1||initial?.role!=='user'||initial.content!==prompt)throw new SemanticVerificationError('recovery_verifier_context_mismatch');
+ }
+ function applyJevRecoveryVerification(job,artifactId,at){
+   const request=job.jevRecoveryVerificationRequest,artifact=s.artifacts[artifactId];
+   const raw=job.agentJournal?.history?.findLast(message=>message.role==='assistant')?.content;
+   if(!artifact||artifact.jobId!==job.id||artifact.mimeType!=='application/json'||typeof raw!=='string')throw new SemanticVerificationError('recovery_verifier_artifact_missing');
+   const outputArtifactRef={type:'artifact',id:artifact.id,sha256:artifact.sha256};
+   const result=buildJevRecoveryVerificationResult({draft:raw,request,verifierJobId:job.id,provider:job.agentJournal.provider,model:job.agentJournal.model,checkedAt:at,outputArtifactRef});
+   const resourceSnapshot=structuredClone(request.resourceSnapshot);
+   const localProvider=resourceSnapshot.resources.find(resource=>resource.id==='local-model-provider');
+   if(!localProvider)throw new SemanticVerificationError('recovery_local_resource_missing');
+   const resourceValidUntil=new Date(Date.parse(at)+60000).toISOString();
+   localProvider.status='available';localProvider.checkedAt=at;localProvider.validUntil=resourceValidUntil;
+   localProvider.evidenceRefs=[...localProvider.evidenceRefs,outputArtifactRef];
+   resourceSnapshot.evidenceRefs=[...resourceSnapshot.evidenceRefs,outputArtifactRef];
+   const currentProject=s.projects.find(project=>project.id===request.projectId);
+   if(!currentProject||currentProject.version!==request.projectVersion||currentProject.status!==request.projectStatus)resourceSnapshot.scope.projectIds=[];
+   const policy={...request.policy,emergencyStop:s.emergencyStop||request.policy.emergencyStop};
+   const decision=planRecovery({missionId:request.missionId,projectId:request.projectId,blocker:request.blocker,resourceSnapshot,
+     alternatives:request.alternatives,verifierReviews:result.reviews,policy,at});
+   const initialIndex=s.jevRecoveryLog.findIndex(entry=>entry.fingerprint===request.initialDecisionFingerprint);
+   if(initialIndex>=0)s.jevRecoveryLog[initialIndex]=decision;
+   job.jevRecoveryVerificationResult=result;
+   event(`JEV 독립 semantic 검토 저장: ${job.id}; dispatch 권한 없음${initialIndex<0?' (원래 감사 항목이 보존 한도를 지나 갱신되지 않음)':''}.`);
+ }
  // Turns the model's raw draft into the strict persisted verdict. Every
  // provenance field is injected from real, already-known server state -
  // the model's own output is parsed for nothing but verdict/confidence/
@@ -1394,14 +1478,38 @@ export function createYenoServer(options={}) {
        else if(job.type==='agent'){
          const controller=new AbortController();controllers.set(job.id,controller);
          const timeout=setTimeout(()=>controller.abort(),Math.max(1,Math.min(90000,job.deadlineAt?Date.parse(job.deadlineAt)-Date.now():90000)));
-         try {const bundle=job.researchRequest?await prepareResearch(job,controller.signal,valid):null;if(!valid())return;if(job.semanticVerifyRequest)prepareSemanticVerification(job);if(!valid())return;const draft=await transportAgent(job,controller.signal);if(!valid())return;job.draft=job.repositoryTask?JSON.stringify(parseRepositoryPatch(draft,job.repositoryTask)):job.semanticVerifyRequest?finalizeSemanticVerdict(job,draft,now()):bundle?researchAnswer(job,draft,bundle):draft;}
+         try {
+           const bundle=job.researchRequest?await prepareResearch(job,controller.signal,valid):null;
+           if(!valid())return;
+           if(job.semanticVerifyRequest)prepareSemanticVerification(job);
+           if(job.jevRecoveryVerificationRequest)prepareJevRecoveryVerification(job);
+           if(!valid())return;
+           const draft=await transportAgent(job,controller.signal);
+           if(!valid())return;
+           job.draft=job.repositoryTask?JSON.stringify(parseRepositoryPatch(draft,job.repositoryTask))
+             :job.semanticVerifyRequest?finalizeSemanticVerdict(job,draft,now())
+             :bundle?researchAnswer(job,draft,bundle):draft;
+         }
          finally{clearTimeout(timeout);if(controllers.get(job.id)===controller)controllers.delete(job.id);}
        }
        else {const draft=await aiDraft(job);if(!valid())return;job.draft=`# ${job.title}\n\n${draft}\n\n---\nAI 생성 초안 · 모델: ${aiModel}\n외부 사실 검증이나 도구 실행은 하지 않았습니다.\n입력 SHA-256: ${job.inputSha256}\n`;}
        job.step=2;
      }else if(job.step===2){
        if(job.type==='browser'){finalizeBrowserJob(job);touch(job);save();return;}
-       writeArtifact(job,job.draft,`${job.repositoryTask?'repository-patch':job.researchRequest?'research-answer':job.type}-${job.id.slice(0,8)}.${job.repositoryTask?'json':'md'}`,job.repositoryTask?'application/json':undefined);if(job.type==='forai'&&job.productionEvidence){writeArtifact(job,JSON.stringify(job.productionEvidence,null,2),`forai-evidence-${job.id.slice(0,8)}.json`,'application/json');}if(job.autopilot?.kind==='forai')writeArtifact(job,JSON.parse(job.input).content,`research-page-${job.autopilot.parentJobId.slice(0,8)}.html`,'text/html; charset=utf-8');if(job.type==='code'&&job.codeOutput)writeArtifact(job,job.codeOutput,`code-${job.codeTask.mode==='run'?'result':'source'}-${job.id.slice(0,8)}.json`,'application/json');delete job.draft;delete job.productionEvidence;delete job.codeOutput;job.step=3;job.status=(job.type==='code'&&job.codeCheckpoint?.passed===false)||(job.type==='verify'&&job.verifyResult?.verified===false)||(job.semanticVerifyRequest&&job.semanticVerdict?.verdict!=='pass')?'failed':'completed';if(job.type==='verify'&&job.status==='failed')job.error=verifyFailureSummary(job.verifyResult);if(job.semanticVerifyRequest&&job.status==='failed')job.error=`semantic_${job.semanticVerdict?.verdict==='uncertain'?'uncertain':'fail'}: ${(job.semanticVerdict?.summary??'no verdict recorded').slice(0,200)}`;event(`Job completed and output verified: ${job.title}`);if(job.shadowAssignment?.role==='semanticVerifier'&&job.status==='completed')advanceMissionFromVerify(job);}
+       const isRecoveryVerifier=Boolean(job.jevRecoveryVerificationRequest);
+       const primaryArtifactId=writeArtifact(job,job.draft,
+         `${isRecoveryVerifier?'jev-recovery-review':job.repositoryTask?'repository-patch':job.researchRequest?'research-answer':job.type}-${job.id.slice(0,8)}.${isRecoveryVerifier||job.repositoryTask?'json':'md'}`,
+         isRecoveryVerifier||job.repositoryTask?'application/json':undefined);
+       if(isRecoveryVerifier)applyJevRecoveryVerification(job,primaryArtifactId,now());
+       if(job.type==='forai'&&job.productionEvidence){writeArtifact(job,JSON.stringify(job.productionEvidence,null,2),`forai-evidence-${job.id.slice(0,8)}.json`,'application/json');}
+       if(job.autopilot?.kind==='forai')writeArtifact(job,JSON.parse(job.input).content,`research-page-${job.autopilot.parentJobId.slice(0,8)}.html`,'text/html; charset=utf-8');
+       if(job.type==='code'&&job.codeOutput)writeArtifact(job,job.codeOutput,`code-${job.codeTask.mode==='run'?'result':'source'}-${job.id.slice(0,8)}.json`,'application/json');
+       delete job.draft;delete job.productionEvidence;delete job.codeOutput;job.step=3;
+       job.status=(job.type==='code'&&job.codeCheckpoint?.passed===false)||(job.type==='verify'&&job.verifyResult?.verified===false)||(job.semanticVerifyRequest&&job.semanticVerdict?.verdict!=='pass')?'failed':'completed';
+       if(job.type==='verify'&&job.status==='failed')job.error=verifyFailureSummary(job.verifyResult);
+       if(job.semanticVerifyRequest&&job.status==='failed')job.error=`semantic_${job.semanticVerdict?.verdict==='uncertain'?'uncertain':'fail'}: ${(job.semanticVerdict?.summary??'no verdict recorded').slice(0,200)}`;
+       event(`Job completed and output verified: ${job.title}`);
+       if(job.shadowAssignment?.role==='semanticVerifier'&&job.status==='completed')advanceMissionFromVerify(job);}
      touch(job);save();
    }catch(error){if(!valid())return;const hold=(job.botAssignment||job.shadowAssignment)&&error instanceof AgentError&&({daily_call_limit:'dailyBudget',previous_call_outcome_unknown:'outcomeUnknown',project_scope_changed:'projectChanged'}[error.code]);job.status=hold?'paused':'failed';if(hold)job.pauseReason=hold;job.error=job.type==='agent'?(error instanceof AgentError||error instanceof ResearchError||error instanceof SemanticVerificationError?error.message:'Agent execution stopped or failed; inspect preserved checkpoints.'):job.type==='browser'?String(error.message).slice(0,300):job.type==='ai'?(String(error.message).startsWith('AI provider')?error.message:'AI request failed or timed out; no provider response details retained.'):String(error.message).slice(0,300);touch(job);event(`Job failed: ${job.title}`);save();}
    if(valid()){const timer=setTimeout(()=>runStep(job,generation),250);timer.unref();}
@@ -2107,14 +2215,14 @@ export function createYenoServer(options={}) {
        }
        if(url.pathname==='/api/settings'){
          if(b.concurrency!==undefined&&(!Number.isInteger(b.concurrency)||b.concurrency<1||b.concurrency>3))throw new HttpError(400,'concurrency must be 1, 2, or 3');
-         if(b.modules!==undefined){if(!b.modules||typeof b.modules!=='object'||Array.isArray(b.modules))throw new HttpError(400,'modules must be an object');for(const [name,value]of Object.entries(b.modules)){if(!Object.hasOwn(s.modules,name)||typeof value!=='boolean')throw new HttpError(400,'Unknown module or non-boolean value');if(name==='ai'&&value&&!aiEndpoint&&!agentSettings.ready&&!profiles.grok.ready)throw new HttpError(409,'AI provider is not configured');}}
+         if(b.modules!==undefined){if(!b.modules||typeof b.modules!=='object'||Array.isArray(b.modules))throw new HttpError(400,'modules must be an object');for(const [name,value]of Object.entries(b.modules)){if(!Object.hasOwn(s.modules,name)||typeof value!=='boolean')throw new HttpError(400,'Unknown module or non-boolean value');if(name==='ai'&&value&&!aiEndpoint&&!agentSettings.ready&&!profiles.grok.ready&&!localAgentConfig()?.ready)throw new HttpError(409,'AI provider is not configured');}}
          if(b.concurrency!==undefined)s.concurrency=b.concurrency;if(b.modules)Object.assign(s.modules,b.modules);if(b.modules?.ai===false)s.autopilot.enabled=false;
          for(const job of s.jobs)if(['running','queued'].includes(job.status)&&(job.questId?b.modules?.ai===false:!s.modules[jobModule(job)])){job.status='paused';job.pauseReason='moduleDisabled';touch(job);invalidate(job);}
          event('Runtime settings updated.');return {status:200,payload:state()};
        }
        if(url.pathname==='/api/snapshots')return {status:201,payload:{snapshot:publicSnapshot(takeSnapshot(b.label))}};
        const restoreMatch=url.pathname.match(/^\/api\/snapshots\/([a-f0-9-]+)\/restore$/);
-       if(restoreMatch){if(b.confirm!==true)throw new HttpError(400,'Explicit confirm:true is required');const snapshot=s.snapshots.find(x=>x.id===restoreMatch[1]);if(!snapshot)throw new HttpError(404,'Snapshot not found');if(s.jobs.some(j=>['running','queued'].includes(j.status)))throw new HttpError(409,'Pause or stop all active jobs before restoring');const pre=takeSnapshot(`복원 전 자동 저장 — ${snapshot.label}`);s.memories=structuredClone(snapshot.data.memories);s.concurrency=snapshot.data.settings.concurrency;s.modules=structuredClone(snapshot.data.settings.modules);if(!aiEndpoint&&!agentSettings.ready&&!profiles.grok.ready)s.modules.ai=false;event(`Memory/settings restored: ${snapshot.label}. Job and event history preserved.`);return {status:200,payload:{snapshot:publicSnapshot(snapshot),preRestoreSnapshot:publicSnapshot(pre),state:state()}};}
+       if(restoreMatch){if(b.confirm!==true)throw new HttpError(400,'Explicit confirm:true is required');const snapshot=s.snapshots.find(x=>x.id===restoreMatch[1]);if(!snapshot)throw new HttpError(404,'Snapshot not found');if(s.jobs.some(j=>['running','queued'].includes(j.status)))throw new HttpError(409,'Pause or stop all active jobs before restoring');const pre=takeSnapshot(`복원 전 자동 저장 — ${snapshot.label}`);s.memories=structuredClone(snapshot.data.memories);s.concurrency=snapshot.data.settings.concurrency;s.modules=structuredClone(snapshot.data.settings.modules);if(!aiEndpoint&&!agentSettings.ready&&!profiles.grok.ready&&!localAgentConfig()?.ready)s.modules.ai=false;event(`Memory/settings restored: ${snapshot.label}. Job and event history preserved.`);return {status:200,payload:{snapshot:publicSnapshot(snapshot),preRestoreSnapshot:publicSnapshot(pre),state:state()}};}
        throw new HttpError(404,'Not found');
      },{required:versioned||!!principal.web,safetyAction:url.pathname==='/api/code/disable'||url.pathname==='/api/capabilities/disable'||(url.pathname==='/api/studio'&&isStudioSafetyAction(s.studio,b))||(url.pathname==='/api/bots'&&b.action==='stop')||(url.pathname==='/api/commands'&&/^(?:봇|자동)\s*운영\s*중지$/.test(b.text??''))||(url.pathname==='/api/control'&&b.action==='stop')||(['/api/discovery','/api/ecosystem','/api/autopilot'].includes(url.pathname)&&b.enabled===false)});
      respond(res,result.status,result.payload);

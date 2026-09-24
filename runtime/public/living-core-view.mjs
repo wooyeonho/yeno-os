@@ -103,6 +103,59 @@ function recentItemHTML(core, memories) {
   return `<div class="living-recent empty"><span class="eyebrow">최근 활동</span><p>최근 결과물 없음</p></div>`;
 }
 
+const RECOVERY_BLOCKERS = Object.freeze({
+  providerMissing: '필요한 모델 연결이 설정되지 않았어요.',
+  moduleDisabled: 'AI 기능이 꺼져 있어요.',
+  outcomeUnknown: '이전 호출의 결과를 확인할 수 없어요. 중복 실행을 막았어요.',
+  projectChanged: '프로젝트 범위가 바뀌어 임무를 멈췄어요.',
+  dailyBudget: '오늘 허용된 호출 한도에 도달했어요.',
+  schedulerHold: '작업 실행 조건을 다시 확인해야 해요.',
+});
+const RECOVERY_ACTIONS = Object.freeze({owner_review:'설정·권한을 검토해 주세요',wait:'상태를 바꾼 뒤 다시 확인하기'});
+const RESOURCE_NAMES = Object.freeze({
+  'model-provider':'모델 연결','local-model-provider':'로컬 모델','ai-module':'AI 기능','local-job-record':'임무 기록',
+});
+const RESOURCE_STATES = Object.freeze({available:'사용 가능',unavailable:'사용 불가',unknown:'확인 필요'});
+const RECOVERY_NEXT_STEPS = Object.freeze({
+  owner_or_policy_gate_review:'소유자가 설정과 추천을 확인해야 해요.',
+  hold_until_emergency_stop_cleared:'전체 멈춤을 유지해요.',
+  refresh_resources_and_verifier_evidence:'자원 상태와 검증 근거를 다시 확인해야 해요.',
+  request_owner_budget_decision:'소유자가 비용 한도를 확인해야 해요.',
+  ask_owner_to_replan:'소유자 확인 뒤 목표나 범위를 다시 정해야 해요.',
+});
+
+function recoveryCardHTML(state) {
+  const decisions=state?.jev?.recentRecoveryDecisions;
+  const decision=Array.isArray(decisions)?decisions.at(-1):null;
+  if(!decision||decision.authorizesDispatch!==false)return '';
+  const blockedJobId=decision.blocker?.evidenceRefs?.find(ref=>ref.type==='job')?.id;
+  const blockedJob=(state?.jobs??[]).find(job=>job.id===blockedJobId);
+  if(!blockedJob||!['paused','queued'].includes(blockedJob.status))return '';
+  const validUntil=Date.parse(decision.resourceSnapshot?.validUntil??'');
+  const fresh=Number.isFinite(validUntil)&&validUntil>=Date.now();
+  const blocker=RECOVERY_BLOCKERS[decision.blocker?.code]||'작업이 멈춰 원인을 확인하고 있어요.';
+  const resources=Array.isArray(decision.resourceSnapshot?.resources)?decision.resourceSnapshot.resources:[];
+  const resourceRows=resources.map(resource=>{
+    const name=RESOURCE_NAMES[resource.id]||'자원';
+    const status=fresh?(RESOURCE_STATES[resource.status]||'확인 필요'):'다시 확인 필요';
+    return `<li>${esc(name)}: ${esc(status)}</li>`;
+  }).join('');
+  const assessments=new Map((Array.isArray(decision.assessments)?decision.assessments:[]).map(item=>[item.alternativeId,item]));
+  const suggestions=fresh?(Array.isArray(decision.recommendedAlternativeIds)?decision.recommendedAlternativeIds:[])
+    .map(id=>({id,action:RECOVERY_ACTIONS[String(id).split(':',1)[0]],assessment:assessments.get(id)}))
+    .filter(item=>item.action&&item.assessment?.status==='PASS')
+    .map(item=>`<li>${esc(item.action)}</li>`).join(''):'';
+  const next=fresh?(RECOVERY_NEXT_STEPS[decision.nextStep]||'소유자가 다음 단계를 검토해야 해요.'):'자원 정보가 만료됐어요. 다시 확인해야 해요.';
+  return `<section class="living-recovery" aria-label="JEV 막힘 진단">
+    <span class="eyebrow">JEV · 안전 점검 (자동 실행 안 함)</span>
+    <p><strong>막힌 이유</strong> ${esc(blocker)}</p>
+    ${resourceRows?`<ul aria-label="확인된 자원">${resourceRows}</ul>`:''}
+    <p><strong>검증된 선택지</strong></p>
+    ${suggestions?`<ul>${suggestions}</ul>`:'<p>안전성을 확인한 우회 경로가 아직 없어요.</p>'}
+    <p><strong>다음 행동</strong> ${esc(next)}</p>
+  </section>`;
+}
+
 
 // F09 - which core is this screen looking at. Read straight from the server's
 // own runtimeIdentity (source commit detected from deployment metadata or the
@@ -134,6 +187,7 @@ export function createLivingCoreView({root, onNavigate = () => {}}) {
       </div>
       <button type="button" class="button primary living-voice-cta" data-living-action="voice">블랙홀에게 말하기</button>
       ${missionCardHTML(core)}
+      ${recoveryCardHTML(state)}
       ${signalRowHTML(core)}
       ${projectOrbitHTML(state?.projects)}
       ${recentItemHTML(core, state?.memories)}

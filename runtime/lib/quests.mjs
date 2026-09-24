@@ -23,6 +23,10 @@ export class QuestError extends Error {
   constructor(status,code,message=code){super(message);this.name='QuestError';this.status=status;this.code=code;}
 }
 const PROVIDERS=['auto','openai','gemini','moonshot','xai','anthropic','nvidia'];
+// A bounded job may pin the existing loopback-only local provider for an
+// isolated verifier. Keep quest-owner provider choices unchanged; this wider
+// set applies only to persisted job.selectedProvider metadata.
+const JOB_PROVIDERS=[...PROVIDERS.slice(1),'local'];
 const LEDGERS=['wealth','honor','fame'];
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const HASH=/^[a-f0-9]{64}$/;
@@ -195,7 +199,7 @@ export function validateQuestState(state){
   const {quests,outcomes,jobs,projects}=arrays(state),ids=new Set(),linkedJobs=new Set();
   if(quests.length>MAX_QUESTS||outcomes.length>MAX_OUTCOMES)throw new Error('Quest registry exceeds capacity');
   for(const job of jobs){
-    if(job.selectedProvider!==undefined&&!PROVIDERS.slice(1).includes(job.selectedProvider))throw new Error('Invalid job selected provider');
+    if(job.selectedProvider!==undefined&&!JOB_PROVIDERS.includes(job.selectedProvider))throw new Error('Invalid job selected provider');
     if(job.callLimit!==undefined&&!integer(job.callLimit,1,4))throw new Error('Invalid job call limit');
     if(job.deadlineAt!==undefined&&!iso(job.deadlineAt))throw new Error('Invalid job deadline');
     if(job.questId!==undefined&&(!uuid(job.questId)||!quests.some(q=>q.id===job.questId&&q.jobId===job.id)))throw new Error('Invalid job quest reference');

@@ -23,6 +23,8 @@ import {validateBotAssignment} from './project-bots.mjs';
 import {validateShadowAssignment} from './shadow-army.mjs';
 import {validateSemanticVerdict, validateIndependenceLabel} from './semantic-verification.mjs';
 import {validateJevShadowLog} from './jev.mjs';
+import {validateJevRecoveryLog} from './jev-recovery.mjs';
+import {validateJevRecoveryVerificationRequest,validateJevRecoveryVerificationResult} from './jev-recovery-verifier.mjs';
 import {validateGrokMultiAgentApproval} from './grok-adapter.mjs';
 import {validateQuestState} from './quests.mjs';
 import {emptyStudio,validateStudio} from './studio.mjs';
@@ -33,6 +35,7 @@ import {initialAutopilot,validateAutopilot,validateAutopilotJob} from './autopil
 import {initialCoreState,validateCoreState,evaluateHeartbeat,createCoreIdentity,deriveHomunculusFields} from './blackhole-core.mjs';
 import {validateMemoryEvents} from './memory-events.mjs';
 import {validateOutbox} from './memory-sync-outbox.mjs';
+import {MAX_RECORDS as MAX_MEMORY_EMBEDDING_RECORDS,validateMemoryEmbeddingRecord} from './memory-embeddings.mjs';
 import {initialPersistentBots, validatePersistentBots} from './persistent-bots.mjs';
 
 export const BACKUP_MAX_PLAINTEXT_BYTES = 16 * 1024 * 1024;
@@ -42,7 +45,7 @@ const MAGIC = Buffer.from('YENOBK1\n');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const HASH = /^[a-f0-9]{64}$/;
 const STATE_KEYS = ['revision', 'emergencyStop', 'concurrency', 'modules', 'jobs', 'memories', 'snapshots', 'events', 'requests', 'artifacts', 'devices', 'projects', 'sources'];
-const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'shadowAssignment', 'verifyRequest', 'verifyResult', 'semanticVerifyRequest', 'semanticVerdict', 'semanticIndependence', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt', 'productionEvidence', 'studioSeriesId', 'studioChapterId', 'researchRequest', 'researchEvidenceId', 'autopilot', 'capabilityRequest', 'codeTask', 'codeCheckpoint', 'codeOutput', 'voiceConversation', 'repositoryTask', 'developerEvidence', 'routing', 'selfTestId'];
+const JOB_KEYS = ['id', 'title', 'type', 'input', 'status', 'step', 'totalSteps', 'createdAt', 'updatedAt', 'error', 'version', 'artifacts', 'projectId', 'sourceId', 'projectReport', 'sourceReport', 'operatingReport', 'normalized', 'inputSha256', 'draft', 'pauseReason', 'agentJournal', 'botAssignment', 'shadowAssignment', 'verifyRequest', 'verifyResult', 'semanticVerifyRequest', 'semanticVerdict', 'semanticIndependence', 'jevRecoveryVerificationRequest', 'jevRecoveryVerificationResult', 'worldSnapshot', 'selectedProvider', 'questId', 'callLimit', 'deadlineAt', 'productionEvidence', 'studioSeriesId', 'studioChapterId', 'researchRequest', 'researchEvidenceId', 'autopilot', 'capabilityRequest', 'codeTask', 'codeCheckpoint', 'codeOutput', 'voiceConversation', 'memoryRecall', 'repositoryTask', 'developerEvidence', 'routing', 'selfTestId'];
 const fail = message => { throw new Error(`Backup: ${message}`); };
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = (value, min, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value) && value >= min && value <= max;
@@ -67,12 +70,18 @@ function memories(value) {
   }
 }
 function validateState(state) {
-  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop', 'selfTests', 'runtimeBoots', 'deviceAcceptances', 'outcomeConnectors', 'outcomeReadings', 'outcomeEvidence', 'capabilityInbox', 'blackholeCore', 'memoryEvents', 'memorySyncOutbox', 'jevShadowLog', 'grokQuarantined', 'grokMultiAgentApproval', 'persistentBots'], STATE_KEYS);
+  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop', 'selfTests', 'runtimeBoots', 'deviceAcceptances', 'outcomeConnectors', 'outcomeReadings', 'outcomeEvidence', 'capabilityInbox', 'blackholeCore', 'memoryEvents', 'memoryEmbeddings', 'memorySyncOutbox', 'jevShadowLog', 'jevRecoveryLog', 'grokQuarantined', 'grokMultiAgentApproval', 'persistentBots'], STATE_KEYS);
   if (Object.hasOwn(state, 'runtimeBoots')) validateBootRecords(state.runtimeBoots);
   if (Object.hasOwn(state, 'deviceAcceptances')) validateDeviceAcceptances(state.deviceAcceptances);
   if (Object.hasOwn(state, 'outcomeConnectors')) validateConnectors(state.outcomeConnectors);
   if (Object.hasOwn(state, 'outcomeReadings')) validateReadings(state.outcomeReadings);
   if (Object.hasOwn(state, 'outcomeEvidence')) validateOutcomeEvidences(state.outcomeEvidence);
+  if (Object.hasOwn(state, 'memoryEmbeddings')) {
+    if (!Array.isArray(state.memoryEmbeddings) || state.memoryEmbeddings.length > MAX_MEMORY_EMBEDDING_RECORDS) fail('invalid memory embeddings');
+    for (const record of state.memoryEmbeddings) {
+      try { validateMemoryEmbeddingRecord(record); } catch { fail('invalid memory embedding record'); }
+    }
+  }
   if(!Object.hasOwn(state,'autopilot'))state.autopilot=initialAutopilot();
   if(!Object.hasOwn(state,'capabilities'))state.capabilities=initialCapabilities();
   validateCapabilities(state.capabilities);
@@ -112,6 +121,8 @@ function validateState(state) {
   validateOutbox(state.memorySyncOutbox, state);
   if (!Object.hasOwn(state, 'jevShadowLog')) state.jevShadowLog = [];
   validateJevShadowLog(state.jevShadowLog);
+  if (!Object.hasOwn(state, 'jevRecoveryLog')) state.jevRecoveryLog = [];
+  validateJevRecoveryLog(state.jevRecoveryLog);
   // xAI Grok Provider Adapter: same additive, migration-safe backfill idiom
   // as every field above - an older backup gets the honest defaults.
   if (!Object.hasOwn(state, 'grokQuarantined')) state.grokQuarantined = false;
@@ -144,7 +155,7 @@ function validateState(state) {
     }
     if (job.agentJournal) validateAgentJournal(job.agentJournal);
     if (job.routing !== undefined) validateRouting(job.routing);
-    if (Object.hasOwn(job, 'selectedProvider') && !['openai', 'gemini', 'moonshot', 'xai', 'anthropic', 'nvidia'].includes(job.selectedProvider)) fail('invalid selected provider');
+    if (Object.hasOwn(job, 'selectedProvider') && !['openai', 'gemini', 'moonshot', 'xai', 'anthropic', 'nvidia', 'local'].includes(job.selectedProvider)) fail('invalid selected provider');
     if (Object.hasOwn(job, 'questId') && (typeof job.questId !== 'string' || !UUID.test(job.questId))) fail('invalid job quest reference');
     if (Object.hasOwn(job, 'callLimit') && !integer(job.callLimit, 1, 4)) fail('invalid job call limit');
     if (Object.hasOwn(job, 'deadlineAt')) timestamp(job.deadlineAt);
@@ -157,6 +168,20 @@ function validateState(state) {
     if (Object.hasOwn(job, 'semanticVerifyRequest') && job.type !== 'agent') fail('invalid semantic verify job type');
     if (Object.hasOwn(job, 'semanticVerdict')) { try { validateSemanticVerdict(job.semanticVerdict); } catch { fail('invalid semantic verdict'); } }
     if (Object.hasOwn(job, 'semanticIndependence')) { if (!Object.hasOwn(job, 'semanticVerdict')) fail('invalid semantic independence pairing'); try { validateIndependenceLabel(job.semanticIndependence); } catch { fail('invalid semantic independence label'); } }
+    if (Object.hasOwn(job, 'jevRecoveryVerificationResult') && !Object.hasOwn(job, 'jevRecoveryVerificationRequest')) fail('JEV recovery result has no request');
+    if (Object.hasOwn(job, 'jevRecoveryVerificationRequest')) {
+      try { validateJevRecoveryVerificationRequest(job.jevRecoveryVerificationRequest); } catch { fail('invalid JEV recovery verifier request'); }
+      if (job.type !== 'agent' || job.callLimit !== 1 || job.selectedProvider !== 'local' || job.agentJournal?.provider !== 'local'
+          || job.projectId !== job.jevRecoveryVerificationRequest.projectId || job.id === job.jevRecoveryVerificationRequest.blockedJobId
+          || (job.status === 'completed' && !Object.hasOwn(job, 'jevRecoveryVerificationResult'))) fail('invalid JEV recovery verifier job binding');
+    }
+    if (Object.hasOwn(job, 'jevRecoveryVerificationResult')) {
+      try { validateJevRecoveryVerificationResult(job.jevRecoveryVerificationResult, job.jevRecoveryVerificationRequest); } catch { fail('invalid JEV recovery verifier result'); }
+      const artifact=state.artifacts[job.jevRecoveryVerificationResult.outputArtifactRef.id];
+      if (job.status !== 'completed' || job.jevRecoveryVerificationResult.verifierJobId !== job.id || !artifact || artifact.jobId !== job.id
+          || artifact.sha256 !== job.jevRecoveryVerificationResult.outputArtifactRef.sha256 || artifact.mimeType !== 'application/json'
+          || !job.artifacts.some(item=>item.id===artifact.id)) fail('JEV recovery verifier artifact link mismatch');
+    }
     timestamp(job.createdAt); timestamp(job.updatedAt);
     if (Date.parse(job.updatedAt) < Date.parse(job.createdAt)) fail('invalid job timestamp order');
     if (job.status === 'completed' && (job.step !== 3 || job.artifacts.length === 0)) fail('invalid completed job');

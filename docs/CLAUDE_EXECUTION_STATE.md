@@ -389,3 +389,31 @@ npm test
 2. `server.mjs`/`store.mjs`/`backup.mjs`/`blackhole-core.mjs` 배선은 hunk 단위 수작업 병합.
 3. 중복 구현 3쌍은 설계 비교 후 한쪽 선택: `memory-embeddings.mjs`는 PC 쪽이 Ollama 실사용 검증(§17)을 가졌으므로 PC 유지가 기본, Codex의 추가 기능(버전 결속 인덱스·재색인 등)은 필요분만 이식. `cost-ledger`/`shadow-growth`는 비교 후 결정.
 4. 각 단계 집중 테스트 → 마지막에 전체 회귀 → 최종 SHA에서 §17 Ollama 실사용 재검증.
+
+## §23 재개 기록 (2026-09-24 — PC 기준 별도 작업 브랜치에서 JEV 복구·백업·홈 화면 이식)
+
+### 작업 경계
+- 기준: §22의 PC bundle HEAD `6c942c3`에서 분기한 격리 브랜치 `codex/pc-p3-port-20260924`. 실제 PC 저장소·기존 브랜치·원격 저장소에는 적용/푸시하지 않았다.
+- Codex 신규 모듈 중 `jev-recovery.mjs`, `jev-recovery-verifier.mjs`, `recovery-one-of-qpu.mjs`와 해당 집중 테스트만 가져왔다. 중복 구현 `memory-embeddings.mjs`, `cost-ledger.mjs`, `shadow-growth.mjs`, `memory-write.mjs`, `shadow-mission-finalization.mjs`는 덮어쓰지 않았다. P2 Ollama 실사용 코드도 변경하지 않았다.
+
+### 구현·재현 결과
+1. **JEV 막힘 검토 폐루프:** 자연어 `/api/voice` → 기존 Homunculus/Jarvis Shadow mission → 실제 차단된 Shadow job → 제한된 자원 스냅샷·`owner_review`/`wait` 후보 → tool-free 로컬 Verifier → 같은 mission의 JEV 결정/증거 저장까지 연결했다. JEV 결과는 `authorizesDispatch:false`; Verifier는 차단 작업을 재개하거나 대안을 실행하지 못한다.
+2. **영속성 검사 결함 수정:** 통합 시험에서 서버 메모리에서는 결과가 갱신되지만 `openStore()`가 `selectedProvider:'local'`을 거부해 이전 백업으로 fallback하는 현상을 재현했다. `validateQuestState()`의 **job 선택 provider** 허용 목록에 `local`을 추가하고, Homunculus quest의 소유자 선택 목록은 그대로 두었다. 결과를 저장소 재개·백업 복원까지 읽는 시험이 통과한다.
+3. **백업에서 로컬 임베딩 기억 누락 수정:** PC 기준 `initialState()`에는 `memoryEmbeddings`가 있었으나 백업 허용 필드 목록에 빠져 있었다. 암호화 백업에서 기록을 포함·검증·복원하게 하고, 잘못된 벡터는 복원 전에 거부하도록 수정했다. 이 결함은 기준 브랜치의 `backup.test.mjs` 11개 전부에서 `Backup: invalid record fields`를 일으켰다.
+4. **Home JEV 안내:** 실제 멈춘 job이 남아 있을 때만 원인·자원·검증 통과 대안·다음 행동을 표시한다. 자원 스냅샷 만료 뒤에는 추천을 감추고 재확인을 표시하며, 내부 ID는 숨기고 자동 실행 권한이 없음을 분명히 한다. 기존 F09 코어 식별 Footer는 유지했다.
+5. **양자 회로 코드:** 실제 gate-level OpenQASM 3 회로 컴파일러와 QUBO/Ising·비트 매핑·측정 decoder·고전적 fallback 코드를 이식했다. 이 저장소 변경은 **실제 QPU 제출 adapter/물리 job이 아니다**. QPU 계정·승인된 provider·job receipt·물리 측정값을 실행하지 않았고, 테스트의 counts는 decoder/fallback 경로를 위한 합성 fixture다. 현재 JEV 서버가 만드는 `owner_review`/`wait`는 목적함수상 비용 차이가 없어 QPU 선택에 들어가지 않으며, 실용적인 복수의 안전 대안이 만들어지고 사전 검증되는 P4 설계·배선은 남아 있다.
+
+### 검사 결과
+- 집중 회귀(voice→mission→JEV, JEV schema, QPU circuit, G1 성공/실패, encrypted backup/restore, Home UI): **30/30 통과**. JEV + QPU leaf module 시험은 별도로 13/13 통과.
+- 전체 `npm test`, 동일 Node v24.19.0 / 동일 Linux sandbox:
+  - 기준 `6c942c3`: **1,119 tests · 1,059 pass · 53 fail · 7 skip**.
+  - 후보 작업 트리: **1,135 tests · 1,103 pass · 25 fail · 7 skip**.
+  - 실패 테스트 이름을 정규화해 대조한 결과 후보의 25건은 모두 기준에서도 실패했다(새 실패 0). 기준에서 실패한 백업 관련 28건은 `memoryEmbeddings` 백업 수정 후 통과로 바뀌었다. 새 16개 테스트는 추가한 JEV/Verifier/QPU 경로다.
+  - 남은 실패는 Linux 격리 QuickJS worker 실행, 인터넷을 요구하는 live network 시험, 그리고 전체 실행 중 timing 민감한 closed-loop scheduler 시험이다. 기능별 PC 실측 검증이 완료됐다는 뜻은 아니다.
+- `git diff --check`: 통과. 실기기, 실제 Ollama Verifier 요청, Android↔PC 연결, 인터넷 차단, QPU 계정/물리 장치: **이 작업공간에서는 미실행**.
+
+### 다음 단계 / 정확한 상태
+- 현재 단계: **격리 브랜치의 코드 후보 준비, PC 적용 전**. 현재 diff를 검토 가능한 patch로 만들어 전달하고, PC에 이식할 때는 같은 파일이 수정되었는지 다시 확인한다.
+- P3 실사용 acceptance에는 PC의 정확한 후보 SHA에서 `qwen2.5:3b`에 대한 실제 local Verifier 요청, 같은 mission ID의 실제 receipt, 실기기/재시작/폐기·정지 시험이 남아 있다. 사용자의 P2 Ollama 검증은 다른 SHA에서 수행된 것이므로 이 후보 SHA의 증거로 간주하지 않는다.
+- P4는 별도 트랙이다: 실제 허가된 학습 평가·rollback 및 승인된 물리 QPU backend의 adapter/cost reservation/submit·unknown receipt 조회·job ID·returned counts·같은 mission readback. 현재 시뮬레이터를 QPU 통과로 표시하지 않는다.
+- 방화벽 변경, push, PR, merge, 배포, 실제 QPU 제출은 하지 않았다.

@@ -80,6 +80,37 @@ test('the signal row shows the real canonical drive world name and shadow count,
   h.close();
 });
 
+test('Home explains an active JEV block and safe next step, hides expired advice, and never shows internal ids', () => {
+  const h=setup(),blockedJobId='blocked-job-private-id';
+  const decision={
+    missionId:'mission-private-id',authorizesDispatch:false,blocker:{code:'providerMissing',evidenceRefs:[{type:'job',id:blockedJobId,sha256:'a'.repeat(64)}]},
+    resourceSnapshot:{validUntil:new Date(Date.now()+60000).toISOString(),resources:[
+      {id:'model-provider',status:'unavailable'},{id:'local-model-provider',status:'available'},{id:'ai-module',status:'available'},
+    ]},
+    assessments:[{alternativeId:`owner_review:local_provider:${blockedJobId}`,status:'PASS'}],
+    recommendedAlternativeIds:[`owner_review:local_provider:${blockedJobId}`],nextStep:'owner_or_policy_gate_review',
+  };
+  const state={core:coreFixture(),emergencyStop:false,projects:[],memories:[],jobs:[{id:blockedJobId,status:'paused'}],jev:{recentRecoveryDecisions:[decision]}};
+  h.view.updateState(state,true);
+  assert.match(h.root.textContent,/JEV · 안전 점검/);
+  assert.match(h.root.textContent,/필요한 모델 연결이 설정되지 않았어요/);
+  assert.match(h.root.textContent,/모델 연결: 사용 불가/);
+  assert.match(h.root.textContent,/로컬 모델: 사용 가능/);
+  assert.match(h.root.textContent,/설정·권한을 검토해 주세요/);
+  assert.match(h.root.textContent,/자동 실행 안 함/);
+  assert.equal(h.root.textContent.includes('mission-private-id'),false);
+  assert.equal(h.root.textContent.includes(blockedJobId),false);
+
+  h.view.updateState({...state,jev:{recentRecoveryDecisions:[{...decision,resourceSnapshot:{...decision.resourceSnapshot,validUntil:new Date(Date.now()-1000).toISOString()}}]}},true);
+  assert.match(h.root.textContent,/자원 정보가 만료됐어요/);
+  assert.match(h.root.textContent,/다시 확인 필요/);
+  assert.doesNotMatch(h.root.textContent,/설정·권한을 검토해 주세요/);
+
+  h.view.updateState({...state,jobs:[{id:blockedJobId,status:'completed'}]},true);
+  assert.doesNotMatch(h.root.textContent,/JEV · 안전 점검/);
+  h.close();
+});
+
 test('the drive chip is a real drill-down button into the Drive Orbit surface, and the Shadow chip stays inert', () => {
   const h = setup();
   h.view.updateState({core: coreFixture({dominantDriveWorldName: '진화'}), emergencyStop: false, projects: [], memories: []}, true);

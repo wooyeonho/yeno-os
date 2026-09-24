@@ -17,6 +17,7 @@ function fixture(t) {
   state.revision = 17;
   state.modules.ai = true;
   state.memories.push({ id: crypto.randomUUID(), text: '기억을 보존한다', createdAt: at });
+  state.memoryEmbeddings.push({id:crypto.randomUUID(),version:1,text:'로컬 임베딩 기억 백업 시험',embedding:Array(8).fill(0.125),model:'bge-m3',createdAt:at,updatedAt:at,deletedAt:null});
   state.snapshots.push({ id: crypto.randomUUID(), label: '기억 저장', createdAt: at, data: { memories: structuredClone(state.memories), settings: { concurrency: 1, modules: structuredClone(state.modules) } } });
   state.events.push({ id: crypto.randomUUID(), at, text: 'A completed operation.' });
   const project = { id: crypto.randomUUID(), name: 'YENO', repositoryUrl: 'https://github.com/wooyeonho/yeno-os', summary: '개인 운영체제', nextAction: '복구 검증', status: 'active', version: 1, createdAt: at, updatedAt: at, milestones: [] };
@@ -77,7 +78,7 @@ test('clean restore preserves histories, stops work and AI, revokes old devices,
   assert.deepEqual(recovered.jobs.find(job => job.id === paused.id), paused);
   assert.deepEqual(recovered.jobs[0], f.job);
   assert.equal(recovered.devices[f.deviceId].revokedAt, summary.restoredAt); assert.equal(recovered.devices[revokedId].revokedAt, at);
-  for (const name of ['projects', 'sources', 'memories', 'snapshots', 'artifacts']) assert.deepEqual(recovered[name], f.state[name]);
+  for (const name of ['projects', 'sources', 'memories', 'memoryEmbeddings', 'snapshots', 'artifacts']) assert.deepEqual(recovered[name], f.state[name]);
   assert.deepEqual(recovered.requests['saved-command'], f.state.requests['saved-command']);
   assert.equal(Object.hasOwn(recovered.requests['saved-enrollment'].payload.device, 'deviceToken'), false);
   assert.deepEqual(recovered.events.slice(1), f.state.events); assert.match(recovered.events[0].text, /Fresh owner key\/device enrollment required/);
@@ -115,6 +116,7 @@ test('authenticated but invalid metadata, paths, references and credentials are 
     payload => { payload.state.requests['saved-enrollment'].payload.device.deviceToken = 'raw-device-credential'; },
     payload => { payload.state.apiKey = 'provider-secret'; },
     payload => { payload.state.sources[0].projectId = crypto.randomUUID(); },
+    payload => { payload.state.memoryEmbeddings[0].embedding = [1, 2, 3]; },
   ];
   for (const change of cases) {
     const payload = structuredClone(pristine); change(payload);
