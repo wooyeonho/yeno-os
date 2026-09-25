@@ -657,3 +657,35 @@ powershell -ExecutionPolicy Bypass -File "C:\Users\우연호\Documents\Projects\
 ### 이 세션의 상태
 - 코드 작업은 여기서 멈춘다. 이후 이 세션의 역할은 Codex 결과물이 도착했을 때 실제 PC 저장소에서 독립적으로 재확인·기록하는 것(§25 이후 방식)이다.
 - 재개 지점(Codex용): `docs/CODEX_HANDOFF_20260925.md`.
+
+## §32 재개 기록 (2026-09-25 — Codex 실행 인계서 접수, 저장소에 원문 보존, 기준 SHA 정정)
+
+### 접수
+- 연호님이 `BLACKHOLE_CODEX_COMPLETION_HANDOFF_20260925.md`(GPT 세션 작성, Codex 대상 실행 인계서)를 전달했다. 이 세션이 SHA-256을 직접 계산해 원문 그대로 `docs/BLACKHOLE_CODEX_COMPLETION_HANDOFF_20260925.md`에 저장했다 — 클라우드 쪽과 PC 쪽 모두 `d83f86667553448460b34320177bee42700d5fe43ac6ea2b072f8defdaafa386`, 27,417바이트로 일치. 원문은 한 글자도 수정하지 않았다. 아직 커밋하지 않았다(연호님 지시 대기).
+
+### 인계서에 대한 이 세션의 판단
+- 내용은 정확하고 이 정본(§25~§31)과 일치한다. 특히 인계서 §1이 "FUSE 파일 접근과 Windows 프로세스 실행은 별개"라고 못 박고, 이 세션의 FUSE 연결이 가짜라는 근거가 아니라고 정정한 부분은 §29에서 확인한 사실과 같다.
+- 인계서 §4 "반복하지 않을 실패" 목록은 이 세션이 실제로 겪은 것들이며 동의한다(수동 PowerShell 요청 반복, 업로드함 .cmd 안내, "코딩은 다른 AI 역할"로 기록만 남기기 등).
+- **정정 1건 — 기준 SHA가 오래됐다.** 인계서 §1의 "마지막 보고 HEAD 4aeccf2"와 §1 "코드 자체를 빠짐없이 이어받기"의 "두 문장이 충돌한다"는 지적은 인계서 작성 시점 기준으로는 맞지만, 그 뒤 §31에서 이 세션이 세 변경(키 자동생성·CI 단계·저장소 내 설치파일)과 §25~§31 기록을 **커밋 `d3b4b729df1152f3c5846719ae1e33270b5b22d3`**(부모 `4aeccf2`)로 확정했다. 그 시점 작업트리는 깨끗했다. 따라서 Codex가 이어받을 기준은 `d3b4b72`이며, "미커밋 변경"은 이 §32 자체와 인계서 원문 파일 2개뿐이다(둘 다 문서). 인계서가 준비하라고 한 bundle/patch/스냅샷은 필요 없다 — 실제 PC 폴더를 그대로 열면 된다.
+- 인계서 §1 "반드시 구분할 능력" 5항목에 대한 이 세션의 답: (1) 실제 PC 폴더 읽기·수정 — 가능(FUSE, §29 확인). (2) Windows에서 PowerShell/Node/빌드 실행 — 불가(§28). (3) PC 브라우저·앱 조작 — 브라우저는 읽기 전용, 터미널은 클릭만(§28). (4) Android 기기 조작·화면 확인 — 불가. (5) 해당 소스로 Windows/Android CI 실행 — 푸시 권한이 있으면 CI(`android-debug.yml`, Windows CI)는 저장소 워크플로로 돌릴 수 있으나 이 세션은 푸시 지시를 받지 않았다. Codex 세션은 이 5항목을 자기 환경에서 다시 답해야 한다(인계서 §1의 요구와 동일).
+
+### Codex 착수 시 시작 상태
+- 경로 `C:\Users\우연호\Documents\Projects\yeno-os`, `origin` = `wooyeonho/yeno-os`, 브랜치 `blackhole/p3-jev-recovery-port-20260924`, HEAD `d3b4b729df1152f3c5846719ae1e33270b5b22d3`.
+- 읽을 순서: `docs/BLACKHOLE_CODEX_COMPLETION_HANDOFF_20260925.md`(실행 지시) → `docs/CODEX_HANDOFF_20260925.md`(연호님 원문 지시 + 코드 사실 요약) → 이 파일 §25~§32.
+- 완료표(인계서 §6) 기준 현재 상태: W01 CONFIGURED, W02 CONFIGURED(재설치 보존 로직은 기존 코드 — `Get-Owner`/`Get-OwnedTask`/`InitializeNewStore` 검사 — 에 이미 있으나 이번 변경 후 실행 안 됨), P01~P03 미착수, J01/J02/R01/R02/F01/F02/C01 미착수(서버 쪽 계약은 §27에서 코드로 확인됨), M01 미착수, B01 미착수.
+
+## §33 — QA 보고서 검토: 별도 Codex 클라우드 워크스페이스의 "연결 미확인" 보고 (2026-09-25)
+
+**상황**: 사용자가 "QA 검토 결과"라는 이름으로, 어떤 Codex/클라우드 세션이 이 프로젝트의 작업 내용을 확인할 수 없었다는 보고를 전달함. 보고 내용: 경로 `/workspace/yeno-os`, 브랜치 `work`, HEAD `be131035895d63b2361bef82564eb63399c1f9f1`, **git remote 미설정**, §27~§32에서 기록한 파일들이 전혀 존재하지 않음.
+
+**독립 재검증** (§29에서 확립한 표준 절차대로, 이 세션 자신의 연결을 다시 확인):
+- `mount`: `/sessions/rcw-011w5rj1h2fmv46wndou7jpp/mnt/yeno-os` — `type fuse (rw,...)`, 실제 라이브 마운트 확인.
+- `git remote -v`: `origin https://github.com/wooyeonho/yeno-os.git` (fetch/push 모두) — 정상 설정됨.
+- `git branch --show-current`: `blackhole/p3-jev-recovery-port-20260924`.
+- `git rev-parse HEAD`: `d3b4b729df1152f3c5846719ae1e33270b5b22d3` (parent `4aeccf2ced86d285fbcfb70f2a5b91fe9e0121bc`) — §31에서 기록한 커밋과 정확히 일치.
+- `git status --short`: `M docs/CLAUDE_EXECUTION_STATE.md`, `?? docs/BLACKHOLE_CODEX_COMPLETION_HANDOFF_20260925.md` — §32에서 남긴 미커밋 상태와 정확히 일치, 예상 밖의 변경 없음.
+- `get_device_info`: `platform: win32`, `deviceName: desktop-tingn4u`, `connectedFolders`에 `C:\Users\우연호\Documents\Projects\yeno-os` 포함 — 실제 Windows PC 연결 확인.
+
+**결론**: QA 보고서가 설명하는 `/workspace/yeno-os` (remote 없음, 브랜치 `work`, 전혀 다른 HEAD)는 이 세션이 사용해온 실제 PC 저장소와 **동일한 저장소가 아님**. `/workspace/...` 경로 패턴과 remote 미설정은 별도의 임시 클라우드 컨테이너/샌드박스 워크스페이스의 특징이며, 이 세션의 연결(FUSE 라이브 마운트, 올바른 origin remote, 올바른 브랜치/HEAD, 예상된 미커밋 diff)과는 구조적으로 다름. 즉 이 QA 보고는 "그 별도 세션이 실제 PC에 접근하지 못했다"는 사실을 보여줄 뿐, 이 세션이 지금까지 보고한 §27~§32 작업이 허위이거나 이 PC 연결이 가짜라는 근거가 아님. 이는 `BLACKHOLE_CODEX_COMPLETION_HANDOFF_20260925.md` 자체가 경고한 "FUSE 파일 접근 ≠ 다른 세션의 실행 환경"이라는 구분과 정확히 일치하는 사례로 판단됨.
+
+**후속 조치**: 이 세션은 계속 실제 PC(`desktop-tingn4u`, `C:\Users\우연호\Documents\Projects\yeno-os`, origin `wooyeonho/yeno-os`, HEAD `d3b4b72`)에서 작업을 이어간다. Codex가 실제로 이 작업을 이어받으려면 반드시 이 저장소(올바른 remote/브랜치/HEAD를 가진)에서 시작해야 하며, remote가 없는 임시 워크스페이스에서는 `docs/CODEX_HANDOFF_20260925.md`나 `docs/BLACKHOLE_CODEX_COMPLETION_HANDOFF_20260925.md`를 읽을 수 없으므로 진행이 불가능하다는 점을 사용자에게 안내함.
