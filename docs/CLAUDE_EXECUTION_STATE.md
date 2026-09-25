@@ -449,3 +449,22 @@ npm test
 - 관련 모듈·통합 집중 회귀 **63/63 통과**. `npm run check:living-loop`가 패키지 명령으로 등록되고, 자격 증명 없는 실행이 `BLOCKED / existing_owner_token_required`로 끝나는 것도 확인했다.
 - 전체 `npm test`: **1,073 tests · 1,041 pass · 25 fail · 7 skipped**. 실패는 격리 실행기/QuickJS worker 시작, 실제 외부 HTTPS가 필요한 네트워크 시험, Loop 2 timing 검사에 모여 있다. 이번 실행에서 정확한 parent SHA와 실패 이름을 대조하지 않았으므로 “새 회귀 0건”으로 단정하지 않는다. 전체 suite는 green이 아니다.
 - 최종 후보 SHA의 Ollama live 검증은 아직 미실행. 이 문서 작성 시점의 작업은 검토 후보이며 사용자 PC의 `fff1a19`와 tree/SHA 동일성을 직접 확인하지 않았다.
+
+## §25 재개 기록 (2026-09-25 — Codex "BLACKHOLE_NEXT_DELIVERY_20260925" 데스크톱 로컬 공급자 문제 D01~D03 재확인)
+
+### 배경
+- 연호님이 별도 Codex 세션이 작성한 `BLACKHOLE_NEXT_DELIVERY_20260925.md`(개발 방향/납품 계획, D01~D04 문제 진단 포함)를 Cowork 세션에 전달했다. 원문은 `01_DRAFTS/BLACKHOLE_NEXT_DELIVERY_20260925.md`로 Obsidian Vault에 원문 그대로 저장했다(SHA-256 `5fcfc806879668250966610772891e4e7b1d41a952fe26486f076cba32f0ad08`).
+- 그 문서는 자신의 판단 근거를 `codex/pc-p3-port-20260924`(HEAD `3726076`) 작업본이라고 명시했고, 실제 사용자 PC 커밋 `0cc48f8`과 tree 동일성을 확인하지 않았다고 스스로 밝혔다.
+
+### 이번 세션에서 한 일
+- 실제 사용자 PC를 미러링하는 이 저장소(브랜치 `blackhole/p3-jev-recovery-port-20260924`, 커밋 `0cc48f8`, device_bash로 직접 grep — 파일 열람만, 수정 없음)에서 D01~D03을 독립적으로 재확인했다:
+  - **D01 (로컬 모델 선택 UI 없음) — 사실.** `runtime/desktop-ui/app.js`의 `providerLabels` Map에는 openai/anthropic/gemini/xai/moonshot/nvidia 6개만 있고 `local` 항목이 없다.
+  - **D02 (Ollama/임베딩 설정 미전달) — 사실.** `runtime/lib/desktop-provider-config.mjs`의 `desktopProviderEnvironment()`는 `YENO_{PROVIDER}_MODEL`/`_API_KEY`만 만들고 `YENO_LOCAL_BASE_URL` 등 로컬 전용 env를 설정하지 않는다. `runtime/lib/provider-config-engine.mjs:16`의 로컬 기본 엔드포인트는 `http://127.0.0.1:8080/v1/chat/completions`로 하드코딩돼 있다(override 없으면 그대로 사용) — 실제 Ollama는 11434.
+  - **D03 (실행 경로별 코어 포트 불일치) — 사실.** `runtime/desktop.mjs:67`의 `startDesktop()` 기본값은 `corePort=8791`, `setupPort=8792`이며, 기존 PC 방화벽/LAN 시험은 8790 포트 기준이었다(§20 참고).
+- 코드는 수정하지 않았다. `BLACKHOLE_NEXT_DELIVERY_20260925.md` 6-5절의 역할 분담(코드·시험·패키지는 Codex, 연결된 PC/Vault 작업은 Claude)에 따른 것이다.
+- Obsidian `CHANGELOG.md`에 (28)번으로 동일 내용을 기록했다.
+
+### 미확인/다음
+- D04(`scripts/verify-living-loop-live.mjs`가 전체 목표를 증명하지 못한다는 지적)는 스크립트 자체가 §24에서 이미 read-only preflight 범위로 명시했으므로 별도 재확인 불필요.
+- D01/D02 실제 구현(로컬 공급자 UI 노출 + `YENO_LOCAL_BASE_URL`/임베딩 env 명시적 전달)은 Codex가 코딩하기로 했다 — 이 세션은 패치가 도착하면 동일한 bundle/patch 검증 절차(§22 참고)로 반입한다.
+- D03 포트 통일(8790 vs 8791/8792) 전략은 아직 결정되지 않았다 — 연호님 결정 필요.
