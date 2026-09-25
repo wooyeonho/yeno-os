@@ -468,3 +468,24 @@ npm test
 - D04(`scripts/verify-living-loop-live.mjs`가 전체 목표를 증명하지 못한다는 지적)는 스크립트 자체가 §24에서 이미 read-only preflight 범위로 명시했으므로 별도 재확인 불필요.
 - D01/D02 실제 구현(로컬 공급자 UI 노출 + `YENO_LOCAL_BASE_URL`/임베딩 env 명시적 전달)은 Codex가 코딩하기로 했다 — 이 세션은 패치가 도착하면 동일한 bundle/patch 검증 절차(§22 참고)로 반입한다.
 - D03 포트 통일(8790 vs 8791/8792) 전략은 아직 결정되지 않았다 — 연호님 결정 필요.
+
+## §26 재개 기록 (2026-09-25 — 연호님의 D03 결정: 기준 코어를 resident-v2/8790으로 확정)
+
+### 연호님 결정 (채팅 원문 근거, 이 세션이 만든 결정 아님)
+- 기준 코어는 `resident-v2`의 8790. 8792는 설정 화면. `desktop-v1`(8791)의 별도 코어는 일상 실행 경로에서 제외한다.
+- 단순 포트 변경이 아니라 "Windows 실행판이 resident-v2와 같은 코어·저장소를 쓰도록 연결"하는 결정이다.
+- `desktop-v1`에 기존 자료가 있으면 자동 이전하지 않고 백업/복원·정합성 검사를 동반한 명시적 절차로만 옮긴다.
+- 휴대폰 연결 코드는 이미 있으나(resident-v2의 Tailscale Serve HTTPS 브릿지), 실기기 연결 합격 시험은 아직 통과하지 않았다.
+- 첫 코드 작업도 이 기준에 맞춘다: Windows 설정 화면에서 `qwen2.5:3b`·`bge-m3`를 Ollama loopback 주소로 연결해 실제 대화·기억 저장까지 되게 하고, 설정 저장 확인에서 끝내지 않고 아이콘 실행→대화→기억 저장→재시작 후 회수까지 검사한다.
+
+### 이번 세션에서 독립 검증한 사실 (device_bash로 이 저장소를 직접 읽음, 브랜치 `blackhole/p3-jev-recovery-port-20260924`, 커밋 `bc3e61d`)
+- `resident-v2`는 실존한다: `scripts/blackhole-resident.ps1`(Windows 로그인 트리거 `Register-ScheduledTask`), `runtime/resident.mjs`, `docs/BLACKHOLE_WINDOWS_RESIDENT_20260921.md`. 기본 포트는 `blackhole-resident.ps1:9`의 `[int]$Port = 8790`, 문서 28행도 `http://127.0.0.1:8790`로 명시.
+- 휴대폰 연결은 `runtime/resident.mjs`가 Tailscale `serve --https=9443 http://127.0.0.1:<configured-port>`로 구성하는 선택적 브릿지다(코드 144–188행). "실기기 연결 합격은 아직"이라는 연호님 판단과 일치 — 문서(`BLACKHOLE_WINDOWS_RESIDENT_20260921.md` 69행)도 이 기능을 표준 Node 테스트 범위로만 서술하고 실기기 합격을 주장하지 않는다.
+- `desktop-v1`(`runtime/desktop.mjs`)은 실제로 별도 코어·저장소다: 기본 `corePort=8791`/`setupPort=8792`(67행), 홈 디렉터리는 `%LOCALAPPDATA%\BLACKHOLE\desktop-v1`(256행, `resident-v2`와 다른 경로) — 연호님이 말한 "서로 다른 기억을 보거나 빈 저장소를 보는" 위험의 근거가 코드로 확인된다.
+- 즉 D03에 대한 연호님의 사실 인식(resident-v2=8790, desktop-v1=8791 별도 코어/저장소, 휴대폰 코드는 있으나 미합격)은 이 저장소의 실제 코드와 전부 일치한다.
+
+### 문서 버전 불일치 (보고 의무)
+- 연호님이 `01_DRAFTS/BLACKHOLE_NEXT_DELIVERY_20260925.md`에 이 D03 결정을 반영했고 새 SHA-256이 `e7a2e1696c6bc11296e6286b53d302320820850ae8e3fba9b92cc77eb9ba0741`라고 알려왔으나, 이번에 채팅에 실제로 첨부된 파일은 SHA-256 `5fcfc806879668250966610772891e4e7b1d41a952fe26486f076cba32f0ad08`로 — **Vault `01_DRAFTS/BLACKHOLE_NEXT_DELIVERY_20260925.md`에 이미 저장된 구버전과 바이트 단위로 동일**했다(diff 0줄). D03 결정 텍스트가 반영된 실제 새 버전 파일은 이 세션에 아직 도착하지 않았다. Vault의 저장본은 갱신하지 않았다.
+
+### 미실행
+- D01/D02/D03 실제 코드 구현(로컬 공급자 UI, loopback 주소 전달, resident-v2 8790으로 일상 실행 경로 통합, desktop-v1 자료 백업/이전 절차)은 아직 없다. Codex가 코딩하기로 한 역할 분담 그대로.
