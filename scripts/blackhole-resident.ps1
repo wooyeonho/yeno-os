@@ -175,14 +175,32 @@ function Install-Core {
   $owner = Get-Owner
   $task = Get-OwnedTask
   if (-not (Test-Path -LiteralPath $TokenFile)) {
-    if (-not $PairingToken) { $PairingToken = Read-Host 'New local pairing key (16+ characters; never paste into chat)' -AsSecureString }
-    $pointer = [IntPtr]::Zero
-    try {
-      $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($PairingToken)
-      $secret = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
-      if ($secret.Length -lt 16 -or $secret.Length -gt 512 -or $secret -match '\s') { throw 'Pairing key must be 16-512 characters without whitespace.' }
-      [IO.File]::WriteAllText($TokenFile,$secret,$Utf8)
-    } finally { $secret=$null; if ($pointer -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) } }
+    # No interactive prompt: this launcher may run headless (scheduled task,
+    # double-click .cmd) and no automated agent may type a secret into any
+    # prompt. -PairingToken remains for an owner who explicitly wants to set
+    # their own key; by default a CSPRNG-generated key is written straight to
+    # the ACL-protected secrets file (Protect-Directory above) and is never
+    # displayed, logged, or returned by this script.
+    if ($PairingToken) {
+      $pointer = [IntPtr]::Zero
+      try {
+        $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($PairingToken)
+        $secret = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
+        if ($secret.Length -lt 16 -or $secret.Length -gt 512 -or $secret -match '\s') { throw 'Pairing key must be 16-512 characters without whitespace.' }
+        [IO.File]::WriteAllText($TokenFile,$secret,$Utf8)
+      } finally { $secret=$null; if ($pointer -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) } }
+    } else {
+      $bytes = [byte[]]::new(32)
+      $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+      try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+      # Base64url, no padding: 43 chars, no whitespace, satisfies the same
+      # 16-512/no-whitespace contract validated above for a supplied key.
+      $secret = [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+','-').Replace('/','_')
+      try {
+        [IO.File]::WriteAllText($TokenFile,$secret,$Utf8)
+      } finally { $secret=$null }
+      Write-Output 'New pairing key generated and stored under owner-only file permissions. It is not displayed here; see phone pairing instructions in status output.'
+    }
   }
   if (-not (Test-Path -LiteralPath $ConfigPath)) {
     Write-Json $ConfigPath @{version=1;dataDir=$DataDir;controlDir=$ControlDir;tokenFile=$TokenFile;port=$Port;phone=$null}

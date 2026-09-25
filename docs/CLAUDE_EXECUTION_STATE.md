@@ -489,3 +489,171 @@ npm test
 
 ### 미실행
 - D01/D02/D03 실제 코드 구현(로컬 공급자 UI, loopback 주소 전달, resident-v2 8790으로 일상 실행 경로 통합, desktop-v1 자료 백업/이전 절차)은 아직 없다. Codex가 코딩하기로 한 역할 분담 그대로.
+
+## §27 재개 기록 (2026-09-25 — apps/controller ↔ resident-v2/8790 엔드포인트별 계약 대조)
+
+### 배경
+연호님의 최근 지시에 따라 `apps/controller`(Tauri, Windows+Android 공용)가 실제로 기대하는 요청·상태·결과 계약과 `resident-v2/8790`이 실제로 제공하는 계약을 엔드포인트별로 대조했다. jarvis/openclaw는 건드리지 않았고, 새 상태 파일도 만들지 않았다(본 §27만 기존 `docs/CLAUDE_EXECUTION_STATE.md`에 추가). 코드는 전혀 수정하지 않았다 — 읽기 전용 대조.
+
+### 방법
+- `apps/controller/src/*.ts`(주로 `main.ts`, `command-session.ts`, `native-studio.ts`, `native-projects.ts`)를 device_bash로 직접 읽어 컨트롤러가 실제로 호출하는 모든 경로·메서드·바디 형태를 추출했다.
+- `resident-v2`는 자체 서버가 아니라 `runtime/resident.mjs:144`가 기존 `runtime/server.mjs`의 `start({..., port: config.port})`를 그대로 호출해서 뜬다는 것을 코드로 재확인했다 — 즉 8790에서 응답하는 라우트 표는 `runtime/server.mjs`의 라우트 표와 100% 동일한 코드다(별도 축소·분기 없음).
+- `runtime/server.mjs`의 라우트 정의(`url.pathname===...`, 정규식 매치)를 grep+직접 열람으로 대조.
+
+### 결과 — 엔드포인트별 일치/불일치/미확인
+
+| 컨트롤러 기대 | resident-v2(server.mjs) 실제 | 판정 | 근거 |
+|---|---|---|---|
+| `POST /api/v1/devices/enroll` (헤더: `Bearer <pairing token>`, 바디 `{name, platform, requestId}`) | `versioned && POST '/api/v1/devices/enroll'` 라우트, pairing 토큰 검증 후 `enrollDevice(b)` | **일치** | server.mjs:1806-1808 |
+| `GET /api/v1/state` → 내부적으로 `/api/state`로 재기록 | `GET '/api/state'` → `state()` | **일치** | server.mjs:1919, versioned 접두 제거 로직 1811 |
+| `POST /api/v1/commands` `{text, requestId}` | `POST '/api/commands'`, `requiredText(b.text)`로 텍스트 명령 처리, requestId는 `mutation()`의 중복 방지(영수증)에 사용 | **일치** | server.mjs:2170-2216 |
+| `POST /api/v1/control` `{action:'stop'|'resume', revision?, requestId}` | `POST '/api/control'`, action 검증·emergencyStop 토글, resume 시 revision 검사 | **일치** | server.mjs:2217-2222 |
+| `GET /api/v1/world` | `GET '/api/world'` | **일치** | server.mjs:1828 |
+| `GET /api/v1/drives/status` | `GET '/api/drives/status'` | **일치** | server.mjs:1945 |
+| `GET /api/v1/artifacts/:id` | `GET '/api/artifacts/:id'` (SHA-256 재검증 후 파일 반환) | **일치** | server.mjs:1972-1973 |
+| `POST /api/v1/projects/:id/milestones`, `POST /api/v1/projects/:id/milestones/:mid` | 동일 정규식 라우트 2개 존재(마일스톤 추가/토글/삭제) | **일치** | server.mjs:2156-2159 |
+| studio 계열: `GET/POST /api/v1/studio`, `/studio/generate`, `/studio/import`, `/studio/export`, `POST /api/v1/production/run`, `/hankki/invite`, `/hankki/revoke`, `GET /api/v1/capabilities` | 전부 동일 경로로 서버에 존재 | **일치** | server.mjs:1813,1841-1849,1923-1931,2060-2065 |
+| 인증 헤더 형식 `Authorization: Bearer <deviceToken>` | `bearer(req)`가 정확히 `Bearer ` 접두만 파싱, device 토큰은 `deriveDeviceToken`으로 검증 | **일치** | server.mjs:1521, 1530-1533 |
+| 재시도/중복 방지(`requestId` 기반 영수증) — `command-session.ts`의 pending/receipt 모델이 전제하는 "같은 requestId 재전송 시 같은 응답" | `mutation()`이 `findReceipt(s, requestId, hash)`로 정확히 이 동작을 구현 | **일치** | server.mjs:1572-1589 |
+
+### 결론
+- 대조한 모든 엔드포인트(9개 경로군 + 인증 + 재시도 모델)가 **일치**로 확인됐다. 불일치나 미확인 항목은 없었다.
+- 이는 우연이 아니라 구조적 이유다: `resident-v2`가 새 서버를 만든 게 아니라 기존 `runtime/server.mjs`를 포트만 바꿔 그대로 구동하기 때문에, `apps/controller`가 이미 이 서버 코드 기준으로 작성된 이상 8790에서도 동일하게 동작할 근거가 코드 수준에서 확인된다.
+- 단, 이는 **코드 대조 결과**이며 아직 "RAN"/"VERIFIED"가 아니다 — 실제 Windows에서 `resident-v2`를 기동하고 컨트롤러가 8790에 실제로 접속해 enroll→state→commands 왕복이 성공하는지는 별도의 실행 시험이 필요하다(다음 단계).
+
+### Self-Review Gate 관련 재확인
+- 새 실행 지시서가 존재를 전제한 "Self-Review Gate"는 이번에도 전체 저장소 grep(`Self-Review`, `SelfReview`, `자체 검토 게이트` 등)에서 0건 — §직전 보고와 동일하게, 이런 장치는 코드베이스에 없다는 사실만 기록하고 신규로 만들지 않는다(연호님 지시).
+
+### 다음
+- `scripts/blackhole-resident.ps1`의 실제 예약 작업 등록 내용(대상 실행 파일/인자/실행 계정/권한 상승 여부/로그온 트리거/중복 실행 방지/제거 방법) 검토 — 실행 전 필수 선행 작업, 아직 미완료.
+- 위 검토에서 "일반 사용자 권한의 단일 예약 작업"임이 확인되면 컴퓨터 사용 도구로 직접 실행하고 결과·되돌리기 방법을 기록; 그 외의 권한이 필요하면 실행하지 않고 그 항목만 먼저 보고.
+- 그 다음 실제 8790 경로를 통한 최소 통합 시험(요청 → PC 에이전트 → Windows 실행 → 같은 작업 ID로 컨트롤러에 결과 반환)을 설계·실행 — 아직 시작하지 않음.
+
+## §27b 재개 기록 (2026-09-25 — scripts/blackhole-resident.ps1 실행 전 필수 검토, 실행은 아직 안 함)
+
+### 검토 결과 (device_bash로 스크립트 전문 283줄 직접 열람, 수정 없음)
+- **대상 실행 파일/인자**: `node.exe`(PATH의 Node 24+, `Get-Node`가 버전 검증) 실행, 인자는 `"<Root>\runtime\resident.mjs" --config "<HomeDir>\config.json"` 고정 문자열 — 임의 명령 주입 경로 없음.
+- **실행 계정/권한 상승**: `New-ScheduledTaskPrincipal -UserId $owner.ownerSid -LogonType Interactive -RunLevel Limited` — 일반 사용자 권한(Limited), 관리자 상승 없음.
+- **로그온 트리거**: `New-ScheduledTaskTrigger -AtLogOn -User $owner.ownerSid` — 소유자 로그온 시에만 시작.
+- **중복 실행 방지**: `-MultipleInstances IgnoreNew` — 이미 실행 중이면 새 인스턴스를 무시. `-RestartCount 5 -RestartInterval 1분`으로 비정상 종료 시 제한적 자동 재시작.
+- **등록 범위**: 예약 작업 1개(`TaskName='BLACKHOLE Core v2'`, `TaskPath='\'`)만 `Register-ScheduledTask`로 등록. 방화벽 규칙, 새 서비스, 레지스트리 변경, 관리자 그룹 변경 등은 스크립트 전체에 없음(grep 확인).
+- **제거/되돌리기**: `-Action uninstall`이 `Stop-Core` 후 `Unregister-ScheduledTask`로 소유권이 일치하는 작업만 제거하고, 데이터와 페어링 키는 보존한다(`Get-OwnedTask`가 소유자 SID·root·taskName·installId·작업 설명·액션 개수까지 대조해 불일치 시 아무 것도 건드리지 않음).
+- **결론**: 연호님이 조건으로 제시한 "일반 사용자 권한의 단일 예약 작업, 이미 승인된 resident-v2 설치 범위 내"에 정확히 부합한다. 관리자 권한·방화벽 변경·새 서비스 등록은 없다.
+- `phone-install`/`phone-uninstall`(Tailscale 브릿지)은 별도 액션이며 이번 승인 범위 밖이다 — 실행하지 않는다. `Get-PhoneConfig`는 이미 설치·로그인된 tailscale.exe의 `status --json`만 읽고, 계정 생성이나 로그인은 하지 않는다는 것도 코드로 확인했다(요청받지 않았으므로 이번에 실행하지 않음).
+
+### 실행을 지금 진행하지 않는 이유 (안전 규칙에 따른 판단)
+- 최초 설치(`-InitializeNewStore` 필요)는 페어링 토큰 파일이 아직 없으면 `Read-Host -AsSecureString`으로 "16자 이상의 새 로컬 페어링 키"를 대화형으로 입력받는다. 이 값은 연호님 기존 계정의 비밀번호는 아니지만 성격상 인증 토큰(API 키/토큰과 동일 범주)이며, 이 세션이 지켜야 하는 안전 규칙은 "비밀번호·API 키·토큰을 어떤 입력창에도 직접 입력하지 않는다"를 연호님의 개별 승인으로도 우회할 수 없는 항목으로 두고 있다. 따라서 컴퓨터 사용 도구로 이 프롬프트에 직접 값을 타이핑하지 않는다.
+- 관리자 권한이 필요하면 멈추고 보고하라는 조건과는 다른 종류의 제약이지만 — 실행 자체를 막는 새 시스템 권한 요구는 아니고 비밀값 입력 단계가 있어서 이 세션이 직접 타이핑하지 않는다는 점에서 — 이 한 단계만은 연호님이 직접 하셔야 한다.
+
+### 연호님이 직접 하실 일 (정확히 이 부분만)
+Windows에서 PowerShell을 열고 아래를 실행 — 프롬프트가 뜨면 16자 이상의 새 문자열(기존 비밀번호 재사용 금지)을 입력하시면 된다. 이 문자열은 채팅에 붙여넣지 않아도 된다(스크립트가 요구하지도 않음):
+
+```
+powershell -ExecutionPolicy Bypass -File "C:\Users\우연호\Documents\Projects\yeno-os\scripts\blackhole-resident.ps1" -Action install -InitializeNewStore
+```
+
+이 실행 후 `-Action status`로 나온 JSON(taskState, coreHealthy 등)을 알려주시거나, 이 세션이 컴퓨터 사용 도구로 `-Action status`(읽기 전용, 비밀 입력 없음)를 직접 실행해 확인할 수 있다.
+
+### 다음
+- 연호님이 설치를 완료하시면(또는 이미 설치되어 있다고 확인해 주시면), 이 세션은 `-Action status`를 컴퓨터 사용 도구로 직접 실행해 실행 결과를 독립적으로 기록한다(비밀 입력이 없으므로 이번 승인 범위에서 직접 실행 가능).
+- 그 다음 실제 8790 경로를 통한 최소 통합 시험(§27의 "다음" 항목)을 진행한다.
+
+## §28 재개 기록 (2026-09-25 — resident-v2 설치 실행 시도 중 발견한 플랫폼 제약: 터미널 타이핑 불가)
+
+### 시도한 것
+연호님 지시대로 `blackhole-resident.ps1`을 이 세션이 직접 실행하려고 컴퓨터 사용 도구 접근을 준비했다. `computer_resolve_access`로 PowerShell/터미널/명령 프롬프트를 조회했다.
+
+### 발견한 사실 (실행 전에 막힘 — 코드/스크립트 문제 아님)
+- 이 PC 연결에서 PowerShell·터미널·명령 프롬프트는 전부 `tier: "click"`(및 `isSentinel: true`)로만 부여 가능하다. `restrictedTierNote`: "Terminals and IDEs can only be granted in 'click' mode — you can see and left-click, but cannot type, press keys, or paste."
+- 즉 이 세션은 이 PC의 어떤 터미널에도 **글자를 입력할 수 없다** — 페어링 키 같은 비밀값뿐 아니라 `-Action install`이나 `-Action status` 같은 평범한 명령 인자도 전혀 타이핑할 수 없다. 이는 "비밀값을 직접 입력하지 않는다"는 안전규칙과 별개로, 이 Cowork 세션이 이 PC의 터미널 앱에 대해 갖는 하드웨어적/플랫폼적 상한이다.
+- 우회 시도(다른 이름으로 재조회 등)도 결과가 같았다 — 스크립트나 설치 자체의 문제가 아니라 이 세션의 터미널 상호작용 권한 등급 문제다.
+- 부수 확인: 같은 조회에서 이 PC에는 **Tailscale이 설치돼 있지 않다**(`computer_resolve_access`가 "Tailscale"을 미설치로 응답, 대체 제안도 없음). 이 사실은 휴대폰 연결 검증 직전에 한 번에 안내하라는 연호님 지시에 따라 지금은 보고만 해 두고 별도 조치를 요청하지 않는다.
+- Chrome은 컴퓨터 사용 도구로는 `tier: "read"`(보기만 가능)로 제한되고, 대신 별도의 Claude in Chrome 확장 도구(`mcp__remote-devices__Claude_Browser__*`)로 탐색·클릭이 가능하다는 안내를 받았다 — 이건 필요시 8790 API 읽기 전용 확인(`GET /api/health` 등)에 쓸 수 있다.
+
+### 결론 — 계획 수정
+- 이 세션은 `scripts/blackhole-resident.ps1`의 설치(`-Action install -InitializeNewStore`)를 포함해 **어떤 액션도 스스로 타이핑해 실행할 수 없다.** 연호님이 앞서 승인하신 "일반 사용자 권한 단일 예약 작업이면 직접 실행" 조건은 코드 검토(§27b) 기준으로는 충족됐지만, 이 세션의 플랫폼 권한이 타이핑 자체를 막아 실행 주체가 될 수 없다.
+- 대신 이 세션은: (1) 연호님이 PowerShell에서 설치 명령 전체를 직접 실행 — 페어링 키뿐 아니라 명령 자체도 연호님이 입력해야 한다; (2) 설치 후에는 이 세션이 브라우저 확장 도구로 `http://127.0.0.1:8790/api/health`(인증 불필요, 읽기 전용 공개 라우트, server.mjs 1713행)를 직접 열어 서버 응답을 독립적으로 확인하고, 필요하면 `%LOCALAPPDATA%\BLACKHOLE\resident-v2` 폴더 접근을 요청해 상태 파일을 직접 읽어 검증한다 — 이 경로들은 타이핑이 필요 없다.
+
+### 다음
+- 연호님께 정확한 실행 명령을 한 번에 안내하고(§27b와 동일), 완료 후 이 세션이 독립적으로 `/api/health` 확인 및 상태 파일 열람으로 RAN 여부를 검증한다.
+
+### 추가 — 연호님이 만든 더블클릭 실행 파일 검토 (2026-09-25, 타이핑 없이 설치를 진행하기 위한 방법)
+- 연호님이 채팅에 `Install_BlackHole_Resident.cmd`를 직접 작성해 업로드했다(이 세션이 만든 것 아님). 전문을 읽고 검토했다:
+  - `%USERPROFILE%\Documents\Projects\yeno-os\scripts\blackhole-resident.ps1` 존재 확인 후 `cd /d`로 그 폴더로 이동, 실패 시 즉시 종료.
+  - 실행 줄: `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%INSTALLER%" -Action install -InitializeNewStore` — §27b에서 검토한 것과 **동일한 액션·동일한 인자**(관리자 권한 요청 없음, `runas`나 매니페스트 상승 없음, 추가 플래그는 `-NoLogo -NoProfile`뿐으로 대화형 배너를 줄이는 무해한 옵션).
+  - 종료 코드를 `%INSTALL_RESULT%`로 저장해 화면에 출력하고 `pause`로 창을 유지 — 결과를 사람이 직접 읽고 판단하는 구조.
+- 결론: 이 배치 파일은 §27b에서 이미 승인 범위로 확인한 것과 동일한 설치 동작을 "타이핑 없이 더블클릭으로 트리거"하는 래퍼일 뿐이다. 실행 주체는 여전히 연호님(Windows 탐색기에서 직접 더블클릭)이고, 이 세션은 그 실행을 트리거하거나 관찰할 도구가 없다는 점도 연호님이 정확히 지적한 그대로다.
+- 이 세션은 이 파일을 실행하지 않았다(할 수 없음). 연호님의 더블클릭 실행 결과(성공 여부, 종료 코드, 차단 문구가 있었다면 그 문구)를 기다린다.
+
+## §29 재개 기록 (2026-09-25 — 설치 흐름 자체를 바꾸는 요구사항, 이 세션은 코드 작성 안 함)
+
+### 배경 및 정정
+- 연호님이 §28까지의 "연호님이 PowerShell을 직접 실행" 요청을 반복한 것 자체가 막힌 지점(대화형 마스킹 키 입력)을 없애지 못한다고 지적했다. 옳은 지적이다 — `.cmd` 래퍼도 결국 같은 프롬프트로 귀결된다(§28b 참고).
+- 연호님이 "방금 찾았다는 파일이 실제 PC 폴더가 아니라 Linux 작업공간의 다른 브랜치 복사본"이라는 의심을 제기했다. 이 세션이 재확인했다:
+  - `mount` 결과: `$HOME/mnt/yeno-os`는 `type fuse`의 실시간 원격 마운트다(로컬 복사본이 아님).
+  - `git remote -v`: `origin  https://github.com/wooyeonho/yeno-os.git` — 연호님의 실제 저장소.
+  - `git branch --show-current` / `git rev-parse HEAD`: `blackhole/p3-jev-recovery-port-20260924` / `4aeccf2ced86d285fbcfb70f2a5b91fe9e0121bc` — §26에서 보고한 것과 동일 커밋.
+  - `git status --short`: 이 세션이 직접 추가한 `docs/CLAUDE_EXECUTION_STATE.md` 편집 외 변경 없음.
+  - 즉 §25~§28의 코드 근거는 실제 PC의 실제 브랜치를 본 것이 맞다. 다만 이후로도 코드 확인 전에는 매번 이 4가지(마운트 종류/remote/branch/HEAD)를 다시 찍어 보고하기로 한다 — 이전 확인을 재사용하지 않는다.
+
+### 요구사항 (다음에 실제 코드를 작성할 세션 — Codex 등 — 에 전달용, 이 세션은 구현하지 않음)
+연호님이 정리한 지시를 그대로 요구사항으로 옮긴다:
+
+1. 코드 작업 시작 전에 실제 PC 체크아웃과 브랜치를 먼저 확인한다(추정하지 않는다).
+2. PowerShell 마스킹 프롬프트에 사람이 키를 입력하게 하는 현재 흐름을 없앤다.
+3. 설치 시 강한 키를 자동 생성하고, 파일시스템 권한으로 현재 사용자 전용으로 저장한다(현재 스크립트의 `Protect-Directory`가 이미 ACL을 현재 사용자로 제한하는 방식과 같은 원리를 키 파일에도 적용).
+4. 그 키를 터미널 출력·로그·채팅 어디에도 노출하지 않는다.
+5. Android(휴대폰) 연결은 키를 수동으로 옮겨 적는 방식이 아니라, 소유자가 그 자리에서 확인·승인할 수 있는 안전한 페어링 UI(예: QR 코드+기기 쪽 확인 버튼, 또는 이미 있는 Tailscale Serve 브릿지 위에 얹는 승인 플로우)로 처리한다.
+6. 설치 실행 파일은 채팅 업로드함처럼 별도 다운로드가 필요한 곳이 아니라 실제 저장소(`scripts/` 등) 안에 둔다 — `Install_BlackHole_Resident.cmd`가 겪은 것과 같은 문제(파일이 PC에 없어서 다운로드 단계가 추가되는 것)를 구조적으로 없앤다.
+7. Windows 설치·재시작 후 상태·`/api/health`뿐 아니라 Android 페어링까지 실제로 검증한다.
+8. 검증하지 못한 항목은 절대 `VERIFIED`로 표시하지 않는다 — 이 프로젝트 전체에 적용 중인 상태 어휘 규칙(§ 실행 지시서 기준)과 동일.
+
+### 이 세션의 역할 경계 재확인
+- 이 세션은 위 요구사항의 실제 코드를 작성하지 않는다(§25 이후 유지된 역할 분담: 코드는 Codex, 이 세션은 PC/Vault 확인·검증·기록).
+- §27(계약 대조)·§27b(설치 스크립트 검토)·§28(타이핑 불가 확인)의 사실 확인 결과는 유효하며 철회하지 않는다 — 다만 그 사실들에 기반해 "지금 스크립트를 그대로 실행하는 경로"가 막혀 있다는 것이 이번에 추가로 확정됐다.
+- 위 요구사항이 구현되어 오면, 이 세션은 다시 독립적으로 PC 브랜치/커밋을 재확인한 뒤 §27과 같은 방식으로 코드 대조와 설치 검증을 이어간다.
+
+## §30 재개 기록 (2026-09-25 — 설치 흐름 실제 코드 수정: 키 자동생성, 저장소 내 설치 실행 파일. 이 세션이 직접 구현)
+
+### 배경
+연호님이 "요구사항 기록에서 멈추지 말고 구현까지 하라"고 명시했고, 실제 이 대화(Claude Cowork)가 `wooyeonho/yeno-os`의 실제 체크아웃(FUSE 실시간 마운트, `git remote` 확인됨)에 연결돼 코드를 직접 수정할 수 있음을 재확인한 뒤 진행했다. "저는 Codex"라며 PC 연결이 없다고 한 메시지는 연호님이 확인해 주신 대로 GPT 세션에서 나온 내용이었다(이 세션과 무관).
+
+### 변경 1 — `scripts/blackhole-resident.ps1`: 대화형 키 입력 프롬프트 제거
+- 기존: `Read-Host 'New local pairing key...' -AsSecureString`로 사람이 터미널에 직접 타이핑해야만 설치가 끝났다(§28에서 확인한, 이 세션이 넘을 수 없는 지점).
+- 변경: `-PairingToken`이 명시적으로 주어지지 않으면 `[Security.Cryptography.RandomNumberGenerator]`로 32바이트를 생성해 base64url(43자, 공백 없음 — 기존 검증 규칙 16-512자·공백 금지를 그대로 만족)로 인코딩하고, 기존에 이미 ACL로 현재 사용자 전용 보호가 걸린 `secrets` 폴더(`Protect-Directory`, 변경 없음)에 파일로 저장한다. 콘솔에 출력하지 않는다.
+- `-PairingToken` 파라미터 자체는 남겨뒀다 — 소유자가 원할 때 직접 키를 지정하는 기존 경로(및 기존 CI 테스트가 쓰는 경로)는 그대로 유지, 동작 변화 없음.
+- diff: `scripts/blackhole-resident.ps1` +26/-8줄.
+
+### 변경 2 — `scripts/test-resident-windows.ps1`: 자동생성 경로를 검증하는 새 CI 단계 추가
+- 기존 Windows CI 인수시험(`scripts/test-resident-windows.ps1`, 실제 예약작업·실제 HTTP·실제 ACL을 검사하는 진짜 시험)은 모든 `install` 호출에 `-PairingToken`을 명시적으로 넘기고 있어 기존 Read-Host 분기도, 이번 신규 분기도 원래는 전혀 실행되지 않았다.
+- `auto_generated_pairing_key`라는 새 단계를 추가했다: 별도 HomeDir/TaskName/Port로 격리된 인스턴스를 `-PairingToken` 없이 설치 → 생성된 키 파일을 직접 읽어 길이(16-512)·공백 없음·base64url 형식·ACL 보호(`Assert-PrivateAcl`, 기존 헬퍼 재사용)를 검증 → 그 키로 실제 `/api/v1/devices/enroll`을 호출해 실제로 기기 등록이 성공하는지 확인 → 전체 누적 콘솔 출력(`$script:allOutput`)에 그 키 문자열이 한 번도 나타나지 않았는지 검증 → `stop`/`uninstall`로 정리. 기존 코드 패턴(격리된 `collisionHome`/`collisionTaskName` 방식)을 그대로 따랐다.
+- diff: `scripts/test-resident-windows.ps1` +39줄, 기존 단계는 한 줄도 건드리지 않았다(브레이스/괄호 균형 확인함).
+
+### 변경 3 — `scripts/install-blackhole-resident.cmd` (신규, 저장소에 포함)
+- 연호님이 직접 만들어 채팅에 올려주셨던 더블클릭 실행 파일과 같은 목적이지만, 특정 PC 경로(`%USERPROFILE%\Documents\Projects\yeno-os`)에 하드코딩하는 대신 자기 위치 기준(`%~dp0`)으로 옆의 `blackhole-resident.ps1`을 찾도록 고쳐 저장소 안에 커밋했다 — 이제 이 파일은 채팅 업로드함이 아니라 저장소를 클론/풀하면 항상 같이 있다(요구사항 6 충족).
+
+### 이 세션이 직접 확인한 것 (RAN 아님, 정적 검토 수준)
+- `scripts/blackhole-resident.ps1`, `test-resident-windows.ps1` 전체 파일의 중괄호/소괄호 개수가 수정 전후로 정확히 맞는지 파이썬으로 셌다(둘 다 balanced).
+- 새 CI 단계가 재사용한 기존 헬퍼(`Run-Launcher`, `Request-Core`, `Assert-PrivateAcl`, `Wait-Core`류 패턴)의 실제 정의를 다시 읽고 인자·반환값이 내가 쓴 방식과 맞는지 대조했다.
+- `RandomNumberGenerator.Create()`는 .NET Framework(PowerShell 5.1이 쓰는 런타임, 스크립트 첫 줄에 명시)에서 표준적으로 쓰이는 정적 팩토리라는 것은 확인했지만, **이 세션은 PowerShell을 실행할 수 없어 실제로 돌려본 적은 없다**(§28에서 확정된 한계, 여전히 유효).
+
+### 상태 — 정확한 어휘로 표기
+- 위 세 변경 모두 **CONFIGURED**(코드는 저장소에 반영됨, 저장소 상태는 §29 재확인 그대로: `blackhole/p3-jev-recovery-port-20260924` / `4aeccf2` 기준 위에 적용). **RAN이나 VERIFIED가 아니다.**
+- 실제 검증에는 Windows에서 `scripts/test-resident-windows.ps1`을 돌리거나(가장 신뢰도 높음 — 새 `auto_generated_pairing_key` 단계가 이미 포함돼 있다), 연호님이 `scripts/install-blackhole-resident.cmd`를 더블클릭해 설치가 대화형 프롬프트 없이 끝까지 진행되는지 확인하는 방법이 있다. 둘 중 하나의 실제 실행 결과를 받으면 이 세션이 `docs/CLAUDE_EXECUTION_STATE.md`에 RAN/VERIFIED로 갱신한다.
+
+### 요구사항 5(휴대폰 페어링, 키 수동 전사 없이) — 아직 구현하지 않음, 이유와 다음 설계
+- 이번에는 구현하지 않았다. 이유: (1) 이 저장소에는 QR 생성 코드·의존성이 전혀 없어(grep 확인, 0건) 새로 만들어야 하는데, 이 세션은 Node나 PowerShell을 실행해 직접 돌려볼 수 없어 스스로 검증 못 하는 보안 관련 신규 코드를 그대로 내보내는 건 실행 지시서의 "가설 검증 없이 우기지 않는다" 원칙에 어긋난다고 판단했다. (2) 휴대폰 페어링은 구조적으로 Tailscale 브릿지가 있어야 의미가 있는데, §28에서 확인한 대로 이 PC에는 Tailscale이 아직 설치돼 있지 않다 — 그 전제가 없는 상태에서 페어링 UI부터 만드는 건 순서가 맞지 않다.
+- 다음 구체안(설계만, 미구현): 설치된 `qrcode`류 패키지로 `-Action show-pairing-qr`을 추가해, 이미 파일로 존재하는 페어링 키를 읽어 터미널에 ASCII QR로만 렌더링(디스크에 새 파일 남기지 않음, 로그에도 남기지 않음) — 소유자가 휴대폰 카메라로 그 화면을 스캔해 한 번에 값을 얻는다(자리수를 손으로 옮겨 적는 과정 제거). 단, 이건 Tailscale 설치·로그인(§28에서 보고한 미설치 상태)이 먼저 된 뒤에야 실제로 쓸모가 있다 — 연호님이 Tailscale을 설치·로그인하시면 이 세션이 이어서 구현한다.
+
+## §31 재개 기록 (2026-09-25 — Codex 인수인계: 이 세션의 코드 작업 종료, 기준선 커밋)
+
+### 결정 (연호님)
+- "완성까지 시킬 수 있게 기존에 진행하던 내용들을 Codex에 넘기자." 근거: AGENTS.md 81행이 개발·설계·검증을 Codex 세션에 명시적으로 배정하고 있고, 이 세션은 PowerShell 실행·터미널 입력·Android 빌드·실기기 검증을 할 수 없어(§28, §30) 지시 1~3의 검증 루프를 닫을 수 없다.
+
+### 이 세션이 한 일
+- §30의 세 변경(키 자동생성, 회귀시험 단계, 저장소 내 설치파일)과 §25~§30 기록을 한 커밋으로 확정했다 — Codex가 우발적 충돌 없이 이어받을 수 있는 기준선. 푸시는 하지 않았다(연호님 지시 없음).
+- `docs/CODEX_HANDOFF_20260925.md`를 작성했다: 연호님 지시 원문 그대로 + 현재 상태(CONFIGURED/미착수 구분) + Codex가 바로 쓸 코드 사실(§27 대조 결과) + 환경 사실(Tailscale 미설치, 승인 범위) + 읽을 위치.
+
+### 이 세션의 상태
+- 코드 작업은 여기서 멈춘다. 이후 이 세션의 역할은 Codex 결과물이 도착했을 때 실제 PC 저장소에서 독립적으로 재확인·기록하는 것(§25 이후 방식)이다.
+- 재개 지점(Codex용): `docs/CODEX_HANDOFF_20260925.md`.

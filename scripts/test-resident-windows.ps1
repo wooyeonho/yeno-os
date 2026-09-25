@@ -224,6 +224,45 @@ try {
     $stoppedState = Request-Core 'GET' '/api/v1/state' $deviceToken
     Assert-That ($stoppedState.json.emergencyStop -eq $true) 'emergency stop survives resident restart'
 
+    $script:stage = 'auto_generated_pairing_key'
+    $autoKeyHome = Join-Path $testRoot 'auto key home'
+    $autoKeyTaskName = 'BLACKHOLE CI autokey ' + $testId
+    $autoKeyListener = New-Object Net.Sockets.TcpListener ([Net.IPAddress]::Loopback), 0
+    $autoKeyListener.Start()
+    $autoKeyPort = $autoKeyListener.LocalEndpoint.Port
+    $autoKeyListener.Stop()
+    $savedBaseUrl = $script:baseUrl
+    try {
+        # No -PairingToken supplied: exercises the CSPRNG auto-generation path
+        # (blackhole-resident.ps1 no longer prompts interactively for a key).
+        $null = Run-Launcher 'install' @{ HomeDir = $autoKeyHome; TaskName = $autoKeyTaskName; Port = $autoKeyPort; InitializeNewStore = $true }
+        $autoKeyConfig = Get-Content -Raw -LiteralPath (Join-Path $autoKeyHome 'config.json') | ConvertFrom-Json
+        $generatedSecret = [IO.File]::ReadAllText($autoKeyConfig.tokenFile).Trim()
+        Assert-That ($generatedSecret.Length -ge 16 -and $generatedSecret.Length -le 512) 'auto-generated pairing key length within contract'
+        Assert-That ($generatedSecret -notmatch '\s') 'auto-generated pairing key has no whitespace'
+        Assert-That ($generatedSecret -cmatch '^[A-Za-z0-9_-]+$') 'auto-generated pairing key is base64url'
+        Assert-That (-not $script:allOutput.Contains($generatedSecret)) 'auto-generated pairing key never appears in launcher output'
+        foreach ($privatePath in @($autoKeyHome, (Join-Path $autoKeyHome 'config.json'), $autoKeyConfig.dataDir, (Split-Path -Parent $autoKeyConfig.tokenFile), $autoKeyConfig.tokenFile)) { Assert-PrivateAcl $privatePath }
+
+        $null = Run-Launcher 'start' @{ HomeDir = $autoKeyHome; TaskName = $autoKeyTaskName }
+        $script:baseUrl = 'http://127.0.0.1:' + $autoKeyPort
+        $autoKeyUp = $false
+        for ($attempt = 0; $attempt -lt 80; $attempt++) {
+            $probe = Request-Core 'GET' '/api/health' $null
+            if ($probe.status -eq 200) { $autoKeyUp = $true; break }
+            Start-Sleep -Milliseconds 250
+        }
+        Assert-That $autoKeyUp 'auto-key core reaches readiness'
+        $autoEnrollment = Request-Core 'POST' '/api/v1/devices/enroll' $generatedSecret @{ name = 'Windows CI auto-key contract'; platform = 'android'; requestId = [Guid]::NewGuid().ToString() }
+        Assert-That ($autoEnrollment.status -eq 201) 'auto-generated pairing key successfully enrolls a device'
+        Assert-That (-not $script:allOutput.Contains($generatedSecret)) 'auto-generated pairing key still absent from output after use'
+    } finally {
+        $script:baseUrl = $savedBaseUrl
+        try { $null = Run-Launcher 'stop' @{ HomeDir = $autoKeyHome; TaskName = $autoKeyTaskName } } catch {}
+        try { $null = Run-Launcher 'uninstall' @{ HomeDir = $autoKeyHome; TaskName = $autoKeyTaskName } } catch {}
+        $generatedSecret = $null
+    }
+
     $script:stage = 'unowned_task_refusal'
     $collisionAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -Command exit 0'
     $collisionPrincipal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
