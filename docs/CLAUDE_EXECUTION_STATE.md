@@ -418,7 +418,7 @@ npm test
 - P4는 별도 트랙이다: 실제 허가된 학습 평가·rollback 및 승인된 물리 QPU backend의 adapter/cost reservation/submit·unknown receipt 조회·job ID·returned counts·같은 mission readback. 현재 시뮬레이터를 QPU 통과로 표시하지 않는다.
 - 방화벽 변경, push, PR, merge, 배포, 실제 QPU 제출은 하지 않았다.
 
-## §23 재개 기록 (2026-09-24 — Codex JEV recovery 패치 PC 반입·적용·집중 테스트)
+## §23-b 재개 기록 (2026-09-24 — Codex JEV recovery 패치 PC 반입·적용·집중 테스트)
 
 - 입력: `pc-p3-jev-recovery-20260924.patch`(Codex가 PC bundle `6c942c3` 기준으로 만든 단일 커밋 패치, SHA-256 `adb4f23f18a709c7f3053a3629eb9d7172a2073833e9c4ff1b657d9a50e08128`, 17 files / +1420 −24). `git apply --check` HEAD(`6c942c3`)에 대해 clean.
 - 적용: g1 브랜치는 그대로 두고 **새 브랜치 `blackhole/p3-jev-recovery-port-20260924`** 에 `git am`으로 적용 → 커밋 `fff1a19`(작성자 Codex 보존). push 없음.
@@ -426,3 +426,26 @@ npm test
 - 집중 테스트(device_bash 샌드박스, Node): jev-recovery 4/4, jev-recovery-verifier 3/3, recovery-one-of-qpu 6/6, jev-recovery-server 2/2, backup 11/11, jev 11/11, quests 12/12, blackhole-core-server 12/12, g1-living-loop-integration 2/2, voice-memory-embeddings 4/4 → **67 pass / 0 fail**. `node --check` 15개 파일 통과.
 - 미실행: `living-core-ui.test.mjs`(jsdom — 이 샌드박스에서 멈추는 파일군, 실PC에서 확인 필요), 전체 회귀(같은 이유), Ollama 실사용 재검증(§17 항목) — 이 SHA에서 아직 안 함. **P3 완료 아님**: JEV 한 조각이며 Kirby·기억 회수·실모델·실기기 trace는 미결.
 - 남은 Codex 이식 대상(§22 참조): F14 cost-ledger·shadow-growth·memory-embeddings 중복 3쌍 설계 선택, server/blackhole-core 나머지 hunk, `expectedQuestId` 게이트, `verify-living-loop-live.mjs`.
+
+## §24 재개 기록 (2026-09-24 — expectedQuestId 게이트·P3 live check·중복 설계 판정)
+
+### 기준과 작업 경계
+- §23 JEV 슬라이스가 있는 PC 기준 후보 `codex/pc-p3-port-20260924` (`9fa7b2a`, 기준 `6c942c3`)에서 이어서 작업했다. 원 PC 저장소·원 브랜치·원격 저장소에는 적용하거나 push하지 않았다.
+- Obsidian Vault의 실행계획/분할/분류는 Claude 세션이 수행했으며 CHANGELOG (24)~(27)에 근거가 있다. 이 코드 작업은 Vault 파일을 요청하거나 수정하지 않는다.
+
+### 구현
+- `/api/voice`에 optional `expectedQuestId`를 추가했다. UUID 형식과 decide 요청 여부를 먼저 검사하고, 실제 Homunculus top quest가 다르면 `409`로 거부한다. 비교는 job/mission/event 상태 변경 전에 한다.
+- 일치할 때 응답에 `kind: shadowMission`과 선택한 `plannerQuestId`를 노출해 live check가 요청 목표와 생성된 미션을 대조할 수 있게 했다.
+- `scripts/verify-living-loop-live.mjs` 및 합성 테스트를 추가했다. loopback만 허용하고, 기본 모드는 read-only preflight다. `--run`은 기존의 owner-proposed 프로젝트 목표, 명시한 SHA/model, idle runtime과 호출 여유를 확인한 뒤 1회 요청한다. 응답이 불명확할 때 재시도하지 않는다.
+- `runtime/package.json`에 `check:living-loop` 실행 명령을 연결했다.
+
+### 중복 3종 결정
+- `docs/PC_CODEX_DUPLICATE_REVIEW_20260924.md`에 비용 원장·Shadow 성장·임베딩 기억의 실제 코드 계약과 선택 근거를 비교했다.
+- 세 모듈 모두 PC 구현을 기준으로 유지한다. Codex 구현을 파일째 덮지 않는다. 특히 현재 PC 비용 상한은 provider 단가 기반 추정치이며 최대 1회 호출 비용을 미리 예약하지 않는다는 한계를 문서에 명시했다.
+
+### 검사/미검사
+- 현재 변경 파일 검사: `node --check` (server/live script) 및 `git diff --check` 통과.
+- 신규 집중 테스트: `voice-expected-quest.test.mjs`, `verify-living-loop-live.test.mjs` **8/8 통과**.
+- 관련 모듈·통합 집중 회귀 **63/63 통과**. `npm run check:living-loop`가 패키지 명령으로 등록되고, 자격 증명 없는 실행이 `BLOCKED / existing_owner_token_required`로 끝나는 것도 확인했다.
+- 전체 `npm test`: **1,073 tests · 1,041 pass · 25 fail · 7 skipped**. 실패는 격리 실행기/QuickJS worker 시작, 실제 외부 HTTPS가 필요한 네트워크 시험, Loop 2 timing 검사에 모여 있다. 이번 실행에서 정확한 parent SHA와 실패 이름을 대조하지 않았으므로 “새 회귀 0건”으로 단정하지 않는다. 전체 suite는 green이 아니다.
+- 최종 후보 SHA의 Ollama live 검증은 아직 미실행. 이 문서 작성 시점의 작업은 검토 후보이며 사용자 PC의 `fff1a19`와 tree/SHA 동일성을 직접 확인하지 않았다.

@@ -12,7 +12,8 @@
     "test": "node --test test/*.test.mjs",
     "check": "node ../scripts/blackhole-check.mjs --mode isolated",
     "check:core": "node ../scripts/blackhole-check.mjs --mode basic",
-    "check:live": "node ../scripts/blackhole-check.mjs --mode live"
+    "check:live": "node ../scripts/blackhole-check.mjs --mode live",
+    "check:living-loop": "node ../scripts/verify-living-loop-live.mjs"
   },
   "dependencies": {
     "quickjs-emscripten": "0.32.0"

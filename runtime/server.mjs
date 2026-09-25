@@ -395,8 +395,12 @@ export function createYenoServer(options={}) {
      return {...action,input:undefined,applied:true,quest:publicQuest(bound,s),job:publicJob(job),loop:status()};
    }catch(error){s.jobs=before.jobs;s.quests=before.quests;s.events=before.events;throw error;}
  }
- function decideAndRunQuest(){
+ function decideAndRunQuest(expectedQuestId=undefined){
    const decision=decideQuest(s,now());
+   // A caller that read the current Homunculus choice must not accidentally
+   // dispatch a different goal if the ranking changed before its POST arrived.
+   // Check before any quest, job, mission, or event is mutated.
+   if(expectedQuestId!==undefined&&decision?.top?.questId!==expectedQuestId)throw new HttpError(409,'우선순위가 바뀌었습니다. 목표 목록을 새로 읽고 다시 확인하세요.');
    if(!decision)return null;
    const top=s.quests.find(q=>q.id===decision.top.questId);
    if(top.synthesis){event(`호문쿨루스 결정(자율 목표, 실행 보류): ${decision.top.goal}`);return {decision,pendingOwnerAction:true,job:null,quest:publicQuest(top,s),message:'자율 합성된 목표는 소유자가 직접 실행을 눌러야 시작됩니다.'};}
@@ -2000,9 +2004,10 @@ export function createYenoServer(options={}) {
          return {status:200,payload:{jobId:job.id,job:publicJob(job)}};
        }
        if(url.pathname==='/api/voice'){
-         if(!b.requestId||Object.keys(b).some(k=>!['requestId','text','history'].includes(k)))throw new HttpError(400,'Invalid voice request');
+         if(!b.requestId||Object.keys(b).some(k=>!['requestId','text','history','expectedQuestId'].includes(k)))throw new HttpError(400,'Invalid voice request');
          requireModule('ai');const text=requiredText(b.text,6000),history=b.history??[];
          if(!Array.isArray(history)||history.length>6||history.some(m=>!m||Object.keys(m).sort().join()!=='content,role'||!['user','assistant'].includes(m.role)||typeof m.content!=='string')||JSON.stringify(history).length>10000)throw new HttpError(400,'음성 대화 기록이 너무 깁니다.');
+         if(b.expectedQuestId!==undefined&&(typeof b.expectedQuestId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(b.expectedQuestId)))throw new HttpError(400,'expectedQuestId must be a valid goal ID');
          // Both an explicit command ("지금 가장 먼저 할 일을 정해줘") and natural,
          // non-imperative phrasing ("오늘 뭐부터 하면 돼?", "네가 봤을 때 지금 제일
          // 중요한 게 뭐야?", "알아서 우선순위 잡아봐" - see decide.mjs's DECIDE_PHRASES)
@@ -2011,9 +2016,11 @@ export function createYenoServer(options={}) {
          // nothing proposed to decide among, this falls through to the normal
          // conversational path below rather than failing silently - the agent
          // can say honestly that no goal is on file yet.
-         if(isDecideRequest(text)){
-           const outcome=decideAndRunQuest();
-           if(outcome)return {status:outcome.pendingOwnerAction?200:201,payload:{jobId:outcome.job?.id??null,job:outcome.job,...(outcome.kind==='shadowMission'?{missionId:outcome.missionId,mission:outcome.mission}:{}),...(outcome.pendingOwnerAction?{pendingOwnerAction:true,quest:outcome.quest,message:outcome.message}:{}),decision:{goal:outcome.decision.top.goal,successCriterion:outcome.decision.top.successCriterion,dominantDrives:outcome.decision.top.motivation.dominantDrives,announcement:decisionAnnouncement(outcome.decision)}}};
+         const decideIntent=isDecideRequest(text);
+         if(b.expectedQuestId!==undefined&&!decideIntent)throw new HttpError(400,'expectedQuestId is only valid for a goal-decision request');
+         if(decideIntent){
+           const outcome=decideAndRunQuest(b.expectedQuestId);
+           if(outcome)return {status:outcome.pendingOwnerAction?200:201,payload:{jobId:outcome.job?.id??null,job:outcome.job,...(outcome.kind==='shadowMission'?{kind:outcome.kind,missionId:outcome.missionId,plannerQuestId:outcome.plannerQuestId??outcome.mission?.plannerQuestId??null,mission:outcome.mission}:{}),...(outcome.pendingOwnerAction?{pendingOwnerAction:true,quest:outcome.quest,message:outcome.message}:{}),decision:{goal:outcome.decision.top.goal,successCriterion:outcome.decision.top.successCriterion,dominantDrives:outcome.decision.top.motivation.dominantDrives,announcement:decisionAnnouncement(outcome.decision)}}};
          }
          const context=`코어의 실제 요약: ${JSON.stringify({running:s.jobs.filter(j=>j.status==='running').map(j=>({title:j.title,type:j.type})),projects:s.projects.length,codeCapabilities:getCodeStatus(s.codeWorkshop).map(e=>({name:e.name,active:!!e.activeHash})),automatic:s.autopilot.enabled,aiCalls:agentUsage(s.jobs).attempts})}\n`;
          // F07: the ordinary conversation path recalls stored memory (canonical
