@@ -1718,7 +1718,7 @@ export function createYenoServer(options={}) {
      if(!url.pathname.startsWith('/api/')){
        if(req.method!=='GET'&&req.method!=='HEAD')throw new HttpError(405,'Method not allowed');
        const allowed={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/command-request.mjs':'command-request.mjs','/source-reference-labels.mjs':'source-reference-labels.mjs','/world-view.mjs':'world-view.mjs','/studio-view.mjs':'studio-view.mjs','/studio.css':'studio.css','/absorption-routing.mjs':'absorption-routing.mjs','/world-land.svg':'world-land.svg','/style.css':'style.css','/manifest.webmanifest':'manifest.webmanifest','/icon.svg':'icon.svg','/web-client.mjs':'web-client.mjs','/sw.js':'sw.js','/offline.html':'offline.html'};
-       Object.assign(allowed,{'/jarvis':'jarvis.html','/jarvis.html':'jarvis.html','/jarvis.mjs':'jarvis.mjs','/code-view.mjs':'code-view.mjs','/code.css':'code.css','/voice-view.mjs':'voice-view.mjs','/voice.css':'voice.css','/cockpit.css':'cockpit.css','/capability-view.mjs':'capability-view.mjs','/autopilot-view.mjs':'autopilot-view.mjs','/autopilot-view-engine.mjs':'autopilot-view-engine.mjs','/research-view.mjs':'research-view.mjs','/hankki/answer':'hankki-answer.html','/hankki-answer.mjs':'hankki-answer.mjs','/hankki-answer.css':'hankki-answer.css'});
+       Object.assign(allowed,{'/jarvis':'jarvis.html','/jarvis.html':'jarvis.html','/jarvis.css':'jarvis.css','/jarvis.mjs':'jarvis.mjs','/jarvis-scene-model.mjs':'jarvis-scene-model.mjs','/code-view.mjs':'code-view.mjs','/code.css':'code.css','/voice-view.mjs':'voice-view.mjs','/voice.css':'voice.css','/cockpit.css':'cockpit.css','/capability-view.mjs':'capability-view.mjs','/autopilot-view.mjs':'autopilot-view.mjs','/autopilot-view-engine.mjs':'autopilot-view-engine.mjs','/research-view.mjs':'research-view.mjs','/hankki/answer':'hankki-answer.html','/hankki-answer.mjs':'hankki-answer.mjs','/hankki-answer.css':'hankki-answer.css'});
        Object.assign(allowed,{'/icon-192.png':'icon-192.png','/icon-512.png':'icon-512.png','/device-connect.mjs':'device-connect.mjs'});
        Object.assign(allowed,{'/growth-view.mjs':'growth-view.mjs'});
        Object.assign(allowed,{'/living-core-view.mjs':'living-core-view.mjs','/living-core.css':'living-core.css'});
@@ -2032,8 +2032,10 @@ export function createYenoServer(options={}) {
          return {status:200,payload:{jobId:job.id,job:publicJob(job)}};
        }
        if(url.pathname==='/api/voice'){
-         if(!b.requestId||Object.keys(b).some(k=>!['requestId','text','history','expectedQuestId'].includes(k)))throw new HttpError(400,'Invalid voice request');
+         if(!b.requestId||Object.keys(b).some(k=>!['requestId','text','history','expectedQuestId','chatOnly'].includes(k))||
+             (b.chatOnly!==undefined&&typeof b.chatOnly!=='boolean'))throw new HttpError(400,'Invalid voice request');
          requireModule('ai');const text=requiredText(b.text,6000),history=b.history??[];
+         const chatOnly=b.chatOnly===true;
          if(!Array.isArray(history)||history.length>6||history.some(m=>!m||Object.keys(m).sort().join()!=='content,role'||!['user','assistant'].includes(m.role)||typeof m.content!=='string')||JSON.stringify(history).length>10000)throw new HttpError(400,'음성 대화 기록이 너무 깁니다.');
          if(b.expectedQuestId!==undefined&&(typeof b.expectedQuestId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(b.expectedQuestId)))throw new HttpError(400,'expectedQuestId must be a valid goal ID');
          // Both an explicit command ("지금 가장 먼저 할 일을 정해줘") and natural,
@@ -2045,8 +2047,8 @@ export function createYenoServer(options={}) {
          // conversational path below rather than failing silently - the agent
          // can say honestly that no goal is on file yet.
          const decideIntent=isDecideRequest(text);
-         if(b.expectedQuestId!==undefined&&!decideIntent)throw new HttpError(400,'expectedQuestId is only valid for a goal-decision request');
-         if(decideIntent){
+         if(b.expectedQuestId!==undefined&&(!decideIntent||chatOnly))throw new HttpError(400,'expectedQuestId is only valid for a goal-decision request');
+         if(decideIntent&&!chatOnly){
            const outcome=decideAndRunQuest(b.expectedQuestId);
            if(outcome)return {status:outcome.pendingOwnerAction?200:201,payload:{jobId:outcome.job?.id??null,job:outcome.job,...(outcome.kind==='shadowMission'?{kind:outcome.kind,missionId:outcome.missionId,plannerQuestId:outcome.plannerQuestId??outcome.mission?.plannerQuestId??null,mission:outcome.mission}:{}),...(outcome.pendingOwnerAction?{pendingOwnerAction:true,quest:outcome.quest,message:outcome.message}:{}),decision:{goal:outcome.decision.top.goal,successCriterion:outcome.decision.top.successCriterion,dominantDrives:outcome.decision.top.motivation.dominantDrives,announcement:decisionAnnouncement(outcome.decision)}}};
          }

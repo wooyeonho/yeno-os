@@ -25,7 +25,8 @@ async function setup(t){
   };
   const post=(route,body={})=>request('POST',route,{requestId:randomUUID(),...body});
   const get=route=>request('GET',route);
-  t.after(()=>{runtime.shutdown();fs.rmSync(dataDir,{recursive:true,force:true});});
+  t.after(async()=>{const closed=new Promise(resolve=>runtime.server.once('close',resolve));runtime.shutdown();await closed;
+    await fs.promises.rm(dataDir,{recursive:true,force:true});});
   return {post,get};
 }
 
@@ -68,4 +69,18 @@ test('a matching expectedQuestId creates a Shadow mission tied to the selected q
   assert.equal(accepted.body.plannerQuestId,quest.id);
   assert.equal(accepted.body.mission.plannerQuestId,quest.id);
   assert.equal(accepted.body.missionId,accepted.body.mission.missionId);
+});
+
+test('chatOnly keeps a command-shaped decision inside tool-free conversation and cannot dispatch a quest',async t=>{
+  const h=await setup(t),{quest}=await createProjectQuest(h);
+  const before=(await h.get('/api/state')).body;
+  assert.equal((await h.post('/api/voice',{text:DECIDE_TEXT,history:[],chatOnly:'true'})).status,400);
+  assert.equal((await h.post('/api/voice',{text:DECIDE_TEXT,history:[],chatOnly:true,expectedQuestId:quest.id})).status,400);
+  const response=await h.post('/api/voice',{text:DECIDE_TEXT,history:[],chatOnly:true});
+  assert.equal(response.status,201,JSON.stringify(response.body));
+  assert.ok(response.body.jobId);
+  assert.equal(response.body.missionId,undefined);
+  const after=(await h.get('/api/state')).body;
+  assert.equal(after.jobs.length,before.jobs.length+1);
+  assert.equal((await h.get(`/api/quests/${quest.id}/shadow-missions`)).body.missions.length,0);
 });
