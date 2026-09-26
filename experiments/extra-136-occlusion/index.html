@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="EXTRA-136 독자 에셋 기반 공간 깊이 가림 실험.">
+  <title>공간의 문 · EXTRA-136 가림 실험</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./scene.mjs"></script>
+</head>
+<body>
+  <main class="workspace" data-visibility="through">
+    <header class="masthead">
+      <div class="identity">
+        <span class="eyebrow">BLACKHOLE / SPATIAL STUDY 01</span>
+        <h1>공간의 문<span class="title-mark">.</span></h1>
+        <p>깊이와 위치를 바꿔 앞면, 문 안쪽, 완전 가림을 직접 비교하는 2D 장면 실험.</p>
+      </div>
+      <div class="source-note" aria-label="근거 상태">
+        <span class="source-dot" aria-hidden="true"></span>
+        <div><strong>EXTRA-136</strong><small>원본 영상 부분 관찰 · 기기/엔진 미확인</small><a href="https://www.instagram.com/reel/Dc3cNT4NWoD/" target="_blank" rel="noopener noreferrer">원본 공개 링크 열기</a></div>
+      </div>
+    </header>
+
+    <section class="layout" aria-label="공간 가림 실험">
+      <div class="stage-card">
+        <div class="stage-topline"><span>01 / 장면 미리보기</span><span>자체 제작 에셋 · SVG 2D</span></div>
+        <svg id="scene" class="scene" viewBox="0 0 960 600" role="img" aria-labelledby="scene-title scene-desc">
+          <title id="scene-title">어두운 실내와 다른 공간으로 열린 빛의 문</title>
+          <desc id="scene-desc">빛나는 물체를 문 앞뒤와 가장자리로 옮기며 깊이 가림을 비교합니다.</desc>
+          <defs>
+            <linearGradient id="roomGradient" x1="0" y1="0" x2="1" y2="1"><stop class="stop-room-a"/><stop offset=".56" class="stop-room-b"/><stop offset="1" class="stop-room-c"/></linearGradient>
+            <radialGradient id="roomLight"><stop class="stop-room-light-a"/><stop offset="1" class="stop-room-light-b"/></radialGradient>
+            <linearGradient id="floorGradient" x1="0" y1="0" x2="0" y2="1"><stop class="stop-floor-a"/><stop offset="1" class="stop-floor-b"/></linearGradient>
+            <linearGradient id="skyGradient" x1="0" y1="0" x2="0" y2="1"><stop class="stop-sky-a"/><stop offset=".58" class="stop-sky-b"/><stop offset="1" class="stop-sky-c"/></linearGradient>
+            <linearGradient id="ringGradient" x1="0" y1="0" x2="1" y2="1"><stop class="stop-ring-a"/><stop offset=".38" class="stop-ring-b"/><stop offset=".73" class="stop-ring-c"/><stop offset="1" class="stop-ring-d"/></linearGradient>
+            <radialGradient id="orbGradient" cx=".3" cy=".25"><stop class="stop-orb-a"/><stop offset=".48" class="stop-orb-b"/><stop offset="1" class="stop-orb-c"/></radialGradient>
+            <filter id="softGlow" x="-70%" y="-70%" width="240%" height="240%"><feGaussianBlur stdDeviation="22"/></filter>
+            <clipPath id="portalOpening"><ellipse cx="480" cy="286" rx="170" ry="200"/></clipPath>
+          </defs>
+          <rect width="960" height="600" fill="url(#roomGradient)"/>
+          <ellipse cx="468" cy="225" rx="420" ry="280" fill="url(#roomLight)" opacity=".55"/>
+          <path d="M0 442 190 385 770 385 960 450 960 600 0 600Z" fill="url(#floorGradient)"/>
+          <path class="room-line" d="M0 443 190 386H770L960 450M202 600 357 385M758 600 604 385M0 525H960"/>
+          <path class="wall-seam" d="M127 0V416M835 0V420M0 118H310M650 118H960"/>
+          <g class="lamp left-lamp"><path d="M160 0v202"/><ellipse cx="160" cy="208" rx="23" ry="13"/><ellipse cx="160" cy="217" rx="70" ry="65" class="lamp-light"/></g>
+          <g class="lamp right-lamp"><path d="M804 0v159"/><ellipse cx="804" cy="166" rx="18" ry="10"/><ellipse cx="804" cy="174" rx="56" ry="52" class="lamp-light"/></g>
+          <ellipse cx="480" cy="497" rx="260" ry="40" class="portal-floor-light" filter="url(#softGlow)"/>
+          <ellipse cx="480" cy="286" rx="198" ry="228" class="portal-halo" filter="url(#softGlow)"/>
+          <g clip-path="url(#portalOpening)">
+            <rect x="290" y="75" width="380" height="425" fill="url(#skyGradient)"/>
+            <circle cx="555" cy="173" r="62" class="other-sun"/>
+            <path d="M290 335 355 256 411 305 477 218 536 296 595 253 671 334V500H290Z" class="far-mountain"/>
+            <path d="M290 386 350 331 403 356 476 296 544 341 626 305 671 367V500H290Z" class="mid-mountain"/>
+            <path d="M290 447Q395 380 477 426T671 404V500H290Z" class="near-land"/>
+            <path d="M462 500 505 358 527 358 565 500Z" class="world-path"/>
+            <g id="rearOrb" class="subject-orb" aria-hidden="true"><circle r="1" class="orb-aura"/><circle r=".77" fill="url(#orbGradient)"/><circle cx="-.22" cy="-.25" r=".19" class="orb-sheen"/></g>
+          </g>
+          <ellipse cx="480" cy="286" rx="184" ry="214" class="ring-outer"/>
+          <ellipse cx="480" cy="286" rx="179" ry="209" class="ring-metal"/>
+          <ellipse cx="480" cy="286" rx="173" ry="203" class="ring-inner"/>
+          <path d="M332 175Q480 12 630 174" class="ring-highlight"/>
+          <g id="frontOrb" class="subject-orb" aria-hidden="true"><circle r="1" class="orb-aura"/><circle r=".77" fill="url(#orbGradient)"/><circle cx="-.22" cy="-.25" r=".19" class="orb-sheen"/></g>
+          <path d="M0 567Q480 521 960 570V600H0Z" class="front-floor"/>
+          <text x="30" y="565" class="scene-label">ROOM / 01</text><text x="740" y="565" class="scene-label">DEPTH PLANE 50</text>
+        </svg>
+        <div class="stage-footer"><span>문 안쪽 깊이 기준 <strong>50</strong></span><span>가림 결과는 좌표와 레이어로 계산</span></div>
+      </div>
+
+      <aside class="console" aria-labelledby="console-title">
+        <div class="console-head"><span class="eyebrow">DEPTH CONSOLE</span><h2 id="console-title">가림 조건</h2><p>위치를 옮기고 깊이를 바꾸면 같은 물체가 문 앞 또는 안쪽에 놓입니다.</p></div>
+        <div class="controls">
+          <div class="control"><div class="control-top"><label for="position">수평 위치</label><output id="positionValue" for="position">50</output></div><input id="position" type="range" min="0" max="100" value="50"><div class="range-labels"><span>문 왼쪽 바깥</span><span>문 오른쪽 바깥</span></div></div>
+          <div class="control"><div class="control-top"><label for="depth">물체 깊이</label><output id="depthValue" for="depth">70</output></div><input id="depth" type="range" min="0" max="100" value="70"><div class="range-labels"><span>관찰자 앞</span><span>문 너머</span></div></div>
+        </div>
+        <div class="preset-group" aria-label="시험 장면">
+          <button type="button" data-preset="front" aria-pressed="false">01 앞면</button>
+          <button type="button" data-preset="through" aria-pressed="true">02 문 안쪽</button>
+          <button type="button" data-preset="hidden" aria-pressed="false">03 완전 가림</button>
+        </div>
+        <section class="result" aria-labelledby="result-title"><div class="result-kicker">실시간 판정 <span class="live-dot"></span></div><h3 id="result-title" aria-live="polite">문 안쪽에서 보임</h3><p id="resultDetail">물체가 깊이 기준 뒤에 있지만 문의 열린 영역 안에 있습니다.</p><dl><div><dt>수평 좌표</dt><dd id="metricX">480</dd></div><div><dt>깊이</dt><dd id="metricDepth">70</dd></div><div><dt>렌더 레이어</dt><dd id="metricLayer">뒤쪽 / 클립</dd></div></dl></section>
+        <p class="limits">이 실험은 2D 레이어/클립 검증입니다. AR 카메라 추적, 실제 공간 인식, 원본 릴의 기기·엔진 동작은 확인하지 않았습니다.</p>
+      </aside>
+    </section>
+    <footer class="page-footer"><span>EXTRA-136 · 원장 상태 partial / pending</span><span>원작 IP 미사용 · 로컬 시험</span></footer>
+  </main>
+</body>
+</html>

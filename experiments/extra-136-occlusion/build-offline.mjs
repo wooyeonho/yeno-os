@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import {createHash} from 'node:crypto';
+import {fileURLToPath} from 'node:url';
+import {build} from '../../apps/controller/node_modules/esbuild/lib/main.js';
+
+const here=path.dirname(fileURLToPath(import.meta.url));
+const output=process.argv[2];
+if(!output)throw new Error('Usage: node build-offline.mjs <new-output.html>');
+if(fs.existsSync(output))throw new Error('Output already exists');
+const html=fs.readFileSync(path.join(here,'index.html'),'utf8');
+const css=fs.readFileSync(path.join(here,'style.css'),'utf8');
+const bundled=await build({entryPoints:[path.join(here,'scene.mjs')],bundle:true,minify:true,format:'iife',platform:'browser',target:'es2022',write:false,logLevel:'silent'});
+assert.equal(bundled.outputFiles.length,1);
+const javascript=bundled.outputFiles[0].text.replace(/<\/script/gi,'<\\/script');
+assert.ok(html.includes('<link rel="stylesheet" href="./style.css">'));
+assert.ok(html.includes('<script type="module" src="./scene.mjs"></script>'));
+const standalone=html.replace('<link rel="stylesheet" href="./style.css">',`<style>\n${css}\n</style>`).replace('<script type="module" src="./scene.mjs"></script>','').replace('</body>',`<script>\n${javascript}\n</script>\n</body>`);
+fs.mkdirSync(path.dirname(path.resolve(output)),{recursive:true});
+fs.writeFileSync(output,standalone);
+const sha256=createHash('sha256').update(standalone).digest('hex');
+console.log(JSON.stringify({output:path.resolve(output),bytes:Buffer.byteLength(standalone),sha256}));

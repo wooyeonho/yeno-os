@@ -689,3 +689,381 @@ powershell -ExecutionPolicy Bypass -File "C:\Users\우연호\Documents\Projects\
 **결론**: QA 보고서가 설명하는 `/workspace/yeno-os` (remote 없음, 브랜치 `work`, 전혀 다른 HEAD)는 이 세션이 사용해온 실제 PC 저장소와 **동일한 저장소가 아님**. `/workspace/...` 경로 패턴과 remote 미설정은 별도의 임시 클라우드 컨테이너/샌드박스 워크스페이스의 특징이며, 이 세션의 연결(FUSE 라이브 마운트, 올바른 origin remote, 올바른 브랜치/HEAD, 예상된 미커밋 diff)과는 구조적으로 다름. 즉 이 QA 보고는 "그 별도 세션이 실제 PC에 접근하지 못했다"는 사실을 보여줄 뿐, 이 세션이 지금까지 보고한 §27~§32 작업이 허위이거나 이 PC 연결이 가짜라는 근거가 아님. 이는 `BLACKHOLE_CODEX_COMPLETION_HANDOFF_20260925.md` 자체가 경고한 "FUSE 파일 접근 ≠ 다른 세션의 실행 환경"이라는 구분과 정확히 일치하는 사례로 판단됨.
 
 **후속 조치**: 이 세션은 계속 실제 PC(`desktop-tingn4u`, `C:\Users\우연호\Documents\Projects\yeno-os`, origin `wooyeonho/yeno-os`, HEAD `d3b4b72`)에서 작업을 이어간다. Codex가 실제로 이 작업을 이어받으려면 반드시 이 저장소(올바른 remote/브랜치/HEAD를 가진)에서 시작해야 하며, remote가 없는 임시 워크스페이스에서는 `docs/CODEX_HANDOFF_20260925.md`나 `docs/BLACKHOLE_CODEX_COMPLETION_HANDOFF_20260925.md`를 읽을 수 없으므로 진행이 불가능하다는 점을 사용자에게 안내함.
+
+## §34 Codex Windows 직접 실행 (2026-09-25, 작업 진행 중)
+
+- 실제 경로: C:\Users\우연호\Documents\Projects\yeno-os
+- origin: https://github.com/wooyeonho/yeno-os.git
+- branch: blackhole/p3-jev-recovery-port-20260924
+- 시작 HEAD: 43a2d1b44e0a60ebad4982dc1e2222213869cc1a (요청 기준과 동일).
+- 시작 작업 트리: staged/unstaged/untracked 모두 없음. 기존 변경을 되돌리지 않음.
+- PowerShell/Node 실제 Windows 실행 가능. Git Bash MCP는 Transport closed로 불가, PowerShell 사용.
+- 최초 `npm.cmd test 2>&1 | Tee-Object ...Desktop/npm-test-output.txt`: exit 1, 852 tests / 757 pass / 74 fail / 21 cancelled. Node 24.11.1에서 다수 시험 프로세스가 3221226505로 종료. 동일 agent-provider-selection 6건은 설치된 Codex bundled Node 24.19.0에서 전부 통과. 전역 Node/PATH를 바꾸지 않고 검증 프로세스 PATH만 변경.
+- Windows 격리 설치 시험 첫 실행: 실제 예약 작업 등록 성공, UTF-8 BOM 없는 config.json을 PS5.1 Get-Content 기본 인코딩으로 읽을 때 한글 사용자 경로 파손. 시험 읽기에 -Encoding UTF8 명시. 자동 키 생성 이후 낡은 Read-Host 정적 assertion 수정.
+- 두 번째 설치 시험: 인증 상태, Android API 기기 등록, 실제 document 작업/파일 SHA 검증 및 재설치 키 보존 진행. stop_restart_reconnect 단계 readiness 실패 조사 중. 전체 회귀와 동시 실행했으므로 부하/프로세스/저장 복구를 구분한다.
+- 완료 시나리오 J01 입력: `document: Windows resident acceptance artifact`, 실제 scheduled resident, 임의 격리 포트, 30초 목표. 소유자 운영 데이터/자격증명/운영 배포는 변경하지 않음.
+- 증거 폴더: build-artifacts/acceptance-20260925 (gitignore, 비밀 제외). 최초 로그는 Desktop/npm-test-output.txt.
+- 구현 방향: 기존 enrollment ledger/기기 토큰 재사용. 소유자 인증으로 5분 단일 등록 초대 발급, 같은 requestId만 재시도, 만료/취소/재시작 초대 무효, 기기 자격증명은 기존 Stronghold 저장. 초대/장기 키는 상태 파일에 보관하지 않음.
+- 아직 휴대폰 실기기/카메라/최신 APK/Windows 최종 빌드 검증 완료 아님. 이 절은 최종 결과로 대체하지 말고 후속 결과를 덧붙인다.
+
+### §34 중간 확인 갱신
+- `windows-resident-isolated.json`: 실제 Windows PowerShell 5.1 + Task Scheduler, **102 assertions passed**. 설치/재설치/자동 키 생성/ACL/실제 API 문서 생성/결과 SHA/정지/재시작/중복 방지/전체 정지/기기 철회/예약작업 소유권/제거 시 데이터 보존 검증.
+- 앞선 readiness 실패는 빌드 동시 실행 중 발생. 해당 시점 사용 가능 RAM 327,952KB / 총 8,106,488KB, Rust 컴파일러도 0xc0000409. 작업 분리 후 설치 시험 통과. 메모리 부족이 원인이라는 단정 대신 관찰/재현 범위를 유지한다.
+- 핵심 회귀 32/32 pass (`focused.tap`). QR UI의 기존 전체 화면 회귀 통과 (`controller-ui.txt`, Stronghold/카메라 IPC는 모사, 실제 서버 HTTP/파일 사용).
+- 실제 Edge browser에서 375/768/1280 화면·키 입력란 제거·잘못된 QR 피드백·재스캔 가능 확인 (`browser-ui.txt`, pairing-*.png). 실제 유효 초대 QR은 캡처하지 않음.
+- Android build 실행 실패: 생성 프로젝트 없음. `tauri android init --ci` 후 Android SDK/ANDROID_HOME 미설정 경고. 실제 SDK/JDK/ADB/실기기 없음. APK 미생성.
+- Rust cargo check 최초 무제한 및 jobs=2는 컴파일 중 실패/자원 압박. jobs=1로 재시도 중. frontend build 성공을 Windows EXE/APK 성공으로 기록하지 않음.
+- 작업 도중 `docs/BLACKHOLE_PRODUCT_VISION.md`가 외부에서 untracked로 등장. Codex 생성/수정 파일이 아니며 보존.
+
+### §34 최종 로컬 검증 결과 (2026-09-25)
+
+**결론: Windows에서 가능한 구현·실행·빌드·대체 검증은 수행했다. 실제 Android → Tailscale → Windows 전체 완료는 아직 아니다.** APK/실기기/사설 HTTPS 연결 검증은 아래 BLOCKED로 남긴다. 기존 운영 resident 설치, 운영 배포, Git commit/push, 실제 자격증명 교체는 하지 않았다. 격리 시험 예약작업은 제거했고 시험 데이터·키는 보존했다. 작업 중 외부에서 추가된 `docs/BLACKHOLE_PRODUCT_VISION.md`는 수정하지 않았다.
+
+#### 구현한 경로와 변경 파일
+
+- `runtime/lib/native-pairing.mjs`, `runtime/server.mjs`: 소유자 인증으로 발급하는 5분 초대, Android 초대 등록 API. 장기 키와 다른 일회성 등록 범위의 토큰. 같은 enrollment requestId만 재시도, 다른 요청 재사용 거부, 취소/만료/코어 재시작 시 무효. 만료 항목 정리 후 같은 초대 ID를 다시 발급해도 옛 QR 토큰이 되살아나지 않도록 발급별 난수 사용. 초대는 메모리에만 유지한다.
+- `runtime/owner-pairing.mjs`, `scripts/pair-blackhole-phone.ps1`, `.cmd`: 소유자 Windows GUI, 내부 stdin/stdout 파이프의 QR 이미지, 만료·취소 처리. 장기 키/QR 원문을 터미널·로그·채팅에 출력하지 않는다. QR 이미지를 파일로 저장하지 않는다. 한글 경로는 파이프 JSON에서 Unicode escape하여 Windows PowerShell 5.1 코드페이지 문제 해결. 실제 GUI에서 모델 조회와 준비 오류/재시도 확인.
+- `apps/controller/src/native-pairing.ts`, `src/main.ts`, `index.html`, `src-tauri/src/lib.rs`, `src-tauri/capabilities/mobile-pairing.json`, npm/Cargo manifest/lock: Android QR 스캔→PC 주소·만료 확인→기기 등록→기존 Stronghold 저장. 장기 키 입력란 제거. 다른 QR 스캔 시작 시 기존 초대 선택 해제. 실패한 작업에 서버 사유와 새 요청 재시도 안내 표시.
+- `apps/controller/src-tauri/src/local_resident.rs`: Windows 데스크톱 앱은 기본 resident-v2 설치의 알려진 키 경로를 네이티브 코드에서 읽어 loopback으로 등록한다. 프록시/리다이렉트 금지, 10초 타임아웃, 선택한 origin 변경 거부. 장기 키는 네이티브 프로세스 내부에만 있으며 JS에는 기기 전용 인증정보만 전달한다. 기존 암호화 보관소를 재사용한다.
+- `runtime/owner-local-model.mjs`, `runtime/resident.mjs`: 같은 resident-v2의 설치된 Ollama 모델 선택·저장, 재시작 후 적용. 고정 loopback 11434 엔드포인트. 활성 작업이 있으면 설정 저장 거부. 설정 변경으로 자동 실행/AI 모듈을 켜지 않는다. 기존 8792 설정 서버는 별도 desktop-v1 코어이므로 재사용하지 않았다. **이번 설정 UI는 새 소유자 창이며 8792 화면 통합 완료가 아니다.**
+- `scripts/blackhole-resident.ps1`, `scripts/test-resident-windows.ps1`: PS5.1에서 param 기본값의 빈 PSScriptRoot 문제를 본문 초기화로 수정. UTF-8 구성 파일 읽기 명시. 기본 Root 생략 실행도 직접 확인했다.
+- `runtime/lib/backup.mjs`, `scripts/backup.mjs`, `scripts/backup-retention.mjs`: Windows 디렉터리 fsync의 EPERM만 예외 처리. 파일 fsync 실패 및 다른 오류는 계속 전파한다. POSIX 권한 비트 assertion은 Windows에서 제외하되 실제 Windows ACL은 설치 시험으로 검증한다.
+- 회귀 시험 수정: `runtime/test/backup.test.mjs`, `jev.test.mjs`(완료 대기 후 로그 스냅샷), `koyeb-start.test.mjs`, `render-start.test.mjs`(플랫폼 경로), `resident-runtime.test.mjs`, `resident-worker.test.mjs`(현행 자동 키 생성 계약).
+- 추가 검증 파일: `runtime/test/native-pairing.test.mjs`, `apps/controller/test/native-pairing.test.mjs`, `apps/controller/verify-ui.mjs`, `verify-pairing-browser.mjs`, `scripts/verify-resident-local-live.mjs`. Windows 빌드에 필요한 `src-tauri/icons/icon.ico` 추가. 생성된 Tauri schemas는 `.gitignore`에 추가. 디자인 계약은 `apps/controller/DESIGN.md`.
+
+#### 실제 실행한 명령과 결과
+
+아래 최종 Node 명령은 이미 설치된 `C:\Users\우연호\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin`을 **해당 프로세스 PATH에만** 추가했다(Node 24.19.0). 전역 Node/PATH/ExecutionPolicy는 변경하지 않았다. PowerShell `-ExecutionPolicy Bypass`는 실행 프로세스에만 적용했다.
+
+| 실행 | 결과 / 증거 (`build-artifacts/acceptance-20260925/`) |
+|---|---|
+| 요청한 `npm.cmd test 2>&1 \| Tee-Object -FilePath "$env:USERPROFILE/Desktop/npm-test-output.txt"` | 최초 기본 Node 24.11.1에서 실패. Desktop 원본 로그 유지. 성공으로 바꿔 기록하지 않음. |
+| `node --test --test-concurrency=1 --test-reporter=tap runtime/test/*.test.mjs apps/controller/test/*.test.mjs scripts/native-config.test.mjs scripts/android-release.test.mjs` | **1150 tests / 1129 pass / 0 fail / 0 cancelled / 21 skip**. `final-regression-isolated.tap`. Linux flock 등 환경별 21건은 실행한 것으로 세지 않음. |
+| 실패 파일 재검증 `node --test --test-concurrency=1 runtime/test/backup-api.test.mjs runtime/test/scheduler-fix.test.mjs runtime/test/server-integration-hardening.test.mjs runtime/test/studio.test.mjs` | 25/25 pass, `regression-repair.tap`. 이전 전체 실행의 EPERM 1건 및 프로세스/structuredClone 실패는 원본 `final-regression.tap`에 보존. |
+| `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test-resident-windows.ps1 -EvidencePath build-artifacts/acceptance-20260925/windows-resident-final-verified.json` | **102 assertions passed**, 실제 Task Scheduler·HTTP·파일·ACL, sourceCommit=기준 HEAD. `windows-resident-final-verified.json`, `.txt`. 격리 경로/임의 포트 사용. |
+| `node scripts/verify-resident-local-live.mjs` | 실제 Ollama qwen2.5:3b 요청 완료, 산출물 294 bytes, 재시작 후 모델·요청·결과 유지. `resident-local-live.json`. 프롬프트: “자율 임무: 도구를 호출하지 말고, 오늘 할 일 한 가지를 한국어 한 문장으로 제안해줘.” 외부 모델/유료 API 미사용. |
+| `npm.cmd --prefix apps/controller run build` | TypeScript 검사와 Vite 빌드 통과, `controller-final-build.txt`. |
+| `npm.cmd --prefix apps/controller run verify:ui` | 실서버·실파일 + 모사한 native IPC/Stronghold/camera. 등록, 결과 SHA, 앱 UI reload, 오프라인/복구, 정지/재개, 철회, Windows 로컬 연결, 제공자 오류 주입에 따른 실제 실패 작업/사유 표시 통과. `controller-ui-final.txt`. 실제 카메라·OS 보관소 검증이 아님. |
+| `node apps/controller/verify-pairing-browser.mjs` | 실제 Edge 375/768/1280 화면, 넘침 없음, 장기 키 입력 없음, 잘못된 QR/재시도 확인. `browser-ui-final.txt`, `pairing-*.png`. |
+| `cargo test --offline --manifest-path apps/controller/src-tauri/Cargo.toml --lib local_resident` | Windows Rust 브리지→실제 Node 코어 등록/동일 요청 재시도/잘못된 origin 거부: 1/1 pass, `native-local-enrollment.txt`. |
+| `npm.cmd --prefix apps/controller run tauri -- build --debug --bundles nsis` (`CARGO_BUILD_JOBS=1`) | Windows debug EXE·NSIS 생성 성공. `windows-installer-final-build.txt`. libsodium PDB/LIBCMTD 링커 경고 존재, 오류 아님. |
+| Windows EXE 실행·창 캡처·종료 | 실제 BLACKHOLE 화면 확인, `windows-controller-final.json`, `.png`. 자격증명 입력 안 함. 설치 마법사 실행/배포와 다름. |
+| `tauri android build --debug`, `tauri android init --ci` | 실행했으나 SDK/ANDROID_HOME 및 생성된 Android 프로젝트가 없어 빌드 불가. `android-build.txt`, `android-init.txt`. APK 없음. |
+
+추가 원인·경계: 기본 Node의 native exit 3221226505, 일부 Rust 병렬 빌드 실패와 낮은 가용 RAM을 관찰했다. Node 교체/작업 직렬화 후 검증은 통과했지만 모든 실패의 원인을 메모리로 단정하지 않는다. 실제 모델 첫 시험의 8080 기본 endpoint 문제는 11434 명시로 수정했고, 재시작 직후 시험 클라이언트의 stale keepalive 재사용은 새 연결로 검증했다. 원본 실패 증거 파일은 유지한다. NSIS 재빌드 중 EXE 접근 거부 1회 후 재실행 성공. 운영 프로세스를 임의로 종료하지 않았다.
+
+#### 완료표 — 범위를 붙인 상태
+
+| ID | 상태 | 확인한 것 / 남은 것 |
+|---|---|---|
+| W01 / W02 | VERIFIED (격리 Windows) | 실제 무입력 설치·인증 조회·예약작업·키 자동생성·ACL·재설치 보존. 소유자의 운영 경로 설치/로그아웃 후 자동 실행/PC 재부팅 시험은 아님. |
+| P01 | RAN-UNVERIFIED | 실제 소유자 GUI 실행·준비 오류·모델 조회, 실서버 기반 QR PNG 생성/취소 통합 시험 통과. 정상 Tailscale 환경의 GUI QR 표시·스캔 전체는 미확인. |
+| P02 | BLOCKED | Android SDK/JDK/ADB·실기기·Tailscale 연결 없음. 카메라 권한/스캔/Stronghold 저장을 기기에서 확인하지 못함. |
+| P03 | VERIFIED (로컬 API/파서/UI 대체 시험) | 만료·취소·재사용·오류·재시작 무효, 오래된 ID 재발급 시 옛 토큰 거부, 잘못된 QR 피드백/재스캔. 실제 카메라 제외. |
+| J01 | RAN-UNVERIFIED (전체 흐름) | 실제 예약 resident에서 document 작업·산출물 SHA, 실서버 UI의 실행/결과 열기 통과. Android 화면까지 연결된 흐름은 미확인. |
+| J02 | VERIFIED (실제 API/저장 결과) | 동일 requestId가 같은 접수/작업/산출물을 가리키며 중복 실행하지 않음. |
+| R01 | RAN-UNVERIFIED | UI 종료/reload/보관소 어댑터 복구 통과. Android 프로세스 종료·실제 Stronghold 재해독 미확인. |
+| R02 | VERIFIED (실제 Windows 코어) | stop/restart 후 요청·결과·SHA 보존. 불명확한 호출의 자동 재실행 방지는 회귀 시험 통과. PC 재부팅과 구분. |
+| F01 / F02 | VERIFIED (실코어 + UI 대체 시험) | 코어 정지/연결 장애·복구와 실패 상태/이유·수동 새 요청 범위 확인. 제공자 실패는 시험 주입이며 실제 유료 제공자 장애 시험 아님. Android 화면은 미확인. |
+| C01 | VERIFIED (실제 API + UI 대체 시험) | 정지·재개·철회·재등록, 철회 인증 거부. Android 실조작 제외. |
+| M01 | RAN-UNVERIFIED (GUI 전체 시나리오) | 실제 GUI 모델 조회, 모델 저장 브리지 시험, 실제 Ollama 응답·결과·재시작 보존은 각각 통과. GUI 저장 버튼부터 모델 요청까지 한 번에 조작한 시험은 미실행. 8792 UI 통합 아님. |
+| B01 | RAN-UNVERIFIED | Windows EXE 실행과 NSIS 생성 확인. NSIS 설치 마법사 미실행, 최신 Android APK 미생성/실기기 설치 미실행. |
+
+#### 산출물과 다음 한 단계
+
+- Windows 실행물: `apps/controller/src-tauri/target/debug/yeno-controller.exe`
+- Windows 설치 파일: `apps/controller/src-tauri/target/debug/bundle/nsis/BLACKHOLE_0.2.0_x64-setup.exe` (**debug**, 서명된 운영 배포 아님).
+- NSIS는 controller 앱용이다. resident 서비스가 함께 패키징된 통합 OS 설치 파일이라고 주장하지 않는다. resident 설치 진입점은 기존 `scripts/install-blackhole-resident.cmd`, 새 소유자 UI는 `scripts/pair-blackhole-phone.cmd`다.
+- 파일별 실제 SHA-256·크기와 미커밋 소스 목록은 `build-artifacts/acceptance-20260925/source-manifest.json`에 기록. 기준 HEAD 위 미커밋 변경이며 HEAD 자체 빌드라고 표현하지 않는다.
+- 다음 한 단계: **Android SDK/JDK·SDK 라이선스 및 Tailscale 로그인/실기기 연결 환경을 준비한 뒤 이 소스로 APK를 만들어 P02→J01→R01/F01 실기기 시험을 닫는다.** 약관 동의/계정 로그인은 자동 수행하지 않았다. 로컬에서 가능한 명령을 사용자에게 떠넘긴 것이 아니라, 빌드 시도와 대체 시험까지 수행한 뒤 남긴 환경·기기 경계다.
+## §35 제품 목적·Obsidian 근거 대조 (2026-09-25, Codex)
+
+- 시작 재확인: 실제 Windows 경로·origin·branch·HEAD는 §34와 동일(43a2d1b44e0a60ebad4982dc1e2222213869cc1a). §34의 기존 미커밋 코드·테스트·문서 및 외부 작성 비전 문서를 보존한 채 진행. 이번 변경은 문서와 로컬 증거 기록이며 기능 구현이나 테스트 재실행 결과를 새로 주장하지 않는다.
+- 실제 Vault `C:\Users\우연호\Documents\Obsidian Vault` 접근 확인. `AGENTS.md`, `AI_OPERATING_RULES.md` 전체, `CLAUDE.md` 규칙 버전 확인(모두 2), `CHANGELOG.md` 관련 최근 이력을 먼저 확인. 루트 허브·JARVIS/HOMUNCULUS 노트, NEXT_DELIVERY의 목표/D03/납품 단계, 통합 실행계획의 시스템 경계/P1–P4 및 해당 분할본, CORRECTED 출처 경계 부분을 읽었다. 큰 노트 전체·모든 링크·과거 대화 원문을 다 읽었다는 주장은 하지 않는다.
+- `docs/BLACKHOLE_PRODUCT_VISION.md` 기존 바이트를 보존하고 보완 절을 덧붙였다. PC/휴대폰 한 요청의 끝까지 수행, 시간·비용·이름·전문성·성과, 재사용 기억, 근거 출처 표, 역할별 확인 코드 위치, Vault 정책, 우선 수락 이후 단계별 확장 원칙을 기록했다. 실행 상태/시험 수치는 비전 문서에 추가하지 않았다.
+- 현재 코드의 정적 대조(이번 새 실행 검증 아님): `server.mjs`의 voice→목표 선택/Shadow dispatch와 Kirby 접수 배선 존재. `shadow-army.mjs`는 scout/researcher→builder→verifier/semanticVerifier의 제한된 그래프이며 범용 무제한 작업 분배로 과장하지 않는다. `kirby.mjs` 자동 획득은 검토된 manifest와 시험/활성화 경로이며 임의 능력 흡수 아님. 기억 검색/임베딩은 별도 모듈이다. `seven-drives.mjs`의 기존 ID/라벨 매핑을 유지한다. `jev-recovery.mjs`의 `authorizesDispatch:false` 계약과 `jev-recovery-verifier.mjs`의 도구 없는 근거 검토를 확인했다. 하나의 실기기 임무에서 모든 구성의 통합 완성을 증명한 것은 아니다.
+- Obsidian 기존 구현 발견: `runtime/lib/obsidian-exporter.mjs`, `memory-sync-outbox.mjs`, 서버의 export/outbox 배선, 대응 테스트 파일 존재. 기본 비활성, 기본 하위 폴더 `01_DRAFTS/BLACKHOLE`, 단방향 내보내기다. 실제 사용자 Vault 동기화를 켜거나 시험하지 않았다. 후속 검토 항목: 사용자 지정 subtree가 01_DRAFTS 밖을 허용하는 점, `exportGenerated`의 기존 생성 색인 갱신 경로는 이번 새 초안만 생성 정책과 대조/제한해야 한다. 파일 존재를 이유로 동기화 완료라고 보고하지 않는다.
+- Vault 변경은 CHANGELOG 추가 기록만 수행. 정리 결과는 저장소 비전 문서로 충분하므로 중복 초안/허브 링크/분류를 새로 만들지 않았다. `00_INBOX_RAW`와 기존 노트는 수정하지 않았다. 전후 파일 해시 비교 증거는 `build-artifacts/acceptance-20260925/vault-vision-verification.json`; 기존 비전 원문 사본은 `product-vision-before-obsidian.md`. 이 증거는 문서 보존 확인이며 제품 기능 테스트가 아니다.
+- 환경 재확인: 현재 PATH에서 adb/java/sdkmanager/tailscale 미발견, 기본 `AppData/Local/Android/Sdk`와 `Program Files/Tailscale/tailscale.exe` 없음. 모든 디스크의 임의 설치 경로 부재까지 단정하지 않는다. Android SDK/JDK 로컬 설치·SDK 약관 동의 승인을 질문했고 답변 대기 중. 설치/약관 동의/계정 로그인/방화벽/동기화 설정 변경 없음. §34의 실기기 BLOCKED는 해소되지 않았다.
+- 다음 행동: SDK 설치·라이선스 동의 승인 후 로컬 Android 빌드 준비를 진행하고 같은 소스의 APK/실기기 요청·복구를 검증한다. 사용자 지시대로 장기 기능 확장을 먼저 시작하지 않는다. 이전 빌드 source-manifest는 §34 시점의 스냅샷으로 보존한다(이번 문서 변경으로 재작성하지 않음).
+## §36 — 소유자 승인: Android SDK/JDK 설치 및 라이선스 동의 (2026-09-25)
+
+**요청 출처**: §35에서 Codex(로컬, PC 직접 실행)가 Android 실기기 빌드 준비를 위해 Android SDK/JDK 로컬 설치와 SDK 라이선스(사용권 계약) 동의에 대한 소유자 승인을 요청하고 대기 중이었음.
+
+**소유자 응답**: 우연호님이 이 세션(Claude Cowork)에 "SDK/JDK 설치하고 라이선스 동의해"라고 명시적으로 승인함. 계정 생성·로그인·결제·방화벽 변경·동기화 설정 변경은 이 승인 범위에 포함되지 않음(§35에서 Codex가 구분한 그대로, 별도 항목).
+
+**이 세션의 한계**: 이 세션(Claude Cowork)은 Windows PowerShell/설치 프로그램을 직접 실행할 수 없어(터미널은 click-tier만 가능, 타이핑 불가 — §28 참조), 이 승인을 대신 실행할 수 없음. 이 §36 기록은 승인 사실을 공동 실행 기록에 남기는 것이며, Codex가 실제로 설치·라이선스 동의를 진행하려면 Codex 자신의 세션(채팅 창)에서도 동일한 승인을 직접 확인해야 할 수 있음.
+
+**후속**: Codex는 이 승인을 근거로 Android SDK/JDK 설치 및 라이선스 동의를 진행하고, 실행한 정확한 명령·버전·설치 경로·라이선스 동의 방식을 RAN/VERIFIED 근거와 함께 다음 § 항목에 기록할 것.
+
+## §37 Android 도구 설치·빌드 재개 (2026-09-25, Codex — 진행 중)
+
+- §36에 기록된 소유자 승인과 이번 대화의 진행 요청을 확인해 SDK/JDK 설치·SDK 라이선스 동의를 재요청 없이 진행한다. 계정 생성/로그인/결제/방화벽/동기화 설정은 승인 범위에서 제외한다.
+- 시작 상태: origin/branch/HEAD는 §34와 동일. 기존 미커밋 변경을 보존. 디스크 여유 약 200GB.
+- 공식 출처: https://learn.microsoft.com/en-us/java/openjdk/download 와 Google https://dl.google.com/android/repository/repository2-1.xml. 저장소 Android workflow와 동일한 SDK/NDK 계열을 선택했다.
+- JDK: `https://aka.ms/download-jdk/microsoft-jdk-17.0.20.1-windows-x64.zip`, Microsoft 공식 SHA256 파일과 다운로드 일치(3d9006956fc8af5601cd24ffc4f468bef48279c7ebd8171b9bdf90d0aabfbf1f). `C:\blackhole-build-tools\java\jdk-17.0.20.1+1`에 압축 해제, `java -version`으로 17.0.20.1 실행 확인.
+- Android command-line tools: `https://dl.google.com/android/repository/commandlinetools-win-12266719_latest.zip`, 공식 repository XML SHA1 32787c10f55911fd109848906b1275723e79f659와 일치. `C:\blackhole-build-tools\android\cmdline-tools\latest`에 배치.
+- SDK 설치 명령: `sdkmanager.bat --sdk_root=C:\blackhole-build-tools\android "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;28.2.13676358"`. 선택한 패키지 설치의 라이선스 프롬프트에 승인된 `y` 입력을 stdin으로 전달. 정확한 동의/설치 출력은 `build-artifacts/acceptance-20260925/android-sdk-install.txt`. 완료 여부는 다음 확인에 기록.
+- `rustup target add aarch64-linux-android` 실행. 기존 기본 Rust toolchain을 전환하지 않는다. JAVA_HOME/ANDROID_HOME/PATH는 빌드 프로세스에만 설정, 전역 환경 설정 변경 없음.
+### §37 실행 결과·현재 재개 조건
+
+**VERIFIED — 설치/실행한 도구**
+- Windows JDK 17.0.20.1+1, command-line tools 16.0(12266719), platform-tools 37.0.1(ADB 실행 확인), SDK 플랫폼 35·36, build-tools 35.0.0·36.0.0, NDK 28.2.13676358, Rust 1.98.0의 aarch64-linux-android 표준 라이브러리. SDKManager 종료 코드 0 및 설치 파일/버전 대조. SDK 36은 Tauri가 실제 생성한 compileSdk/targetSdk 36에 맞춰 추가했다.
+- 공식 라이선스 프롬프트에 stdin으로 `y`를 전달했고 SDK의 `licenses/android-sdk-license` 생성 확인. 우연호님 승인 범위의 SDK 약관 동의이며 계정/방화벽/공개 배포 승인으로 확장하지 않음.
+- 설치 경로와 체크섬: `build-artifacts/acceptance-20260925/android-toolchain.json`. 도구는 C:\blackhole-build-tools, Java/SDK/PATH/Gradle cache 지정은 실행 프로세스 범위. 기존 전역 환경/기본 Rust toolchain 전환 없음.
+
+**RAN — Android 프로젝트 및 빌드 시도**
+- `npm.cmd --prefix apps/controller run tauri -- android init --ci --skip-targets-install`: 실제 Android 프로젝트 생성 성공. 기존 `tauri.android.conf.json`에 따라 별도 시험판 `kr.yeno.controller.smoke`, versionCode 2001 사용. 기존 앱 데이터/서명을 바꾸지 않음.
+- `node scripts/android-release.mjs permissions`: 생성 manifest에 기존 RECORD_AUDIO 경로 적용. 실제 휴대폰 권한 부여를 수행한 것은 아님.
+- 생성된 ignored Gradle 설정에 heap 768MB, workers 1, parallel false, Kotlin in-process, 한글 경로 검사 override 추가. 공식 gradle-8.14.3-bin.zip.sha256을 wrapper의 distributionSha256Sum에 지정. 이 설정은 생성 빌드 폴더만 변경하며 전역 설정 아님.
+- `npm.cmd --prefix apps/controller run tauri -- android build --debug --apk --target aarch64 --ci` 첫 시도 실패: Rust std mmap가 Windows OS error 1455(페이징 파일/가상 메모리 부족)로 실패한 뒤 다수 연쇄 타입 오류. `android-build-local.txt`.
+- `CARGO_BUILD_JOBS=1`, `CARGO_PROFILE_DEV_CODEGEN_UNITS=1` 재시도는 위 지점을 통과했지만 `libsodium-sys-stable 1.24.0`이 Unix `./configure`를 Windows에서 실행하다 OS error 193으로 실패. `android-build-low-memory.txt`. Stronghold를 제거하거나 암호화를 약화하는 수정은 하지 않음.
+
+**WSL 대안 준비와 실제 차단**
+- 기존 등록된 Ubuntu 26.04 LTS(WSL2)를 조회하고 shell 실행 확인. 새 배포판·계정 생성 없음. 기존 Ubuntu는 첫 verbose 확인에서 Stopped였음.
+- Windows 빌드를 유지하며 libsodium만 Android ARM64로 교차 빌드하는 좁은 대안을 준비했다. WSL 내부 `apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential unzip` 실행은 인덱스 다운로드 도중 exit 1로 중단됨. **build-essential/unzip 설치 완료라고 기록하지 않는다.** `wsl-build-tools.txt`.
+- Linux NDK r28c archive 722,261,334 bytes 다운로드와 Google repository SHA1 a7b54a5de87fecd125a17d54f73c446199e72a64 대조 완료. 아직 WSL 압축 해제/실행 확인은 하지 않음.
+- 해당 crate가 서명 검사 후 configure까지 진행한 libsodium 소스 archive를 보존: SHA256 b20a92e7ec25b285eafa349d721a5bb27e3a8ba94c0816630a127883f1d1b3ab. C:\blackhole-build-tools\build-sodium-wsl.sh 작성(아직 실행하지 않음). 외부 임의 바이너리를 앱에 삽입하지 않음.
+- 시스템 이벤트 2004에서 가상 메모리 부족 확인. 22:57:23 KST 기록에 Notepad.exe PID 26068 약 8.50GB, vmmem 약 3.23GB, vmmemWSL 약 2.06GB 사용. 시스템 commit 약 31.6GB / 한도 34.1GB, pagefile 24GB. `android-memory-events.json`. 모든 라이브러리 문제를 메모리로 뭉뚱그리지 않음: Windows native configure 193은 별도 host 호환성 문제다.
+- 사용자 문서 손실을 피하려고 Notepad 강제 종료·임의 저장·페이지 파일 변경·WSL 종료를 하지 않았다. 메모장 문서를 저장하고 닫을 수 있는지 질문했으며, 응답을 승인으로 가정하지 않는다.
+
+**BLOCKED / 미완료**
+- APK 아직 생성되지 않음. Android 실기기 ADB 연결 수 0(`android-device-status.json`), 카메라/Stronghold/휴대폰 E2E 미검증. Tailscale 계정 로그인/네트워크 설정 변경도 하지 않음.
+- 현재 바로 필요한 다음 한 단계: 사용 중인 메모장 문서를 안전하게 저장·종료해 메모리 여유를 확보한 뒤 WSL build-essential/unzip 준비→libsodium ARM64 archive→Windows APK 빌드를 재개. 종료 허가 없이 사용자 앱을 끄지 않는다. SDK/JDK 설치·약관 동의는 이미 완료했으므로 다시 승인받을 항목이 아니다.
+- 이번에는 기존 전체 회귀/Windows 102개 검사/실제 Ollama 시험을 재실행하지 않았다. §34 결과를 현재 새 실행으로 표기하지 않는다. 실행 코드 변경 없이 설치·빌드 준비·실패 분석만 진행했다. 기존 코드/문서/원본 데이터/비전 문서 보존, Git commit/push/운영 배포 없음.
+## §38 메모장 정상 종료 후 Android 빌드 재개 (2026-09-26, Codex)
+
+- 사용자 직접 승인: “메모장닫고 이어서해줘”. origin/branch/HEAD 기준값 일치, 시작 미커밋 변경 전부 보존.
+- 메모장 PID 26068, codex-p3-port-20260924.bundle 창 확인. 잠금 화면 때문에 Computer Use Alt+F4는 활성화 실패. 프로세스 CloseMainWindow() 정상 종료 요청 True 후 메모장 프로세스 소멸 확인. 강제 종료/원본 파일 저장·삭제/잠금 해제 없음. commit 31,388,471,296 → 22,833,184,768 bytes.
+- WSL apt-get update 및 build-essential/unzip 설치 재시도 exit 0. 증거 wsl-build-tools-resume.txt. 기존 준비된 build-sodium-wsl.sh를 실행하여 Android ARM64 정적 라이브러리 빌드 진행 중. 결과는 아래에 추가한다.
+### §38 중간 확인
+- libsodium ARM64 빌드 exit 0. llvm-readobj 출력 ELF64/AArch64 확인. liblibsodium.a SHA256 affea821873499d81bc62ecd2cc4d9603aea8b3b3a2fd25a5c28a8e05f1b3f98. Windows build.rs의 SODIUM_LIB_DIR static link 경로를 사용, Stronghold 유지.
+- Android 재시도: 컴파일 후 NDK clang.cmd 링크에서 한글 경로 CP949 인코딩 오류. CARGO_TARGET_DIR=C:\blackhole-build-tools\cargo-android-target로 산출물 경로 문제 해결 후 .rustup 표준 라이브러리 경로에서 동일 오류 확인. 원본을 이동하지 않고 C:\blackhole-build-tools\rustup-link junction 및 Android target 전용 --sysroot 지정으로 재시도 중. 경로 별칭만으로 rustc 기본 sysroot가 바뀌지는 않아 명시 플래그 사용.
+- 전체 회귀 재실행: node --test --test-concurrency=1 runtime/test/*.test.mjs apps/controller/test/*.test.mjs scripts/native-config.test.mjs scripts/android-release.test.mjs. 1150 total / 1129 pass / 0 fail / 21 skip / 0 cancelled, exit 0, 384초. resume-regression-20260926.tap. npm test와 동일한 테스트 파일 범위, 메모리 절약을 위해 동시성 1 지정.
+- npm --prefix apps/controller run verify:ui exit 0. 실제 서버 + 모의 native IPC/Stronghold/카메라 대체 검사, 실기기 검증 아님. controller-ui-resume.txt.
+- adb 연결 0, git diff --check exit 0. android-devices-20260926.json.
+- Tauri CLI 2.8.4 공식 소스의 configure_cargo가 CARGO_TARGET_*_RUSTFLAGS를 덮어쓰는 것을 확인(보존 reference 파일). target 플래그 시도는 적용되지 않아 실패. RUSTFLAGS에 --sysroot 및 -C link-arg=-Wl,-z,max-page-size=16384를 지정해 재시도, 실제 rustc 프로세스 명령에 ASCII sysroot 반영됨 확인. 성공 판정은 APK 검사 이후에만 한다.
+### §38 완료 결과 — APK 빌드 완료, 실기기 흐름은 미완료
+
+**VERIFIED (이번 실제 실행)**
+- `. build-artifacts/acceptance-20260925/android-build-env.ps1` 후 `npm.cmd --prefix apps/controller run tauri -- android build --debug --apk --target aarch64 --ci`: exit 0. 실제 성공 로그 android-build-explicit-rustflags.txt. Rust native compile/link 및 Gradle APK 생성 완료. Gradle 8.14.3 최초 준비와 플러그인 요구 SDK 34 설치 완료(기존 승인된 SDK 라이선스). deprecated API/Gradle 9 비호환 경고가 있으며 이번 Gradle 8 빌드는 성공.
+- 실제 산출물 원본: apps/controller/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk.
+- 전달용 동일 바이트 사본: C:\blackhole-build-tools\artifacts\BLACKHOLE-smoke-0.2.0-arm64-debug-20260926.apk. 64,202,081 bytes, SHA256 f21e85987357ccd26df6e52fec8361461e59197ac1b3ca2dd67fe3dcd6be1be1. original/copy 해시 일치.
+- apksigner verify --verbose --print-certs exit 0: Android Debug 서명, v2 true. aapt dump badging exit 0: kr.yeno.controller.smoke, 0.2.0/versionCode 2001, minSdk 28, targetSdk 36, arm64-v8a, CAMERA/RECORD_AUDIO 권한 포함.
+- zipalign -c -P 16 -v 4 exit 0. llvm-readelf -l에서 모든 LOAD 0x4000 정렬. APK 내 libyeno_controller_lib.so와 빌드 파일 SHA256 일치 ae871a2a07909d487ece2df13c3f0262aa0e7e2b873c3c7def14d25050a9d0c1. 파일명 universal은 생성기 명명이며 포함 ABI는 arm64-v8a 하나다.
+- 변경 소스/산출물 추적: android-apk-manifest-20260926.json(현재 HEAD 위 미커밋 controller 소스 파일 해시), android-native-in-apk.json, android-apk-signature.txt, android-apk-badging.txt, android-apk-alignment.txt, android-native-program-headers.txt. 이전 §34 manifest는 보존.
+- 전체 회귀 1129 pass / 0 fail / 21 skip, 컨트롤러 UI 대체 검증 exit 0는 위의 이번 실행 결과. Windows 102개 설치 검사와 실제 Ollama 실행은 §34의 이전 증거이며 이번 재실행으로 표시하지 않는다.
+
+**RAN-UNVERIFIED / BLOCKED 경계**
+- APK는 빌드·정적 패키지 검증 완료, 휴대폰 설치/실행은 미실시. Android Debug 시험판이며 운영 배포/스토어 릴리스 아님.
+- adb 연결 수 0으로 실제 휴대폰 설치·카메라 QR·Stronghold 저장·요청→PC 실행→휴대폰 결과·앱 종료 후 복구·오프라인 복구는 BLOCKED/미검증. 네트워크 로그인/방화벽 변경/카메라 권한 승인 등을 대신 수행하지 않았다. 브라우저/native mock 검증은 이 간극을 닫지 않는다.
+- 이번 변경: docs/CLAUDE_EXECUTION_STATE.md 및 ignored 빌드 환경/증거/생성 산출물, C:\blackhole-build-tools의 도구·라이브러리·경로 별칭. 기존 제품 소스·비전·Vault 원본 보존. 운영 배포/원본 데이터 삭제/자격증명 교체/Git commit/push 없음.
+- 다음 한 단계: 실제 Android 휴대폰을 PC에서 접근할 수 있게 연결한 뒤 위 시험 APK를 설치하고 P02→J01→R01/F01 실기기 수락 시험을 실행한다. SDK/JDK/약관 동의는 이미 완료되어 재승인 대상 아님. 사용자는 터미널 명령을 실행할 필요가 없으며, 기기 연결·기기 측 승인만 필요하다.
+## §39 R3 원장 직접 대조·M1 자료→기억→다음 행동 연결 (2026-09-26, Codex)
+
+### 인수한 목적과 범위
+BLACKHOLE은 연호님의 입력·의도·개별 제품/작품/사업/연구를 지속 기억에 연결하고, 승인된 실행·검증·재사용으로 진전시키는 개인 AI 운영체제다. 폰 연결은 사용 접점 하나이며 전체 목적의 대체물이 아니다. 1,117행은 독립 사업 1,117개나 구현 완료 수가 아니다. 원래 ID·목표·별칭·후속 정정·취소·과거 AI 제안 상태를 보존한다. 과거 제안/회수 원문을 새 실행 승인으로 취급하지 않는다.
+
+### M0 / 패키지 직접 확인 — VERIFIED
+- 실제 root C:\Users\우연호\Documents\Projects\yeno-os, origin https://github.com/wooyeonho/yeno-os.git, branch blackhole/p3-jev-recovery-port-20260924, full HEAD 43a2d1b44e0a60ebad4982dc1e2222213869cc1a. 시작 dirty 40건. 기존 변경 보존, reset/checkout/commit/push 없음. 현재 worktree 1개. 시작 목록·현재 파일별 해시: build-artifacts/handoff-r3-20260926/starting-git-status.txt 및 CURRENT_RUNTIME_MANIFEST.json.
+- Vault AI_OPERATING_RULES/AGENTS/CLAUDE 모두 rules_version 2. CHANGELOG (38)의 두 frontmatter 수정, (39)의 이전 5폴더 보관, (40)의 89건 정정을 읽었다. 저장소 AGENTS·현재 실행 기록 §38 및 관련 코드/테스트를 대조했다. 00_START_HERE → 02_RECHECK_RESULTS → 07_OPEN_GAPS → evidence_base/13_OWNER_INTENT와 01_CODEX_EXECUTION_HANDOFF, 08_CURRENT_INPUTS_AND_CORRECTIONS를 읽고 M0~M5에 연결했다.
+- ZIP 실제 SHA256 797b5c73cc3af4bbea1dc841b30b8e0207a9f05d136635c39249788cfbeec464 일치. 압축 내 766파일, PACKAGE_SHA256 765개 전부 일치. Vault 정본 766파일, 누락/추가 0. 불일치 두 파일(00_START_HERE.md/01_ALL_IDEAS.md)은 ZIP 바이트에서 vault_applied: false→true 한 번 치환한 결과와 정확히 일치. 복사/압축 해제/Vault 갱신을 하지 않음.
+- 전체 JSON·CSV·HTML 파싱: 각 1,117개, ID 고유/순서 일치. CSV의 6개 문자열 필드와 source_refs/related_ids JSON 필드까지 전체 JSON과 일치. HTML은 original_record/detailed_audit 제외한 JSON 투영과 정확히 동일. 기준 849개 original_record 필드 존재 및 전부 동등 보존, 추가 268·삭제 0·JSON 변경 210. 검증 스크립트/결과: verify-package.py, package-verification.json. 전 항목 ID·목표/다음행동 해시·근거 포인터 색인: idea-index.json. 이 구조/무결성 확인을 1,117개 목표 전체의 의미 검토 완료로 확대하지 않음.
+- 외부자료 상태 직접 집계: 89 = unread 59 / partial 19 / unavailable 11. 전체 대화 export 완료/의미 누락 0을 주장하지 않음. 기존 849개 원본·추가 268개 상태 구별. SilverGuardian≠한끼안부, Synapse 두 기획 분리, 계절안부≠A03/A04, 프롬프트 마켓→Gyeol은 계보 증거만이라는 경계 유지.
+- 현재 PC 재확인: 8790/8792 listener 미발견, Ollama 11434 listener 확인, BLACKHOLE 이름의 예약 작업 0, ADB 연결 0, Tailscale PATH 미발견(전체 디스크 설치 부재를 단정하지 않음). §38 APK 파일 존재 및 SHA256 f21e85987357ccd26df6e52fec8361461e59197ac1b3ca2dd67fe3dcd6be1be1 재확인. §38의 빌드/이전 설치 시험은 현재 운영 resident가 설치·실행 중이라는 증거가 아님.
+
+### 이번 코드 변경과 실제 결과
+- 공백: sources 등록/중복 방지/검토/조회/브리핑 및 memory-events는 기존 구현. 그러나 일반 대화의 recallMemories는 memoryEvents/legacy notes만 회수하여 자료의 최신 review를 직접 사용하지 않았다.
+- runtime/lib/memory-recall.mjs: 기존 sources를 회수 후보로 추가하고 alias/application/summary에서 관련 자료를 찾음. prompt에 source ID·버전·읽기/결정/구현 상태·원본 역추적 URL을 별도 표기. 기존 source 기억 이벤트는 삭제하지 않고 보존하되, 현재 source가 존재하면 오래된 source snapshot 대신 최신 source review를 회수. episode/decision/result 기억은 그대로 유지. 최대 5개/각 텍스트 400자 제한, 지시 아닌 자료 표시 유지. 새 job/memory/auth 저장소·운영 마이그레이션 없음.
+- runtime/test/source-memory-recall.test.mjs: 먼저 2개 신규 시나리오 실패를 재현(source-recall-red.txt), 수정 후 통과. 실제 HTTP 코어를 통한 네 입력 접수→기억/문서→재시작→재질의→수정→충돌/부적격 승격 거부 시나리오 추가. 관련 sources/backup/voice-embedding/기억 검사 29 pass / 0 fail (m1-focused.txt).
+- scripts/verify-source-intake-live.mjs: 기존 API만 사용하는 반복 가능한 로컬 수락 실행기. 새 출력 디렉터리만 사용하고 비밀은 메모리에서만 전달, 운영 저장소/Vault 접근·배포 없음. 네 입력 fixture는 원장 EXTRA-134~137, INTAKE-20260926-01~04, 원래 URL·의도·다중 목적지 후보·근거 상태와 파일 SHA를 연결했다. 전체 1,117행을 잘라 네 건만 남긴 것이 아니며 전체 원장은 읽기 전용으로 유지한다.
+- 실제 명령: node scripts/verify-source-intake-live.mjs build-artifacts/handoff-r3-20260926/four-inputs.json build-artifacts/handoff-r3-20260926/m1-live qwen2.5:3b. exit 0. 실제 loopback HTTP 코어 + 디스크 저장 + 실제 Ollama 로컬 생성 1회. 새 입력마다 source→memoryEvent→document job→artifact ID/해시 연결, 중복 import 4건 재사용, 두 차례 재시작 후 다른 별칭 검색/최신 수정 회수 성공. 기존 revision 수정 409, partial 자료 candidate 승격 400 확인. ALL 4 / QUEUED 4 / NOW 0 / BLOCKED 0; 자동 운영 false, 외부 memory outbox 0.
+- 수정 시험은 격리된 코어에서 테스트용 다음 행동을 변경한 것이며 사용자가 실제 프로젝트 우선순위를 새로 결정한 것으로 기록하지 않는다. 저장 결과와 전체 계보: m1-live/report.json, 네 개 EXTRA-134~137-next-action.md, current-recall.txt. 실제 Ollama 응답 local-model-recall.md는 수정한 깊이 가림 조건과 엔진 등 미확인 사항을 응답했다. 생성 산출물은 SHA 확인했지만 독립 의미 Verifier/M2 완료는 아님. 이번 회수는 키워드/별칭 기반이며 임베딩 의미 검색이나 모델 가중치 학습이라고 보고하지 않는다.
+- 네 Instagram 원페이지 재열람을 실제 시도했으나 모두 fetch throttled. 우회하지 않음. 인계의 부분 관찰을 partial로 보존하며 이번 직접 영상 시청/코드 확인으로 승격하지 않음. 원문의 창작자 주장/관찰/추론은 fixture evidenceSection에 별도로 유지했다.
+
+### 전체 실행 지도와 남은 조건
+| 단계 | 이번 연결·근거 | 미완료/다음 결과 |
+|---|---|---|
+| M0 | 실제 저장소·환경 manifest, 1,117행 무결성/보존 확인 | 각 항목을 현재 코드/산출물에 의미 단위로 연결하는 전수 감사는 미완료 |
+| M1 | 네 입력의 기존 source/memory/job/artifact·재시작·수정 회수, 실제 로컬 응답 | 원페이지 전체 재열람·운영 resident 적용은 미완료. 다중 연결은 application에 후보/이유로 보존하며 실제 projectId 그래프로 확정하지 않음 |
+| M2 | 브리핑 문서와 재사용 가능한 intake 실행기 생성 | Shadow 역할 분담→독립 검증→Kirby 채택→두 번째 과제 재사용/개선 측정은 아직 이 입력에 실행하지 않음 |
+| M3 | §38 APK/Windows 산출물 보존, 이번 APK 해시 재확인 | 휴대폰 연결 0, 설치/QR/Stronghold/폰 요청·결과·복구 실기기 대기. M1 작업은 계속 진행함 |
+| M4 | 기존 requestId/백업/검토 충돌 경계 재사용·관련 회귀 | 사용자 실제 운영 업그레이드/복원 실사용은 이번 실행 아님 |
+| M5 | 모든 ID·원래 목표·제안/취소 상태와 evidence pointer 유지 | 50+추가 아이디어의 개별 제품/사업 완료를 주장하지 않음. 동명·유사명 자동 병합 없음 |
+
+- 다음 구체 결과: EXTRA-136(공간 연출)의 원래 목표를 유지한 독자 에셋 기반 최소 장면/가림 조건 시험을 기존 코드 작업·산출물·검증·기억 계보에 연결하고, 결과를 같은 절차로 다른 입력에 재사용해 M2 근거를 만든다. 이는 현재 의존성이 준비된 로컬 초안 후보 선택이며 네 영상의 원래 사업/제품 전체 목적이나 전체 원장을 대체하지 않는다. 실제 기기가 연결되면 M3 수락을 이어간다.
+- 이번 수정 파일: runtime/lib/memory-recall.mjs, runtime/test/source-memory-recall.test.mjs, scripts/verify-source-intake-live.mjs, 이 실행 기록. 기존 미커밋 변경·비전 문서 보존. Vault/원문/허브/분류/CHANGELOG 무수정. SDK/JDK 라이선스 재승인 요구 없음. 실제 권한/자료 경계는 영상 원문 접근과 Android 연결이며 운영 배포/데이터 삭제/자격증명 교체는 수행하지 않음.
+### §39 최종 검증 결과
+- 전체 회귀 실제 재실행: `node --test --test-concurrency=1 runtime/test/*.test.mjs apps/controller/test/*.test.mjs scripts/native-config.test.mjs scripts/android-release.test.mjs` (Node 24.19.0). **1153 total / 1132 pass / 0 fail / 21 skip / 0 cancelled**, exit 0, 376초. build-artifacts/handoff-r3-20260926/full-regression.txt. §38의 1129 통과에 신규 3개 시나리오가 추가된 결과이며 skip을 실행 통과로 세지 않는다.
+- `git diff --check` exit 0. controller 소스/빌드는 이번에 바꾸지 않았고 APK 재빌드를 했다고 주장하지 않음. 변경은 Windows 코어의 자료 회수 연결이다.
+- Vault 전후 해시: 일반 경로로 주소 가능한 2855개 파일의 추가/삭제/변경 0. 이전 보관본 3개가 1/1/2파일 부족해 보였던 원인은 Windows 긴 경로 제한이었다. `\\?\` 확장 경로로 다시 확인하여 Vault 전체 2859개, 보관본 **126/561/564/586/6** 확인. 처음 snapshot에서 제외된 긴 경로 4개는 각 보관본 PACKAGE_SHA256와 전부 일치. 실제 누락으로 기록하지 않는다. vault-final-extended-verification.json이 최종 판정이며 archive-readonly-check.json의 일반 경로 미발견은 확장 경로로 해소됐다. Vault 쓰기 0, CHANGELOG 무수정.
+- 직접 여는 결과: build-artifacts/handoff-r3-20260926/m1-live/INDEX.md. 네 최초 브리핑과 수정 이후 current-recall.txt/local-model-recall.md를 분리 보존. 외부 페이지 미열람, 후보 관계, 키워드 회수, 실제 로컬 생성, 독립 의미 검증 미실시를 명시.
+- VERIFIED: 패키지/원장 대조, 기존 변경 보존, 자료→기억→문서/해시→재시작/수정 회수, 실제 로컬 생성·회귀. RAN-UNVERIFIED: 네 원페이지 열람 시도(throttled), 생성 답변의 독립 의미 검증·효과 향상. BLOCKED: 실제 Android 연결·카메라/기기 승인 경계. 학습/QPU나 제품/사업 전체 완성으로 확대하지 않는다.
+## §40 M2 실제 로컬 Shadow 실행과 진행 상태·자료 범위 교정 (2026-09-26, Codex)
+
+### 기준과 범위
+- 시작 및 종료 시 저장소 root C:\Users\우연호\Documents\Projects\yeno-os, origin https://github.com/wooyeonho/yeno-os.git, branch blackhole/p3-jev-recovery-port-20260924, HEAD 43a2d1b44e0a60ebad4982dc1e2222213869cc1a 일치. 기존 §39 dirty 43건 보존. 이번 종료 status 47건. reset/checkout/commit/push 없음.
+- 실제 adb C:\blackhole-build-tools\android\platform-tools\adb.exe devices -l: 연결 0. Android 실기기 P02→J01→R01/F01은 여전히 BLOCKED. 이 작업은 격리된 loopback 코어와 로컬 Ollama만 사용하며 운영 resident/배포/Vault는 수정하지 않았다.
+- 기준 입력은 §39의 four-inputs.json 중 EXTRA-136. 원장·원 URL/부분 관찰/미열람 상태를 유지하고 사용자 채택 또는 영상 원문 검증으로 승격하지 않았다.
+
+### 발견 및 변경
+- 첫 격리 실행에서 missionStatus가 scout/researcher queued임에도 builder의 정상 dependencyPending을 먼저 읽어 phase=blocked로 표시했다. runtime/lib/shadow-army.mjs에서 활성 queued/running을 정상 의존성 대기보다 먼저 판정하도록 수정했다. providerMissing 등으로 실행 가능한 worker가 없으면 blocked가 유지된다. runtime/test/shadow-army.test.mjs에 red→green 회귀 추가.
+- 실제 모델 호출에서 Shadow 작업은 project_read/project_sources를 제공받지 못했고, 공식 GitHub release 전용 source_read_release를 Instagram 소스 ID에 시도했다. runtime/lib/agent-engine.mjs가 Shadow 담당 프로젝트의 불변 스냅샷 및 그 프로젝트 소스의 title/URL/readingStatus/decision/summary/application/riskNotes만 읽게 변경했다. 다른 프로젝트의 자료는 제외. 공식 release가 담당 프로젝트에 없으면 release reader를 제시하지 않고, Shadow 모델 도구 목록은 담당 프로젝트 자료 도구로 제한한다. 일반 agent와 기존 project bot의 도구 목록은 해당 회귀 시험으로 확인했다.
+- 로컬 qwen2.5:3b는 프로젝트 자료를 읽는 여러 모델 턴에 기존 90초 제한이 짧아 unknown 호출을 남겼다. runtime/server.mjs에서 **로컬 provider의 Shadow 작업**에만 최대 300초를 부여했다. 다른 provider 및 일반 작업 제한 90초는 유지. 결과가 unknown인 기존 호출을 재전송하지 않았다.
+- scripts/verify-source-shadow-live.mjs 신규. 매번 새 출력 폴더/격리 저장소/메모리 내 소유자 토큰을 쓰고, project→partial source→실제 Shadow mission→artifact SHA 검증→재시작 복구를 수행한다. 역할 하나가 실패해도 다른 queued/running 작업이 끝날 때까지 기다리며, 실패를 성공으로 바꾸지 않는다. 비밀값 출력·운영 저장소 변경 없음.
+
+### 실제 실행과 결과
+- node --test runtime/test/shadow-army.test.mjs runtime/test/project-bots.test.mjs runtime/test/agent.test.mjs: 40 pass / 0 fail. 상태 표시 및 프로젝트 경계 테스트는 수정 전 의도한 실패를 확인하고 수정 후 통과했다.
+- node scripts/verify-source-shadow-live.mjs build-artifacts/handoff-r3-20260926/four-inputs.json <새 출력 폴더> qwen2.5:3b: 실제 Ollama 호출과 디스크 결과. m2-shadow-live(첫 수락 스크립트가 정상 의존성 대기를 조기 blocked로 간주) → m2-shadow-live-fixed(두 조사 작업의 두 번째 호출 unknown/실패) → m2-shadow-live-scoped(Scout/Researcher/Builder 및 결정론적 Verifier 완료, Builder SHA 9dc9b22ec3cc988a146db631f5cd509a8c4e6d59255ca6b7fc3cec6a78e15464, 의미 검증 응답 형식 오류 및 내용 부실로 실패) → m2-shadow-live-tools-fixed(Builder SHA 98bd84f9f8c0c187802a62871abd73e234914126487160d7952cfbfe5ba0ae41, 의미 검증 uncertain) → m2-shadow-live-project-only(Scout가 project_read 반복 후 4회 호출 상한에 도달, 종속 작업 실패). 각 report.json과 격리 runtime/state.json, 생성된 경우 builder artifact를 보존했다. **M2 전체 통과 아님.** 작은 로컬 모델의 반복 도구 호출/빈약한 작업 카드가 실제 한계다. semantic fail/uncertain은 통과로 바꾸지 않았다.
+- 전체 회귀: Node 24.19.0, node --test --test-concurrency=1 runtime/test/*.test.mjs apps/controller/test/*.test.mjs scripts/native-config.test.mjs scripts/android-release.test.mjs; exit 0, **1154 total / 1133 pass / 0 fail / 21 skip**, 376초. 출력은 사용자 지정 바탕화면 npm-test-output.txt 및 build-artifacts/handoff-r3-20260926/m2-full-regression.txt에 동일 바이트 보존, SHA256 248b4e3452730f9c2be5c2ca41890d592f901552931420c2cb559fedb7979d2c.
+- node --check scripts/verify-source-shadow-live.mjs 및 git diff --check 대상 변경 파일 exit 0. APK 파일·Android 소스는 이번 변경 없음; §38 APK 빌드를 이번에 재실행했다고 주장하지 않는다.
+
+### 상태와 다음
+- VERIFIED: Shadow 진행 상태가 정상 의존성 대기를 blocked로 오표시하지 않음, 프로젝트 범위 자료/상태/다음 행동/위험 메모 접근, 다른 프로젝트 자료 비노출, 관련 및 전체 회귀, 실모델 실패와 artifact SHA·재시작 복구.
+- RAN-UNVERIFIED: EXTRA-136 실모델 작업 시도와 부분적 Builder 산출물. 조기 종료를 제외한 네 번의 로컬 임무는 모두 호출 오류·의미 검증 또는 호출 한도에서 실패했으며 실제 공간 장면·가림 작동을 만들지 못했다. 본문 품질 개선/두 번째 과제 재사용/Kirby 채택은 미완료.
+- BLOCKED: 실제 Android 휴대폰 연결 0으로 카메라 페어링·폰 요청/진행/결과/복구 실기기 시험 불가. Vault 원문/정본 수정·운영 배포·자격증명 변경·데이터 삭제 없음.
+- 다음 한 단계: EXTRA-136의 독자 에셋 기반 **실행 가능한 최소 깊이 가림 장면과 시험**을 로컬에 만들고, 파일/화면/검증 근거를 기존 source→job→artifact 계보에 연결한다. 동시에 실기기 연결이 가능해지면 M3 수락 시험을 우선 진행한다. 모델의 빈 작업 카드를 실제 결과로 채택하지 않는다.
+
+## §41 EXTRA-136 실행 장면·오프라인 산출물·기억 계보 (2026-09-26, Codex)
+
+### 범위와 실제 결과
+- 저장소 root `C:\Users\우연호\Documents\Projects\yeno-os`, origin `https://github.com/wooyeonho/yeno-os.git`, branch `blackhole/p3-jev-recovery-port-20260924`, full HEAD `43a2d1b44e0a60ebad4982dc1e2222213869cc1a` 재확인. 시작 시 §40의 미커밋 47건 기록·보존, 기존 변경 reset/checkout/commit/push 없음. `adb devices -l` 연결 0. 운영 resident 설치/실행, APK 재빌드, Vault 원문/정본 수정은 이번에 하지 않았다.
+- §40의 다음 한 단계였던 EXTRA-136 **독자 SVG 2D 공간 가림 시험**을 `experiments/extra-136-occlusion/`에 구현했다. `DESIGN.md`를 먼저 작성하고, 순수 `scene-core.mjs`에서 수평 위치/깊이(0~100)에 따라 문 앞 레이어, 문 안쪽 클립, 문 바깥 완전 가림을 계산한다. `index.html`/`style.css`/`scene.mjs`는 포털·실내·물체를 독자 SVG로 그리고 슬라이더/사전 장면/실시간 판정·좌표·레이어를 제공한다. 원본 Instagram 공개 링크는 출처 추적용으로만 표시하며 영상은 이번에도 직접 확인하지 못해 `partial/pending`이다. 원본 IP·화면·캐릭터를 복제하지 않았다.
+- `build-offline.mjs`는 기존 esbuild로 CSS/JS를 포함한 단일 HTML을 새 경로에 생성한다. 전달 파일 `build-artifacts/handoff-r3-20260926/EXTRA-136-occlusion-offline-v3.html`: 18,315 bytes, SHA256 `4672d40e6bbd75ee2857fd829cfb7fa8612858538762b581948718c9dbd25220`. 로컬 `file://` Chrome에서 열어 실제 조작했다. 이 파일은 실험 산출물이며 BLACKHOLE Android 앱/Windows resident에 탑재된 기능은 아니다.
+- 첫 오프라인 v2는 브라우저에서 `Cannot read properties of null (reading 'addEventListener')`로 실패했다. 인라인 스크립트가 DOM 생성 전 `<head>`에서 실행된 재현이었다. 브라우저 오류 검사로 red를 남기고 스크립트를 `</body>` 앞에 넣어 v3에서 같은 `file://` 시나리오 green을 확인했다. 실패 자료 `extra136-offline-browser-v2-red/report.json`과 통과 자료 `extra136-offline-browser-v3/report.json` 보존.
+- 독립 화면 검토 2명은 v4에서 모바일 조작 중 장면 사라짐, 768px 버튼 과대, 한글 낱글자 줄바꿈, 12px 보조 글자, 원본 링크 부재를 지적했다. 수정 후 두 검토 모두 PASS. 1023px 이하 고정 미리보기, 자연 높이 버튼, 한글 어절 줄바꿈, 14px 보조 글자, 공개 원본 링크, 부분 가림 경계 캡처를 확인했다. 이는 화면·코드 검토이며 스크린리더 실사용/AR 기기 검증은 아니다.
+
+### 실제 명령·검증
+- `node --test experiments/extra-136-occlusion/scene-core.test.mjs`: 3 pass / 0 fail. 구현 전 red와 수정 후 green을 확인한 순수 기하 시험.
+- `node experiments/extra-136-occlusion/verify-browser.mjs build-artifacts/handoff-r3-20260926/extra136-visual-v6`: 실제 로컬 Chrome, 375/768/1280px 앞/안쪽/숨김/앞 가장자리/부분 가림, 375/768 조작 중 장면 동시 표시 총 **17 캡처**, exit 0. 슬라이더 키보드 Home·focus, aria-live 속성, reduced motion, source URL, 수평 넘침·pageerror 없음. 각 파일 SHA는 `report.json`에 기록. 실제 스크린리더 발화나 색 대비 자동 감사까지 했다고 주장하지 않는다.
+- `node experiments/extra-136-occlusion/build-offline.mjs build-artifacts/handoff-r3-20260926/EXTRA-136-occlusion-offline-v3.html`: exit 0. `node experiments/extra-136-occlusion/verify-browser.mjs build-artifacts/handoff-r3-20260926/extra136-offline-browser-v3 build-artifacts/handoff-r3-20260926/EXTRA-136-occlusion-offline-v3.html`: **file:// 직접 실행**, 17 캡처, exit 0. 앞선 v2는 동일 검사에서 exit 1로 실패했고 오류를 고쳤다.
+- `node scripts/verify-prototype-handoff-live.mjs build-artifacts/handoff-r3-20260926/four-inputs.json build-artifacts/handoff-r3-20260926/EXTRA-136-occlusion-offline-v3.html build-artifacts/handoff-r3-20260926/extra136-offline-browser-v3/report.json build-artifacts/handoff-r3-20260926/extra136-prototype-handoff-v1`: exit 0. HTML/17 캡처 SHA 재대조 후 **M1 원장 fixture의 EXTRA-136을 새 격리 저장소에 재접수**해 project→partial/pending source→자료 브리핑 job→HTTP artifact SHA→result memoryEvent(source+job 참조)를 기록, 재시작 후 job/artifact/memory와 HTML SHA 회수 확인. `extra136-prototype-handoff-v1/report.json`의 새 ID·해시 및 `prototype-recall.txt`가 근거다. 기존 M1 저장소의 ID/기록을 변경하거나 그 저장소에 산출물을 붙인 것은 아니다. 외부 기억 동기화, 운영 Kirby 채택, Shadow 전체 M2 검증 완료로 확대하지 않는다.
+- 원래 요청한 PowerShell 형태로 `npm.cmd test 2>&1 | Tee-Object -FilePath "$env:USERPROFILE\Desktop\npm-test-output.txt"` 실행(Node 24.19.0, 출력 숨김만 추가): exit 0, **1154 total / 1133 pass / 0 fail / 21 skip**, 약 114초. 같은 바이트 사본 `build-artifacts/handoff-r3-20260926/extra136-full-regression.txt` SHA256 `468e79dfb1b70c5f088cf594d15f066872572e1441916ea9c859af40570b6761`. `git diff --check` exit 0(Windows LF→CRLF 안내만 출력).
+
+### 판정과 다음 단계
+- **VERIFIED:** 독자 2D 가림 계산, 실제 Chrome 화면/키보드·반응형 17상태, `file://` 오프라인 실행, 산출물 SHA, 격리 코어의 자료→작업→산출물→기억·재시작 회수, 기존 npm 전체 회귀. **RAN-UNVERIFIED:** 이번 실행에는 없음. **NOT RUN:** 실제 스크린리더 발화·원본 영상 전체 재열람·AR 공간 인식. 모델 생성 Shadow 임무의 이전 실패를 지우지 않았고 이 수동·코드 실험을 Shadow 성공으로 재분류하지 않는다.
+- **BLOCKED:** `adb devices -l` 0대로 실제 Android APK 설치·QR 페어링→폰 요청→Windows PC 실행→폰 진행/결과→종료·재시작 복구, PC 오프라인/실패 표시의 실기기 수락 시험. 설치된 Android SDK 경로에 emulator.exe가 없고 생성된 AVD도 없어 에뮬레이터 대체 실행은 불가했다. APK 정적 빌드/브라우저/코어 대체 검증은 이 항목의 대체가 아니다.
+- 변경 파일: 신규 `experiments/extra-136-occlusion/{DESIGN.md,README.md,scene-core.mjs,scene-core.test.mjs,index.html,style.css,scene.mjs,verify-browser.mjs,build-offline.mjs}`, 신규 `scripts/verify-prototype-handoff-live.mjs`, 이 정본 실행 기록. 기존 미커밋 제품 변경 보존, Vault 쓰기 0, 운영 배포·데이터 삭제·실제 자격증명 교체 없음.
+- 다음 한 단계: **휴대폰이 PC에 연결되는 즉시** §38의 시험 APK로 P02→J01→R01/F01 실기기 수락 흐름을 직접 실행한다. 연결 전에는 이번 2D 시연을 다른 소스 입력에 적용하는 M2 재사용성·의미 검증과 제품 통합 여부를 별도 판단하되, 폰 검증 우선순위를 낮추지 않는다.
+
+## §42 최신 Windows/Android 대체 수락 재검증 (2026-09-26, Codex)
+
+- 이전 §41은 시연 파일·기억 계보를 만든 **실제 진전**으로 분류한다. 이 절은 다시 최우선 휴대폰→PC 흐름을 확인한 결과다. 시작 root/origin/branch/full HEAD는 §41과 일치했고 기존 미커밋 파일은 보존했다. `C:\blackhole-build-tools\android\platform-tools\adb.exe devices -l`은 여전히 연결 0. 현재 8790/8792/9443 listener 및 BLACKHOLE/YENO 예약 작업 0, `tailscale` 명령 없음. 운영 resident가 현재 설치·실행 중이라고 보고하지 않는다.
+- `node scripts/blackhole-check.mjs --mode isolated --json build-artifacts/handoff-r3-20260926/phone-pc-local-current/blackhole-check.json`: exit 0, outcome PASS. **격리된 실제 HTTP 코어**에서 시험 기기 등록→무해한 문서 작업 완료→결과 바이트 SHA 검증→코어 프로세스 종료/재시작→같은 작업 ID·산출물 SHA 재조회→기기 철회 및 옛 credential 401 거부를 관찰했다. `restartReadback=PASS(process_restart)`, `deviceRevokeStatus=success`, `deploymentMatchesSource=true`. JSON SHA256 `03d1022666e15ad11f0f103daa941e10f526f9829a8feec45a80c407dd8b304f`. 이 검사는 invitation/QR/Stronghold/실제 Android를 통과하지 않는다.
+- `npm.cmd --prefix apps/controller run build`: exit 0, TypeScript 검사와 Vite 생산 번들 생성(113 modules, JS 185.71 kB). 로그 `phone-pc-local-current-controller-build.txt`, SHA256 `0bb38f10b9eac0ec6a4e9dc1d6681ab55b72549f68d490320b32dd8d79a4c51f`. 이는 APK 재빌드가 아니다.
+- `npm.cmd --prefix apps/controller run verify:ui`: exit 0, 현재 번들+실제 격리 코어+모의 native IPC의 초대 스캔/등록·작업·결과 SHA·앱 DOM 재생성/보관소 대체 어댑터·오프라인 표시·실패 이유·멈춤/재개·철회 시나리오 통과. 로그 `phone-pc-local-current-verify-ui.txt`, SHA256 `1a8f61118ae0393f36404a973cea2f9db700693484c839964380bcf0ceb7aff9`. `videoRendererAvailable=false`; 영상 렌더 시험을 통과로 세지 않는다. Stronghold 실제 암호화·카메라·Android WebView 검증은 아니다.
+- `node apps/controller/verify-pairing-browser.mjs`: exit 0, 실제 Edge 브라우저 375/768/1280px 화면, owner 키 입력란 부재, 잘못된 QR 오류·재스캔 확인. 로그 `phone-pc-local-current-pairing-browser.txt`, SHA256 `9570fce701049acf949df7d9fb53bc1f549d28e9004e5bde20381ab5d927631d`. Native 카메라 미검증. 기존 짝 테스트와 전체 `npm.cmd test` 1154/1133/0/21은 §41의 앞선 실제 실행이며 이번에 재실행했다고 쓰지 않는다.
+- 설치된 Ollama CLI `list`는 `qwen2.5:3b`와 `bge-m3:latest`를 표시했고 loopback `127.0.0.1:11434` listener를 자동 기동했다. 그 실행 중인 로컬 서비스에서 `node scripts/verify-resident-local-live.mjs`를 별도 작업 디렉터리에서 실행: exit 0, 격리 Windows resident의 실제 `qwen2.5:3b` 작업 completed, artifact 353 bytes/SHA256 `5dca3b7998ada60bd917e270828ba194efa285f303a45d857e33f0481ee6054a`, resident 중지·재시작 후 결과 보존. 보고서 `resident-live-current/build-artifacts/acceptance-20260925/resident-local-live.json` SHA256 `c0239caee0e22b1b395e93eb6ae7a37154733af60fe86941b7857cce0c4c6568`. 보고서의 `source:null`은 이 실행에 `BLACKHOLE_SOURCE_SHA`를 주입하지 않았음을 뜻한다. 실제 소스는 이 절의 root/HEAD/미커밋 상태와 §38/§41 해시를 따로 기록하며 보고서만으로 정확 소스를 증명한다고 주장하지 않는다. Ollama 11434 listener는 이 절 종료 시에도 살아 있음; 8790 resident는 남아 있지 않다.
+- §38 `android-apk-manifest-20260926.json`의 컨트롤러 소스 **42/42 파일 SHA 현재 값 일치**, 전달 APK SHA도 manifest와 일치. 컨트롤러 파일은 APK 이후 변경되지 않았다. 런타임/서버의 이후 미커밋 수정까지 APK 안에 담겼다는 뜻은 아니다; 해당 Windows 코어는 위 격리 시험에서 현재 소스로 실행했다.
+- 자동 실행 검토가 `Start-Process ... ollama serve`와 시험 후 `Stop-Process`를 포함한 단일 PowerShell 호출을 **“blocked by policy”**로 거절했다. 이 합성 명령은 실행되지 않았다. 별도 시작·종료 우회 명령은 수행하지 않았고, 이후 읽기용 `ollama list`가 서비스를 자동 기동한 현상과 이미 열린 loopback listener를 관찰해 위 격리 시험만 실행했다. 거절의 더 구체적인 이유는 도구에서 제공하지 않았다.
+- **VERIFIED:** 격리 코어의 문서 작업/해시/재시작/철회, 현재 Android 번들 빌드·모의 native 화면 배선/오프라인·실패 표시, 브라우저 페어링 화면, 실제 로컬 모델 resident 호출/재시작, APK 소스 manifest/파일 hash 일치. **RAN-UNVERIFIED:** 이번 실행에는 없음. **NOT RUN/BLOCKED:** ADB 0, 사설 HTTPS/Tailscale 활성 경로 및 실기기 승인이 없어 P02→J01→R01/F01의 실제 폰→Windows 전체 수락 시험, Stronghold·카메라·Android 화면 관찰을 실행하지 못했다. 운영 Windows 설치·재부팅은 사용 중 환경 변경에 해당해 이번 범위에서 실행하지 않았다. 운영 배포·데이터 삭제·실제 자격증명 교체 없음. 이번 저장소 수정은 이 정본 기록뿐이고 격리 산출물은 ignored `build-artifacts`에 남겼다.
+- 다음 한 단계: 휴대폰을 PC에 연결하고 기기 화면에서 USB 디버깅을 승인받으면, 기존 APK를 설치하고 P02→J01→R01/F01을 실제 폰에서 직접 실행한다. 기기 연결 전에는 가짜 PASS를 만들지 않는다.
+
+## §43 일회성 초대→작업→복구 통합 경계 검사 (2026-09-26, Codex)
+
+- 시작 root `C:\Users\우연호\Documents\Projects\yeno-os`, origin `https://github.com/wooyeonho/yeno-os.git`, branch `blackhole/p3-jev-recovery-port-20260924`, full HEAD `43a2d1b44e0a60ebad4982dc1e2222213869cc1a` 일치. 시작 `git status --short` 49건으로 기존 변경 전부 보존. `adb devices -l` 연결 0, 8790/8792/9443 listener·운영 예약 작업 없음. 이전 §42는 격리 흐름과 실제 로컬 모델 호출을 새 증거로 남긴 **진전**이었다.
+- 발견한 수락 간극: 기존 `scripts/blackhole-check.mjs --mode isolated`는 owner credential로 `/api/v1/devices/enroll`을 직접 호출해 작업/재시작을 검증했지만, 신규 QR 초대의 `/api/v1/pairing/invites`→`/api/v1/devices/enroll-invite`를 같은 흐름에서 거치지 않았다. `runtime/test/native-pairing.test.mjs`는 초대만 별도 검증했다. 격리 모드에만 일회성 초대 경로를 연결했고 live/basic 모드의 기존 직접 등록 계약은 유지했다. 합성 `.ts.net:9443` origin은 API 계약용이며 실제 Tailscale/TLS 연결 증거가 아니다.
+- `runtime/test/blackhole-check.test.mjs`에 `pairingMode=one-time-invite`, 발급/등록/동일 requestId 복구/다른 requestId 재사용 409/코어 재시작 뒤 옛 초대 401을 요구하는 단언을 먼저 넣고 red 확인(`phone-pc-invite-red.tap`). 첫 구현에서는 기존 `check-tool` 플랫폼을 초대 등록에 보내 실제 HTTP 400 `Invalid native enrollment.`을 재현했다. 서버 계약의 `android|windows`에 맞춰 합성 Android 시험 기기로 지정했다. 뒤이어 보고서 `invite_enrolled.ok`가 불리언 대신 기기 ID 문자열이던 것을 엄격 단언으로 red 재현(`phone-pc-invite-shape-red.tap`) 후 불리언으로 수정했다. 실제 기기 ID/초대 토큰은 통합 보고서에 기록하지 않는다.
+- 현재 격리 실명령: `node scripts/blackhole-check.mjs --mode isolated --json build-artifacts/handoff-r3-20260926/phone-pc-invite-current-v2/report.json`, exit 0. 5개 초대 단계 모두 `ok:true`: owner 발급 201, invite 등록 201, 같은 requestId 재전송 같은 기기/토큰 201, 다른 requestId 409, 프로세스 재시작 뒤 옛 초대 401. 이어 인증된 무해한 문서 작업 completed, artifact 바이트/서버 SHA 일치, 같은 job/artifact 재조회 `PASS(process_restart)`, 기기 철회 및 이전 기기 인증 401. `outcome=PASS`, 모든 `steps[].ok` 불리언. 보고서 SHA256 `ef926d8e66291e90a7fa2a89a65cabaf6a9bd9184356a4abeffed2ec55f54a7c`. owner/초대/기기 비밀값은 stdout·보고서·채팅에 출력하지 않았다.
+- 관련 검사: `node --test runtime/test/blackhole-check.test.mjs runtime/test/native-pairing.test.mjs` **8 pass / 0 fail**, `phone-pc-invite-focused-green.tap` SHA256 `8a5be6d044216a3cf82bd3ce398b050a5eb39fadbb48663f72601d82a6b733cc`. 초대 만료·취소·capacity·GUI 메모리 QR은 기존 별도 시험의 경계이며 이번 단일 CLI 보고서에 그 단계를 넣었다고 주장하지 않는다.
+- 변경 후 요청한 `npm.cmd test 2>&1 | Tee-Object -FilePath "$env:USERPROFILE\Desktop\npm-test-output.txt"` 재실행(Node 24.19.0): exit 0, **1154 total / 1133 pass / 0 fail / 21 skip**, 약 100초. 같은 바이트 사본 `build-artifacts/handoff-r3-20260926/phone-pc-invite-full-regression.txt` SHA256 `0bcdcec48341346cfc615a8bbe357bc785f3c605b0a1022e125ea38cf5cec696`. `node --check scripts/blackhole-check.mjs`, `git diff --check` exit 0. 본문 수정 뒤에는 주석만 다듬었고 실행 코드는 바꾸지 않았다.
+- **VERIFIED:** 격리 Windows HTTP 코어의 일회성 초대·기기 등록/멱등 복구/재사용 차단→작업·진행 상태/산출물 해시→코어 재시작→기기 철회까지 한 흐름, 관련/전체 회귀. **RAN-UNVERIFIED:** 이번 실행에는 없음. **NOT RUN/BLOCKED:** 실제 QR 카메라 스캔·Android Stronghold·폰 화면의 진행/결과·앱 종료 복구·사설 HTTPS 연결. ADB 0과 미설치/미로그인 Tailscale 때문에 P02→J01→R01/F01 실기기 합격은 여전히 미증명. 합성 플랫폼 표시를 실제 휴대폰 실행으로 보고하지 않는다.
+- 변경 파일: `scripts/blackhole-check.mjs`, `runtime/test/blackhole-check.test.mjs`, 이 정본 실행 기록. APK/controller 소스·Vault·운영 저장소·기존 미커밋 변경 보존. 운영 배포·사용자 데이터 삭제·실제 자격증명 교체 없음. 다음 한 단계는 실제 휴대폰 연결 및 기기 화면의 USB 디버깅 승인 후 기존 APK 설치와 P02→J01→R01/F01 수락 시험이다.
+
+## §44 Android 화면 요청·응답 유실·오프라인·재접속 통합 대체 검사 (2026-09-26, Codex)
+
+- 시작 저장소 root `C:\Users\우연호\Documents\Projects\yeno-os`, origin `https://github.com/wooyeonho/yeno-os.git`, branch `blackhole/p3-jev-recovery-port-20260924`, full HEAD `43a2d1b44e0a60ebad4982dc1e2222213869cc1a` 일치. 시작 미커밋 항목 51개를 보존했다. `adb devices -l`은 계속 연결 0이다. §43의 owner 일회성 초대→작업→실제 별도 코어 프로세스 재시작 검사는 진전으로 유지한다.
+- 실제 SDK 경로에 `sdkmanager.bat`·`avdmanager.bat`은 있으나 `emulator.exe`·system image·AVD는 없다. 이 PC의 `Win32_Processor.VirtualizationFirmwareEnabled=False`와 전달 APK의 ARM64 빌드를 확인했다. 이번에는 에뮬레이터 설치/실행이나 PC 펌웨어·Windows 기능 변경을 하지 않았다. 이 제약을 실기기 검증으로 바꾸어 주장하지 않는다.
+- 기존 `apps/controller/verify-ui.mjs`는 빌드된 HTML/JS와 격리 실제 HTTP 코어를 연결하지만 Tauri IPC·Stronghold·카메라는 모사한다. §43과 달리 앱 화면에서 직접 `문서 만들어`를 보내 실제 코어 job completed, 결과 버튼의 SHA-256 확인·본문 표시까지 한 흐름을 보지 않았다. 이 빈틈을 같은 검증 파일에 추가했다. 기존 초대 모사는 owner HTTP API에서 발급한 일회성 초대를 사용하는 형태다. 초대/기기 비밀은 로그·보고서에 기록하지 않았다.
+- 첫 추가 검사는 작업 제목에 원문이 포함된다는 잘못된 가정으로 `phone-ui-first-run.txt`에서 timeout red가 났다. `phone-ui-diagnostic.txt`의 실제 실행 상태는 UI에 `작업을 접수했습니다: 문서 만들기`, 코어에 `{type:"document",title:"문서 만들기",status:"completed",error:null}`였다. 제품 실패가 아니라 일반 문서 job 제목 정규화였다. 진단 출력 코드는 제거하고, job 종류·상태와 결과 본문/해시를 기준으로 검증해 green을 확인했다. 두 문서 job의 제목이 동일하므로 검증에서 첫 카드만 집는 가정도 `phone-ui-uncertain-run.txt`에서 red로 확인했고, 각 결과를 열어 원문/해시가 일치하는 카드를 찾도록 고쳤다. 이 동일 제목은 여러 결과를 구별하기 어려운 UI 개선 후보이나 이번에는 서버 계약을 바꾸지 않았다.
+- **실제 코어 응답을 받은 뒤 UI에 전달하기 전** 시험 IPC에서 문서 요청의 응답 한 번만 유실시켰다. 코어에는 완료된 job 하나가 남았고 앱에는 원문과 대기 요청이 남았다. 코어 HTTP listener와 런타임 객체를 실제로 shutdown한 동안 앱 새로고침이 `최신 상태 확인 실패`를 표시했다. 같은 Node 시험 프로세스 안에서 같은 포트·데이터 디렉터리로 새 코어 런타임을 열자 재페어링 없이 `코어 응답 확인됨`으로 복귀했다. 앱 DOM을 닫고 다시 연 뒤 보관소 모사를 unlock해 원래 대기 요청을 재시도하자 같은 수락 결과를 받았고 문서 job 수는 2(첫 정상 요청 1 + 응답 유실 요청 1)로 유지되어 중복 실행 0이었다. 첫 요청의 기존 job ID·artifact ID 및 UI 결과 SHA 표기가 재시작 후 일치했다. 이는 실제 HTTP 코어 런타임 중지/재생성이지 별도 OS 프로세스 재시작 또는 Android 앱/Stronghold 실물 검증은 아니다.
+- `npm.cmd --prefix apps/controller run build`: Node 24.19.0, `tsc --noEmit && vite build` exit 0, 번들 `dist/assets/index-Cm0_TjH5.js` 185.71 kB. `node apps/controller/verify-ui.mjs`: exit 0, `ok:true`, **18 checks**. 정본 로그 `build-artifacts/handoff-r3-20260926/phone-ui-final.txt` SHA256 `eb5ce9d11a01b96a5c84211e7dd23c29faaca58a23157fea9ac54142b8a217f1`. 이 파일의 `scope`는 built HTML/JS + real local core + simulated native IPC라고 명시한다.
+- 변경 후 `npm.cmd test 2>&1 | Tee-Object -FilePath "$env:USERPROFILE\Desktop\npm-test-output.txt"`: exit 0, **1154 total / 1133 pass / 0 fail / 21 skip**, 103초. 같은 바이트 사본 `build-artifacts/handoff-r3-20260926/phone-ui-full-regression.txt` SHA256 `64df51e6b16519d40deb80e7b71dd765b4d7f6b874777f51d06bbf1c4d91426a`. `node --check apps/controller/verify-ui.mjs`와 `git -c core.safecrlf=false diff --check` exit 0. APK 자체는 이번에 다시 만들지 않았고 기존 전달 APK SHA256 `f21e85987357ccd26df6e52fec8361461e59197ac1b3ca2dd67fe3dcd6be1be1` 유지했다.
+- **VERIFIED:** 격리 코어와 빌드 JS 화면의 초대 모사→텍스트 요청→completed 결과·해시, 응답 유실 후 원래 요청 ID 보존·앱 재열기/동일 코어 데이터 재기동 후 중복 없는 재접수, 실제 코어 listener 중단 중 오프라인 표시와 재연결, 관련/전체 회귀. **RAN-UNVERIFIED:** 없음. **BLOCKED/NOT RUN:** 실제 Android APK 설치, 카메라 QR, Tauri Android IPC, 실제 Stronghold 암호화·저장, 실제 휴대폰 화면/네트워크/앱 프로세스 종료·재기동, 실제 사설 HTTPS/Tailscale, 실제 Windows PC 재부팅 후 폰 접속. 이 검사를 P02/J01/R01/F01 실기기 합격으로 분류하지 않는다.
+- 이번 변경은 `apps/controller/verify-ui.mjs`와 이 정본 기록뿐이다. 제품 APK/런타임 코드는 바꾸지 않았고 기존 미커밋 작업·Vault는 보존했다. 운영 배포·사용자 데이터 삭제·실제 자격증명 교체 없음. 다음 한 단계는 실제 휴대폰을 PC에 연결하고 휴대폰에서 USB 디버깅을 승인한 뒤, 기존 APK 설치와 P02→J01→R01/F01 실기기 수락 흐름 실행이다.
+
+## §45 Android 작업 카드 구분·최신 APK·실기기 전 대체 수락 (2026-09-26, Codex)
+
+- 시작 저장소 root `C:\Users\우연호\Documents\Projects\yeno-os`, origin `https://github.com/wooyeonho/yeno-os.git`, branch `blackhole/p3-jev-recovery-port-20260924`, full HEAD `43a2d1b44e0a60ebad4982dc1e2222213869cc1a` 재확인. 시작 미커밋 51개를 보존했고 reset/checkout/commit/push 없음. 최종 `adb devices -l`은 연결 0이다.
+- §44 대체 UI 수락에서 서로 다른 `문서 만들어` 요청 두 개의 서버 제목이 모두 `문서 만들기`여서 폰의 작업 목록에서 원래 요청과 결과를 열기 전에는 구분할 수 없었다. `apps/controller/verify-ui.mjs`에 서로 다른 제목 단언을 먼저 추가해 red `distinct-job-title-red.txt`에서 `actual: '문서 만들기'`를 확인했다. `runtime/server.mjs`의 명시적 document 명령에 한정해 입력 본문의 공백을 정리한 최대 72 Unicode 코드 포인트를 job 표시 제목으로 설정했다. 본문·요청 ID·아티팩트 계약과 다른 문서 경로는 유지한다. `apps/controller/src/style.css`의 기존 `.job strong`에 `overflow-wrap:anywhere`와 `word-break:keep-all`을 넣어 좁은 카드에서 긴 한글 제목을 안전하게 감싼다. `main.ts`의 `textContent` 렌더를 확인했다.
+- `apps/controller/verify-mobile.mjs`의 낡은 장기 owner-key 입력 모사를 현재 일회성 초대 계약으로 갱신했다. Edge/Playwright가 빌드된 UI와 격리 실제 HTTP 코어를 synthetic native IPC/QR adapter로 구동해 360px·430px 각각 두 문서 요청을 제출하고 서로 다른 카드 제목이 각 1개씩 있는지, 가로 넘침이 없는지 확인했다. 최종 `distinct-job-title-browser-no-prefix.txt` `ok:true`, PNG는 `distinct-job-title-browser/work-360px.png` SHA256 `8b280b765dd5c4468071a3074c716cab0ff0a46b504c1d05914b219ea8837c2f`, `work-430px.png` SHA256 `f3325a7cc8ca8e5b56ee26e86f69d54a2e52db60d8f030fcf10f4676c6d36159`. 430px 화면에는 이전 360px 시험 작업도 남아 있으므로 깨끗한 2행 전용 스크린샷이라는 주장은 하지 않는다. 독립된 두 화면 검토는 제목 식별/넘침 범위에서 PASS/APPROVE, 실제 Android WebView 검증은 아님. 리뷰/QA 범위와 제약은 `distinct-job-title-code-review.md`, `distinct-job-title-manual-qa.md`에 별도 기록했다.
+- 최종 소스 후 `npm.cmd --prefix apps/controller run build` 및 `. build-artifacts/acceptance-20260925/android-build-env.ps1; npm.cmd --prefix apps/controller run tauri -- android build --debug --apk --target aarch64 --ci`: 모두 exit 0. 새 산출물 `C:\blackhole-build-tools\artifacts\BLACKHOLE-smoke-0.2.0-arm64-debug-20260926-r45.apk` 110,880,426 bytes, SHA256 `b6a6a41ec90e2baa41e12be2ec2d6f8a08904f7c3343d619db8a6e9edb4b6261`; 이전 §38 APK는 보존. `apksigner verify --verbose --print-certs` v2 Android Debug 인증서 1개, `zipalign -c -P 16 -v 4` 성공, `aapt dump badging` package `kr.yeno.controller.smoke`, version 0.2.0, arm64-v8a. APK 내부 `libyeno_controller_lib.so`와 새로 빌드한 native 파일 SHA256 둘 다 `e259f0c524bd5a3ef1b9d009ac9d2ed8a087483ca999909ca56bd087763449f7`, ELF LOAD 네 개 모두 align `0x4000`. native 바이너리 안에 현재 Vite 자산 이름 `index-CWqQu0co.css`, `index-_hljaNus.js`도 확인했으나 압축된 번들의 파일 바이트 동등성이나 Android 실행을 검증한 것은 아니다. 첫 apksigner 시도는 별도 셸의 JAVA_HOME 미설정으로 실패했고 같은 기존 빌드 환경을 로드한 후 위 검증이 통과했다. 앱 설치/실행은 하지 않았다. 현재 controller 42파일 hash와 코어 hash/스크린샷 hash는 `distinct-job-title-android-apk-manifest.json`에 기록했다.
+- 최종 코드 기준 `node apps/controller/verify-ui.mjs`: exit 0, `ok:true`, 18 checks. 서로 다른 폰 요청 제목 동시 표시, 격리 실제 코어에서 completed 결과/아티팩트 SHA, 수락 뒤 HTTP 응답 유실, 코어 중단·재기동 오프라인/재접속, 앱 DOM 재열기·동일 요청 재시도 후 중복 job 없음, 통제된 작업 실패 표시를 확인했다. `node scripts/blackhole-check.mjs --mode isolated --json build-artifacts/handoff-r3-20260926/distinct-job-title-invite-check-final.json`: exit 0, 19/19 PASS, 일회성 초대·기기 등록·완료 작업·아티팩트 해시·별도 코어 프로세스 재시작·철회. 이 시험의 origin·카메라·Stronghold는 synthetic adapter라 실기기 증거가 아니다.
+- 변경 후 사용자 지정 `npm.cmd test 2>&1 | Tee-Object -FilePath "$env:USERPROFILE\Desktop\npm-test-output.txt"`: Node 24.19.0, exit 0, **1154 total / 1133 pass / 0 fail / 21 skip**. 같은 바이트 사본 `distinct-job-title-full-regression-final.txt` SHA256 `fc1a6e74a201f982ddeae956f39f918976f5ef37ab1d7a5fe3eb79d9075684ec`. `node --check` 서버/UI/모바일 시험과 `git -c core.safecrlf=false diff --check` exit 0. 앞선 오래된 회귀 로그는 최종 검증으로 사용하지 않는다.
+- **VERIFIED:** Windows 격리 코어+빌드된 앱 UI/Edge의 서로 다른 요청 식별·결과·오프라인·실패·복구, 일회성 초대 통합 경계, 최신 ARM64 debug APK 정적 빌드/서명/정렬/native 동등성, 관련/전체 회귀. **RAN-UNVERIFIED:** 실제 Android 앱/카메라/Stronghold 흐름은 실행하지 않았으므로 없음. **BLOCKED/NOT RUN:** ADB 기기 0으로 최신 APK 설치, 실제 QR 페어링→폰 요청→PC 실행→폰 진행/결과→앱 종료·PC 재시작 복구와 실제 사설 HTTPS 연결. 운영 Windows 재설치/재부팅은 하지 않았다. 운영 배포·데이터 삭제·실제 자격증명 교체·Vault 변경 없음.
+- 이번 변경 파일은 `runtime/server.mjs`, `apps/controller/src/style.css`, `apps/controller/verify-ui.mjs`, `apps/controller/verify-mobile.mjs`, 이 정본 실행 기록. 격리 로그/PNG/새 APK는 별도 산출물로 보존한다. 다음 한 단계는 **실제 Android 휴대폰이 PC에 연결되고 휴대폰에서 USB 디버깅이 승인되면** 새 r45 APK를 설치해 P02→J01→R01/F01 실기기 흐름을 직접 실행하는 것이다. 기기 연결 전에는 실기기 합격을 주장하지 않는다.
+
+## §46 — 2026-09-26 Claude(Cowork): 자비스 살아있는 얼굴 `/jarvis` (실제 런타임 위, 로컬 모델 경로 포함)
+
+소유자 지시: "그냥 자비스를 만들어, UI 깔끔하게", "Ollama로도 되어야 함", "제대로 만들 수 있는 거 맞냐". 별도 데모가 아니라 실제 런타임 위에 올렸다.
+
+변경(미커밋 — Codex의 apps/controller 미커밋 작업과 충돌하지 않도록 새 파일 + 서버 allowlist 한 줄만):
+- `runtime/public/jarvis.html`, `runtime/public/jarvis.mjs` (신규). 화면 = 핵 하나 + 자비스 한 줄 + 지금 하는 일 한 줄 + 입력창. 모든 값은 `/api/state`에서 읽음(core.activity·dominantDriveId/Name/WorldName·lastHeartbeatAt·activeShadowCount·pendingApprovalCount, agent.provider/model, events[0]). 입력은 `/api/commands`로 보냄(운영실 명령은 그대로, 나머지는 `목표: …` → 실제 quest → 실제 모델 라우터). 자비스의 말 = 완료된 job의 artifact 본문(`/api/artifacts/:id`, `---` 이후 출처 꼬리표는 제거). 페어링은 `web-client.mjs` `connectBrowser()` 그대로 재사용(운영실과 같은 세션·같은 단일탭 잠금).
+- `runtime/server.mjs` 정적 allowlist에 `'/jarvis':'jarvis.html','/jarvis.html':'jarvis.html','/jarvis.mjs':'jarvis.mjs'` 추가(1줄).
+
+VERIFIED (Cowork 격리 VM, Node 22, 실제 `runtime/server.mjs` 기동):
+- `GET /jarvis` 200 text/html, `GET /jarvis.mjs` 200 text/javascript.
+- 모델 없이: `일곱 욕망` → job queued → completed → artifact `document-*.md` 생성, 본문 회수 확인. `목표: …` → 409 "주 모델 연결이 필요합니다" (페이지는 이 경우 `목표 저장:`으로 보관).
+- 로컬 모델 경로: `YENO_AGENT_PROVIDER=local YENO_LOCAL_BASE_URL=http://127.0.0.1:8080/v1/chat/completions YENO_LOCAL_MODEL=qwen2.5:3b YENO_AGENT_DAILY_CALL_LIMIT=20`(상한은 0–20만 허용) + OpenAI 호환 mock(Ollama `/v1` 형식) → `목표: 한끼안부 다음 할 일 정해줘` → type `agent` job completed, artifact `agent-*.md`에 모델 응답 본문, `/api/state`가 `agent.provider=local, model=qwen2.5:3b` 보고. Kirby 이벤트("기본 기능2종 … 활성화") 자동 발생 확인. lastHeartbeatAt 실제 갱신 확인.
+- 페이지 렌더: 위 실제 응답(state.json/artifact.md/command-response.json, `build-artifacts/jarvis-face-20260926/`)을 그대로 재생하는 서버 + Chromium(Playwright)에서 열어 pair 통과, 모드/모델/심장 시각 표시, artifact 본문 발화, 입력 → `/api/commands {requestId,text:'목표: …'}` 전송 확인. JS 오류 0.
+RAN-UNVERIFIED: 실제 Ollama(qwen2.5:3b)와의 응답 품질·속도 — mock으로 경로만 검증. 실기기 브라우저 페어링 후 `/jarvis` 열람.
+BLOCKED: 없음. 커밋은 소유자/Codex 판단에 맡김(Codex 미커밋 변경 존재).
+근거 파일: `build-artifacts/jarvis-face-20260926/{state.json,artifact.md,command-response.json,http-checks.txt,server.log,mock-llm.mjs}`.
+
+## §47 — 2026-09-26 Claude(Cowork): 역할 정정 + Codex 지시서 `/jarvis` v2 (세계 최고 수준 UI)
+
+소유자 지시: "UI가 너무 구려… 전세계 1위인 것 같겠니" → "Claude는 코딩하지 말고 Codex한테 지시하고 틀린 거나 잡아라." 이후 Claude는 구현 중단, 지시·검증만 수행.
+- 신규: `docs/CODEX_DIRECTIVE_JARVIS_FACE_20260926.md` (디자인·동작·산출물·Claude 검증 항목).
+- **Claude 자기 결함 보고:** §46의 `jarvis.html`은 인라인 `<style>`/`style=""`를 써서 실제 서버 CSP(`style-src 'self'`)에서 스타일이 차단된다. §46의 렌더 검증은 CSP 없는 재생 서버에서 이뤄져 이 결함을 놓쳤다 — §46 "VERIFIED 페이지 렌더"는 **CSP 미적용 조건**으로 정정. 수정은 Codex 몫(지시서 §0 결함 1).
+- Claude가 작성 중이던 `jarvis.css` 초안은 저장소에 넣지 않음(소유자 지시 준수).
+
+## §48 시작 로그 비밀값 차단·Windows QR GUI 경로·진행 표시 검증 (2026-09-26, Codex)
+
+- 이전 §45는 서로 다른 문서 작업 카드와 새 debug APK를 만든 **진전**이다. 이번 시작 상태는 동일 root `C:\Users\우연호\Documents\Projects\yeno-os`, origin `https://github.com/wooyeonho/yeno-os.git`, branch `blackhole/p3-jev-recovery-port-20260924`, full HEAD `43a2d1b44e0a60ebad4982dc1e2222213869cc1a`, 미커밋 54건이었다. 모두 보존했고 reset/checkout/commit/push 없음. `adb devices -l` 연결 0.
+- owner 키를 사람에게 복사시키지 않는 제품 요구와 달리 `runtime/server.mjs` 단독 CLI 및 `runtime/launch.mjs` 레거시 시작 경로가 `PAIRING TOKEN:`과 실제 owner 키를 stdout에 출력했다. `runtime/test/startup-secrecy.test.mjs`에서 두 경로를 합성 키/격리 데이터로 실제 child process 기동해 stdout+stderr에 키가 있는지 검사했고, 먼저 `startup-secrecy-red.txt` **2 fail**로 노출을 재현했다(실제 합성 키 원문은 테스트 출력에 없음). 두 CLI의 토큰 출력을 없애고 새 기기 등록은 resident와 사설 GUI로 안내했다. `launch.mjs`는 이전 owner-key 브라우저를 기본 자동 실행하지 않고 `--open-legacy-browser` 명시 선택 때만 열도록 했다. `runtime/service.mjs`의 낡은 주석, `runtime/START_HERE_KO.md`와 `runtime/PHONE_SETUP.md`의 수동 복사 안내를 현재 QR 경로로 갱신했다. 같은 동적 검사는 `startup-secrecy-green.txt` **2 pass / 0 fail**. 레거시 웹 UI 자체의 수동 owner-key 입력 기능을 최신 native 앱 검증이라고 주장하지 않는다.
+- Windows QR 소유자 GUI의 `scripts/pair-blackhole-phone.ps1` 모델 저장 후 restart 대상 경로에 ASCII Backspace(0x08) 1개가 있어 실제 경로가 없음을 확인했다(`badPathExists=False`, 정상 파일 `True`). 이를 `scripts\blackhole-resident.ps1`로 바로잡았다. 첫 격리 Windows 수락 시도는 Windows PowerShell 5.1이 BOM 없는 한글 UTF-8 GUI 파일을 잘못 읽어 `powershell_ast`에서 실패했다. GUI 파일에 UTF-8 BOM을 넣고 Windows PowerShell 5.1 AST 오류 0, 제어문자 0, 대상 파일 존재를 재확인했다. `scripts/test-resident-windows.ps1`에 실제 AST 문자열 경로를 해석해 파일 존재를 검사하는 회귀 단언을 추가했다. GUI 버튼을 수동으로 클릭한 증거는 없고 이 확인을 GUI 전체 작동 검증으로 확대하지 않는다.
+- 격리 Windows 수락 명령 `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/test-resident-windows.ps1 -Root <repo> -EvidencePath build-artifacts/handoff-r3-20260926/startup-secrecy-windows-resident-final.json`: exit 0, **103 checks, status=passed**, `pairing GUI restart target exists` 포함. 별도 임시 Windows 예약 작업의 설치·키 ACL/비노출·실제 기기 등록·작업/결과·중지/재시작·충돌 거부·소유 작업만 제거·데이터/키 보존을 확인했다. 보고서 SHA256 `640fa0ea63d220e7a791b416f637783d4d463844b881b081baece9bd6aa869b4`; `productionChanges=false`, 시험 뒤 BLACKHOLE 이름 예약 작업 0 및 8790/8792/9443 listener 0. 운영 resident를 설치했다고 주장하지 않는다.
+- `apps/controller/verify-ui.mjs`에서 실제 격리 코어의 agent 작업을 의도적으로 대기시켜 `status=running` 동안 짝지어진 앱 작업 카드가 `진행 중`을 표시함을 확인하고, 대기를 풀어 기존 실패 표시·자동 재실행 없음까지 확인했다. 첫 시험은 jsdom 이전 뷰를 `window.close()`할 때 주기적인 `/api/v1/state` 응답이 진행 중이어서 오래된 콜백이 닫힌 문서를 렌더하는 경합으로 실패했다. 요청 경로/진행 중 개수로 확인했고 임시 진단은 제거했다. 이전 뷰의 polling 타이머만 멈추고 진행 중인 읽기 응답이 안전하게 끝날 수 있게 한 후 **5회 연속** `ok:true`, 각 **19 checks**. 최종 로그 `startup-secrecy-ui-progress-final.txt` SHA256 `d5f864269a3df72b6d84f77afdb04669f013211aa3135fb12ee2abb6bd8e7c86`. 이 코어/UI/native IPC 모사 검사는 실제 Android 진행 표시 증거가 아니다.
+- 모든 변경 후 사용자 요청 명령 `npm.cmd test 2>&1 | Tee-Object -FilePath "$env:USERPROFILE\Desktop\npm-test-output.txt"`: Node 24.19.0, exit 0, **1156 total / 1135 pass / 0 fail / 21 skip**. 같은 바이트 `build-artifacts/handoff-r3-20260926/startup-secrecy-full-regression-final.txt` SHA256 `aa3cadc8bfd400647bf78b669dc71138a55ed64987e55c7c34e448bf6660f762`. `node --check` 변경 JS, Windows PowerShell 5.1/현재 PowerShell AST 검사, `git -c core.safecrlf=false diff --check` 모두 통과. §45 r45 APK는 제품 Android `src/` 변경이 없어 그대로이며 SHA256 `b6a6a41ec90e2baa41e12be2ec2d6f8a08904f7c3343d619db8a6e9edb4b6261`; §45 controller manifest와 현재의 차이는 APK에 포함되지 않는 `apps/controller/verify-ui.mjs` 시험 파일 1개다.
+- **VERIFIED:** 두 CLI 시작 시 비밀값 stdout/stderr 비노출, QR GUI restart 파일 경로·PS5.1 파싱, 격리 Windows 설치·복구 103항목, 실제 격리 코어 running→앱 진행 표시→통제 실패와 관련/전체 회귀. **RAN-UNVERIFIED:** 실제 QR GUI 버튼 조작은 실행하지 않았음; Android/카메라/Stronghold 앱 실행은 0회. **BLOCKED/NOT RUN:** ADB 기기 0, 실기기 설치·카메라 QR·폰 요청/진행/결과/앱 종료 복구, 실제 사설 HTTPS·PC 운영 설치/재부팅. 운영 배포·사용자 데이터 삭제·실제 자격증명 교체·Vault 변경 없음.
+- 변경 파일: `runtime/server.mjs`, `runtime/launch.mjs`, `runtime/service.mjs`, `runtime/START_HERE_KO.md`, `runtime/PHONE_SETUP.md`, 신규 `runtime/test/startup-secrecy.test.mjs`, `scripts/pair-blackhole-phone.ps1`, `scripts/test-resident-windows.ps1`, `apps/controller/verify-ui.mjs`, 이 정본 실행 기록. 같은 시간 다른 작업자가 §46/§47과 `runtime/public/jarvis.*`, 서버 정적 파일 allowlist를 추가했다. 이 파일들은 이번 수정 범위가 아니며 브라우저 CSP 결함이 §47에 별도로 기록돼 있다. 이번 회귀를 그 새 `/jarvis` 화면의 수락으로 주장하지 않는다. 다음 한 단계는 **Android 휴대폰이 PC에 연결되고 기기 화면에서 USB 디버깅이 승인되는 즉시** r45 APK의 P02→J01→R01/F01 실제 폰 수락 흐름을 실행하는 것이다. 그 전에는 동일한 로컬 대체 시험을 실기기 합격으로 바꾸지 않는다.
+
+## §49 — 2026-09-26 Claude(Cowork): §48(Codex) 독립 재검증
+
+- git: branch `blackhole/p3-jev-recovery-port-20260924`, HEAD `43a2d1b` 변동 없음, 미커밋 변경 62건(Codex §45~§48 작업 전부 미커밋).
+- VERIFIED: 신규 `runtime/test/startup-secrecy.test.mjs` 독립 재실행 2 pass / 0 fail (Node 22, 격리 VM). `runtime/server.mjs`·`launch.mjs`에 `PAIRING TOKEN` 출력 문자열 없음. `scripts/` 전체에 0x08(Backspace) 바이트 없음. `pair-blackhole-phone.ps1` 선두 UTF-8 BOM(EF BB BF) 존재, restart 경로 `scripts\blackhole-resident.ps1` 정상. `build-artifacts/handoff-r3-20260926/startup-secrecy-windows-resident-final.json`: `status=passed, checks=103`. `startup-secrecy-full-regression-final.txt`(UTF-16) 집계 `tests 1156 / pass 1135 / fail 0 / skipped 21` — Codex 보고 수치와 일치. red→green 증거(`startup-secrecy-red.txt` 2 fail → `-green.txt` 2 pass) 존재.
+- RAN-UNVERIFIED: 전체 회귀 1156건의 **이 세션 재실행** — 격리 VM 180초 상한 내 미완료(타임아웃). 수치는 Codex 산출 로그 파일 기준. APK `C:\blackhole-build-tools\artifacts\BLACKHOLE-smoke-0.2.0-arm64-debug-20260926-r45.apk` — 연결 폴더 밖이라 존재·해시 미확인.
+- 잡은 것 1 (위험): `scripts/pair-blackhole-phone.ps1`(Windows QR 소유자 GUI)은 **git 미추적 파일**(`git ls-files` 0). §48이 "바로잡았다"고 한 수정은 커밋은커녕 추적도 안 되어 있어 diff로 검증 불가, 작업 트리 유실 시 통째로 사라짐. 62건 미커밋과 함께 즉시 커밋 필요.
+- 잡은 것 2: §47 지시서(`/jarvis` v2, CSP 결함 수정)는 §48에 언급 없음 — 미착수. 다음 Codex 작업에 포함 요청.
+- BLOCKED: 실기기 Android 시험(연결 기기 0대) — 소유자가 폰 USB 디버깅 승인 후 진행.
+
+## §50 — 2026-09-26 12:58 Claude(Cowork): Codex `/jarvis` v2 진행 중간 점검 (§47 지시서 대비)
+
+- 파일 갱신 확인: `runtime/public/jarvis.css`(12:54, 신규) · `jarvis.html`(12:54) · `jarvis.mjs`(12:57). Codex 작업 진행 중(미완).
+- VERIFIED (실제 `server.mjs` 기동, 포트 8792): `/jarvis`·`/jarvis.css`·`/jarvis.mjs` 200, CSS는 외부 파일, `jarvis.html` 인라인 `<style>` 0개·`style=""` 0개, 응답 CSP `style-src 'self'` 하에서 차단 대상 없음 → **§46 결함 1 해소**. 외부 폰트/URL 참조 0. `node --check jarvis.mjs` 통과. 데이터 소스는 `/api/state`·`/api/drives/status`·`/api/artifacts`·`/api/commands`뿐, `Math.random`·모의값 0.
+- VERIFIED: 조종 화면은 실제 권한 경로에 붙음 — 자율 토글 `POST /api/autopilot {requestId,enabled}`, 전체 멈춤/재개 `POST /api/control {requestId,action:'stop'|'resume',revision}`(revision 동봉). 자비스가 승인 필요 행동을 스스로 통과시키는 코드 없음.
+- 잡은 것 (미완/미충족, 12:57 기준): (1) `/api/drives/status`를 받아 `scene.drives`에 넣지만 **그리지 않음** — `draw()`는 §46 초안 그대로(코어+busy 호+게이트 링). 지시서 §2(b) 일곱 욕구 호·(c) 그림자 위성·배경 입자층·심장박동 파동 미구현. (2) `jarvis.css`에 주석 1개 잔존(Codex가 "제거"했다고 했으나 `/*` 1건). (3) 400px·reduced-motion·Ollama 실물 증거·회귀 재실행은 아직 산출물 없음.
+- 판정: 결함 수정과 조종 배선은 맞게 가고 있음. "세계 최고 UI" 요구(§2 시각 요구)는 아직 착수 전. Codex 완료 보고 후 지시서 §5 8개 항목 전부 재검증 예정.
+
+## §51 — 2026-09-26 Claude(Cowork): 소유자 정정 2건 — 7욕구 비노출, 구현 기술 선택 재량
+
+소유자 발언: "허깅페이스도 막 쓰고 깃허브 기술들도 막 쓰고 그런 것들 내가 알려줘야 하는 게 아니고 그냥 해주면 안되나. 7욕구 표도 나올 필요 없고 그냥 뒤에서 시스템에서 돌아가면 되는거지."
+- `docs/CODEX_DIRECTIVE_JARVIS_FACE_20260926.md` §2 수정: 일곱 욕구 호(arc)/표를 화면에 노출하지 않도록 되돌림 — `/api/drives/status`는 계속 실제로 불러오되 지배 욕구의 코어 색 전이에만 쓰고, 숫자·라벨·범례·아크는 없음. §5 검증 항목 3도 "노출되지 않아야 함"으로 갱신.
+- §2-1 신설: 오픈소스 라이브러리·모델·구현 기법 선택은 Codex 재량(기존 `AGENTS.md` "Choose a sensible default" 계약 재확인) — 매번 소유자 승인 불필요. 단 외부 코드/모델의 실제 저장소 편입·상주 실행은 기존 `capability-discovery.mjs`/`kirby.mjs` 검토(라이선스·고정커밋·해시·fixture) 경로를 그대로 통과해야 함 — 이 안전 게이트는 완화하지 않음.
+- 확인: `runtime/public/jarvis-scene-model.mjs`(13:07 생성)의 `driveArcSegments`는 이번 정정으로 화면 렌더에는 쓰이지 않아야 한다 — Codex가 다음 편집에서 `draw()`에 실제로 반영하는지, 순수 색 전이 계산으로만 남기는지 다음 점검에서 확인 예정.
+
+## §52 — 2026-09-26 Claude(Cowork): 소유자 정정 — 세부 판단 기준을 "세계 1위처럼 보이는가"로 일반화
+
+소유자 발언: "그런 거 하나조차도 전세계 최고의 수준으로 생각해서 맞추면 되지." 지시서에 §1-1 신설 — 명시 안 된 세부 선택(요소 노출 여부·애니메이션·여백·문구 톤 등)은 소유자에게 묻지 않고 "스크린샷 한 장으로 세계 1위라고 믿겠는가"를 기본 판단 기준으로 삼는다. §51의 7욕구 비노출 정정을 그 기준의 실사례로 명시. 방향이 크게 갈리는 결정만 소유자에게 묻는다.
+확인: `jarvis-scene-model.mjs`(13:25)는 §51 반영 완료(`driveArcSegments` 제거, `measuredDriveTint`로 교체, arc 관련 코드 0건). Codex가 전체 회귀 재실행 중이라는 보고 받음 — 다음 점검에서 결과 확인 예정.
+
+## §53 — 2026-09-26 Codex: BLACKHOLE 자비스 실화면·로컬 실행 마감 검증
+
+- 작업 경로 `C:\Users\우연호\Documents\Projects\yeno-os`, 제품명 **BLACKHOLE**, 그 안의 화면 이름 **JARVIS**. 시작 브랜치 `blackhole/p3-jev-recovery-port-20260924`, origin `https://github.com/wooyeonho/yeno-os.git`, 기준 HEAD `43a2d1b44e0a60ebad4982dc1e2222213869cc1a`를 확인하고 기존 미커밋 62건을 보존했다. 기존 native/Windows 작업과 미추적 QR GUI를 `62b00fb`, 자비스 화면·대화/작업 권한 경계를 `869a49f`, 로컬 목표의 제한된 추론 시간·실물 시험 도구를 `6d6a3fa`로 커밋했다. push·운영 배포는 하지 않았다.
+- `/jarvis`는 실제 API 상태에 연결된 코어 장면과 소유자 제어를 제공한다. Seven Drives는 내부 색 전이 계산에만 사용하고 표·숫자·라벨·호를 노출하지 않는다. 외부 CSS를 사용해 CSP `style-src 'self'`를 지키며 인라인 스타일/외부 폰트가 없다. 대화 모드의 `chatOnly:true`는 명령 형태의 자연어를 목표 실행으로 우회시키지 않고, 작업 모드는 `/api/commands`와 실제 작업·산출물에 연결된다. 독립 읽기 전용 UI/무결성 리뷰는 최종 화면 상태에 PASS였으나 제품의 세계적 순위를 검증한 것은 아니다.
+- `node scripts/verify-jarvis-face-live.mjs`: exit 0. 격리 실제 HTTP 코어와 Edge 브라우저에서 소유자 승인 웹 페어링, 정지/재개, 미연결 대화 명령 미실행, 모델 부재 시 목표 저장, desktop 1440·mobile 400 가로 넘침 없음, reduced-motion, CSP를 확인했다. 보고서 `build-artifacts/jarvis-face-v2-20260926/report.json`, 스크린샷 6장과 SHA-256이 있다. 이는 Android 실기기 시험이 아니다.
+- PC에 이미 실행 중이던 Ollama의 `qwen2.5:3b`를 격리 코어·브라우저에서 호출했다. `node scripts/verify-jarvis-local-model-live.mjs` 대화 경로와 `node scripts/verify-jarvis-local-model-live.mjs --work` 작업 경로 모두 exit 0; 작업은 `completed`, artifact 434 bytes, 서버 헤더와 바이트 SHA-256 `3678abbacaccaf799f04d2631a8dd38025b6c8b2284ebeb40bca93c31e4a5a2d` 일치, JARVIS 화면에 답변이 나타났다. 작업 화면 답변은 요청한 인사말을 제대로 만들지 못했으므로 **내용 품질은 불합격/미완**이다. `local-work-report.json`의 `answerQuality:not-independently-assessed`는 자동 검사 범위를 뜻하고, 이 수동 판정을 대체하지 않는다. 기존 작업 시도는 약 90초 후 `request_failed_or_stopped`로 실패했으며, 로컬 소유자 목표와 Shadow에만 최대 300초, 원격 제공자에는 기존 90초를 유지하도록 변경했다. 성공한 재실행만을 시간 제한 효과의 단독 증명으로 보지 않는다.
+- 요청한 `npm.cmd test 2>&1 | Tee-Object -FilePath "$env:USERPROFILE\Desktop\npm-test-output.txt"`를 실행했으나 기본 `C:\Program Files\nodejs\node.exe` v24.11.1에서 여러 시험 파일이 Windows 프로세스 코드 `-1073740791`로 충돌했다(862 total / 770 pass / 71 fail / 21 skip). 실패 로그 `full-regression-node24.11-failed.txt` SHA-256 `1d2e6dec379e75719ccb1caa829ed1b05196f3164aef0fb5f8f0686fb7c0c0ef` 보존. 대표 실패 파일은 기본 Node 단독 실행도 충돌했지만 PC에 이미 있는 Node v24.21.0으로는 6/6 통과했다. v24.21.0 `--test --test-concurrency=4` 전체 명령을 재실행하여 **1160 total / 1139 pass / 0 fail / 21 skip**, exit 0. 로그 `full-regression-node24.21.txt` SHA-256 `99d692199013be9c55c815687185beae4504d43c7915956dad3b78ba27da0ea7`. `node --check` 2개와 `git -c core.safecrlf=false diff --check`도 exit 0. 두 Node 실행 결과를 섞어 단일 `npm test` 성공이라고 주장하지 않는다.
+- APK `C:\blackhole-build-tools\artifacts\BLACKHOLE-smoke-0.2.0-arm64-debug-20260926-r45.apk` 존재, SHA-256 `b6a6a41ec90e2baa41e12be2ec2d6f8a08904f7c3343d619db8a6e9edb4b6261` 재확인. `adb devices -l` 연결 0. 이번 변경은 Android 소스나 APK를 다시 빌드하지 않았다. Vault 변경, 실제 자격증명 출력/교체, 운영 설치·배포, 사용자 데이터 삭제 없음.
+- **VERIFIED:** 저장소/이름 구분, 브라우저 실화면·권한 경계, 격리 코어 정지/재개, 실제 로컬 모델 호출과 산출물 무결성, Node v24.21.0 전체 회귀. **RAN-UNVERIFIED:** 로컬 모델의 인사말 응답은 실행되었으나 내용 요구에 미달; 기본 Node v24.11.1 `npm.cmd test`는 실행했으나 실패. **BLOCKED/NOT RUN:** Android 실기기 설치·카메라/Stronghold 페어링·폰 요청/진행/결과/앱 종료 후 복구, 실제 사설 HTTPS/Tailscale, 운영 PC 재부팅 후 폰 확인. QPU 실물 실행과 딥러닝 학습 루프도 현재 기능으로 주장하지 않는다.
+- 다음 한 단계: 휴대폰을 PC에 연결하고 기기 화면에서 USB 디버깅을 승인받는 즉시 기존 APK로 P02→J01→R01/F01을 실기기에서 실행해 폰→Windows→폰 결과·복구를 확인한다.
