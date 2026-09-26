@@ -14,6 +14,7 @@ const out=new URL('../build-artifacts/jarvis-face-v2-20260926/',import.meta.url)
 mkdirSync(out,{recursive:true});
 const dataDir=mkdtempSync(join(tmpdir(),'blackhole-jarvis-model-'));
 const ownerCredential=randomBytes(32).toString('hex');
+const workMode=process.argv.includes('--work');
 let core,browser;
 try {
   const env={YENO_AGENT_PROVIDER:'local',YENO_AGENT_MODEL:'qwen2.5:3b',YENO_LOCAL_MODEL:'qwen2.5:3b',
@@ -32,17 +33,18 @@ try {
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('/jarvis');
   await page.waitForFunction(()=>document.querySelector('#model')?.textContent?.includes('qwen2.5:3b'),null,{timeout:12000});
-  await page.locator('#command-mode').click();
-  assert.equal(await page.locator('#command-mode').getAttribute('aria-pressed'),'true');
+  if(!workMode)await page.locator('#command-mode').click();
+  assert.equal(await page.locator('#command-mode').getAttribute('aria-pressed'),String(!workMode));
   await page.locator('#in').fill('한 문장으로 한국어 인사말을 만들어줘. 외부 사실은 필요 없어.');
-  const commandResponse=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/voice',{timeout:15000});
+  const route=workMode?'/api/commands':'/api/voice';
+  const commandResponse=page.waitForResponse(response=>new URL(response.url()).pathname===route,{timeout:15000});
   await page.locator('#send').click();
   const submitted=await commandResponse;
-  assert.equal(submitted.status(),201,'Voice route accepts the owner conversation');
+  assert.equal(submitted.status(),201,`${route} accepts the owner request`);
   const command=await submitted.json();
-  assert.ok(command?.job?.id,'The real voice route returned a job');
+  assert.ok(command?.job?.id,'The real route returned a job');
   let job;
-  for(let attempt=0;attempt<60;attempt++){
+  for(let attempt=0;attempt<(workMode?210:60);attempt++){
     const response=await context.request.get('/api/state',{headers:{'X-Yeno-Browser':'1'}});
     assert.equal(response.status(),200);
     job=(await response.json()).jobs.find(item=>item.id===command.job.id);
@@ -59,11 +61,11 @@ try {
   assert.equal(artifactSha256,response.headers()['x-content-sha256']);
   await page.waitForFunction(()=>document.querySelector('#line')?.textContent?.length>10 && !document.querySelector('#line')?.textContent?.includes('조용한 박동'),null,{timeout:15000});
   await page.waitForTimeout(400);
-  await page.screenshot({path:fileURLToPath(new URL('local-model-result.png',out)),fullPage:true});
+  await page.screenshot({path:fileURLToPath(new URL(workMode?'local-work-result.png':'local-model-result.png',out)),fullPage:true});
   assert.deepEqual(errors,[]);
-  const report={server:'isolated-real-core',provider:'local',model:'qwen2.5:3b',jobStatus:job.status,jobId:job.id,
-    artifactId:artifact.id,artifactSha256,artifactBytes:bytes.length,jarvisSpeechVisible:true,errors};
-  writeFileSync(new URL('local-model-report.json',out),JSON.stringify(report,null,2));
+  const report={server:'isolated-real-core',mode:workMode?'work':'conversation',provider:'local',model:'qwen2.5:3b',jobStatus:job.status,jobId:job.id,
+    artifactId:artifact.id,artifactSha256,artifactBytes:bytes.length,jarvisSpeechVisible:true,answerQuality:'not-independently-assessed',errors};
+  writeFileSync(new URL(workMode?'local-work-report.json':'local-model-report.json',out),JSON.stringify(report,null,2));
   console.log(JSON.stringify(report));
 } finally {
   await browser?.close();

@@ -1482,9 +1482,9 @@ export function createYenoServer(options={}) {
        else if(job.type==='evolution')job.draft=evolutionDocument();
        else if(job.type==='agent'){
          const controller=new AbortController();controllers.set(job.id,controller);
-         // Local Shadow workers can require separate, bounded project/source
-         // reads before writing. Keep the network-provider deadline intact.
-         const limitMs=job.shadowAssignment&&configFor(job).provider==='local'?300000:90000;
+         // Local Shadow workers and owner-started local goals may need a
+         // longer bounded CPU inference step. Keep remote-provider jobs at 90s.
+         const limitMs=(job.shadowAssignment||job.questId)&&configFor(job).provider==='local'?300000:90000;
          const timeout=setTimeout(()=>controller.abort(),Math.max(1,Math.min(limitMs,job.deadlineAt?Date.parse(job.deadlineAt)-Date.now():limitMs)));
          try {
            const bundle=job.researchRequest?await prepareResearch(job,controller.signal,valid):null;
