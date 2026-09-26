@@ -22,7 +22,7 @@ test('Render config maps platform hostname and PORT while rejecting malformed se
   assert.equal(config.env.YENO_ALLOWED_HOSTS, 'yeno-test.onrender.com');
   assert.equal(config.env.YENO_HOST, '0.0.0.0');
   assert.equal(config.env.YENO_PORT, '12000');
-  assert.equal(config.dataDir, '/var/data/yeno');
+  assert.equal(config.dataDir, path.resolve('/var/data/yeno'));
   assert.equal(renderConfig({ ...env, PORT: undefined }).env.YENO_PORT, '10000');
   assert.equal(renderConfig({ ...env, YENO_ALLOWED_HOSTS: 'core.example.net,yeno-test.onrender.com' }).env.YENO_ALLOWED_HOSTS, 'core.example.net,yeno-test.onrender.com');
   assert.equal(renderConfig({ ...env, YENO_ALLOWED_HOSTS: 'core.example.net' }).env.YENO_ALLOWED_HOSTS, 'core.example.net,yeno-test.onrender.com');

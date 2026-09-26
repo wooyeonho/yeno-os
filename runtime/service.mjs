@@ -5,8 +5,7 @@ import { koyebConfig } from './lib/koyeb-config.mjs';
 import { verifyHostedDisk } from './lib/hosted-disk.mjs';
 import { INDEPENDENT_CORE_CONTRACT, assertIndependentCoreContract } from './lib/independent-core.mjs';
 
-// Shared non-interactive entrypoint. Do not run server.mjs as a CLI on a hosted
-// service: that development entrypoint intentionally prints the pairing token.
+// Shared non-interactive entrypoint with hosted disk and credential preflight.
 process.umask(0o077);
 let runtime;
 let stopping = false;

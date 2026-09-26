@@ -36,8 +36,10 @@ try{
     process.env.YENO_ALLOWED_HOSTS=[process.env.YENO_ALLOWED_HOSTS,`${dns}:9443`].filter(Boolean).join(',');phoneURL=`https://${dns}:9443`;
   }
   runtime=await start({host:'127.0.0.1'});const address=runtime.server.address();const url=`http://127.0.0.1:${address.port}`;
-  console.log('\nYENO OS 0.1.1 — LOCAL RUNTIME\n');console.log(`PC: ${url}`);console.log(`PAIRING TOKEN: ${runtime.token}`);console.log('\nPaste the pairing token in your YENO browser. Keep this window open.');
+  console.log('\nYENO OS — LEGACY LOCAL RUNTIME\n');console.log(`PC: ${url}`);console.log('Owner credential output is disabled. For new device enrollment, use the Windows resident and private pairing GUI.');
   if(phone){console.log(`\nPHONE: ${phoneURL}`);console.log('Complete any HTTPS setup prompt in Tailscale. This shares only inside your personal Tailscale network.');proxy=spawn(ts,['serve','--https=9443',url],{stdio:'inherit'});proxy.on('error',()=>console.error('Phone proxy could not start. PC mode remains available.'));proxy.on('exit',code=>{if(!stopping)console.log(`Phone proxy stopped (${code ?? 'signal'}). PC mode remains available.`);});}
-  if(!process.argv.includes('--no-open')&&process.platform==='win32'){const b=spawn('rundll32.exe',['url.dll,FileProtocolHandler',url],{detached:true,stdio:'ignore',windowsHide:true});b.on('error',()=>console.log('Open the PC URL above in your browser.'));b.unref();}
+  // The old browser asks for the owner credential. Keep it available to
+  // already paired legacy sessions, but never launch that prompt by default.
+  if(process.argv.includes('--open-legacy-browser')&&!process.argv.includes('--no-open')&&process.platform==='win32'){const b=spawn('rundll32.exe',['url.dll,FileProtocolHandler',url],{detached:true,stdio:'ignore',windowsHide:true});b.on('error',()=>console.log('Open the PC URL above in your browser.'));b.unref();}
   for(const signal of ['SIGINT','SIGTERM'])process.on(signal,stop);
 }catch(e){runtime?.shutdown();console.error(`YENO could not start: ${e.message}`);process.exitCode=1;}

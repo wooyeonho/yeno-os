@@ -9,6 +9,7 @@ import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { startResident, validateResidentConfig, serveConfigurationIsEmpty } from '../resident.mjs';
 import { openStore } from '../lib/store.mjs';
+import {start} from '../server.mjs';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function availablePort() {
@@ -234,4 +235,17 @@ test('metadata write failure cannot prevent core and owned phone process cleanup
   assert.equal(fake.child.killed, true);
   assert.equal(resident.runtime.server.listening, false);
   assert.equal(fs.existsSync(path.join(f.config.dataDir, 'runtime.lock')), false);
+});
+
+test('explicit local model config reaches the same resident and survives restart without cloud environment', async t => {
+  const f=await fixture(t);
+  f.config.localModel='qwen2.5:3b';
+  let resident=await f.begin({start:options=>{ assert.equal(options.env.YENO_LOCAL_BASE_URL,'http://127.0.0.1:11434/v1/chat/completions'); return start(options); }});
+  let state=(await f.call('/api/state')).body;
+  assert.equal(state.agent.provider,'local'); assert.equal(state.agent.model,'qwen2.5:3b');
+  assert.equal(state.modules.ai,false);
+  await resident.stop(); resident=await f.begin();
+  state=(await f.call('/api/state')).body;
+  assert.equal(state.agent.provider,'local'); assert.equal(state.agent.model,'qwen2.5:3b');
+  for(const localModel of ['https://cloud.example','sk-sensitive','',null]) assert.throws(()=>validateResidentConfig({...f.config,localModel}));
 });

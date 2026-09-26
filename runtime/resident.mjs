@@ -7,17 +7,21 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { start } from './server.mjs';
+import {desktopProviderEnvironment, validateDesktopProviders} from './lib/desktop-provider-config.mjs';
 
 const exec = promisify(execFile);
 const CONFIG_KEYS = ['version', 'dataDir', 'tokenFile', 'controlDir', 'port', 'phone'];
 const DNS_NAME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+\.ts\.net$/;
+const localProviders = model => ({version:1, providers:[{provider:'local',model,apiKey:''}],primaryProvider:'local',dailyCallLimit:4});
 const coded = code => Object.assign(new Error(code), { code });
 function exactKeys(value, keys) {
   return value && typeof value === 'object' && !Array.isArray(value)
     && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 }
 export function validateResidentConfig(value) {
-  if (!exactKeys(value, CONFIG_KEYS) || value.version !== 1) throw coded('RESIDENT_CONFIG_INVALID');
+  const keys = value && Object.hasOwn(value, 'localModel') ? [...CONFIG_KEYS, 'localModel'] : CONFIG_KEYS;
+  if (!exactKeys(value, keys) || value.version !== 1) throw coded('RESIDENT_CONFIG_INVALID');
+  if (Object.hasOwn(value, 'localModel')) validateDesktopProviders(localProviders(value.localModel));
   for (const key of ['dataDir', 'tokenFile', 'controlDir']) {
     if (typeof value[key] !== 'string' || !path.isAbsolute(value[key]) || /[\r\n\0]/.test(value[key])) throw coded('RESIDENT_PATH_INVALID');
   }
@@ -142,7 +146,7 @@ export async function startResident(input, adapters = {}) {
   // Dedicated local mode: only explicit config controls host, data and token.
   // Do not inherit provider credentials, proxy hosts or cloud deployment settings.
   const runtime = await (adapters.start ?? start)({ dataDir: config.dataDir, token, host: '127.0.0.1', port: config.port,
-    env: { YENO_ALLOWED_HOSTS: phoneReady ? `${config.phone.dnsName}:9443` : '' } });
+    env: { ...(config.localModel ? {...desktopProviderEnvironment(localProviders(config.localModel)), YENO_LOCAL_BASE_URL:'http://127.0.0.1:11434/v1/chat/completions'} : {}), YENO_ALLOWED_HOSTS: phoneReady ? `${config.phone.dnsName}:9443` : '' } });
   let child = null, stopping = null, poll = null, probeTimer = null, phoneProbe = null;
   let resolveClosed, rejectClosed;
   const closed = new Promise((resolve, reject) => { resolveClosed = resolve; rejectClosed = reject; });

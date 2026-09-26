@@ -249,8 +249,8 @@ function shadowPhase(shadows, verify, semantic) {
   if (semantic?.status === 'completed') return 'completed';
   if (verify?.status === 'completed' && semantic) return 'semantic_verifying';
   if (shadows.every(s => s.status === 'completed') && verify) return 'verifying';
-  if (shadows.some(s => s.status === 'paused')) return 'blocked';
   if (shadows.some(s => ['queued', 'running'].includes(s.status))) return 'running';
+  if (shadows.some(s => s.status === 'paused')) return 'blocked';
   return 'planning';
 }
 

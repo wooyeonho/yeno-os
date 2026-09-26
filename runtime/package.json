@@ -16,6 +16,7 @@
     "check:living-loop": "node ../scripts/verify-living-loop-live.mjs"
   },
   "dependencies": {
+    "qrcode": "1.5.4",
     "quickjs-emscripten": "0.32.0"
   }
 }

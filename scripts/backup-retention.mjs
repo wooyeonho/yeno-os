@@ -108,7 +108,9 @@ function writeAtomic(directory, filename, bytes) {
   fs.closeSync(fd);
   fs.renameSync(temporary, destination);
   const dirFd = fs.openSync(directory, 'r');
-  try { fs.fsyncSync(dirFd); } finally { fs.closeSync(dirFd); }
+  try { fs.fsyncSync(dirFd); } catch (error) {
+    if (process.platform !== 'win32' || error.code !== 'EPERM') throw error;
+  } finally { fs.closeSync(dirFd); }
   return destination;
 }
 

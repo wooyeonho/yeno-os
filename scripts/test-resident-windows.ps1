@@ -2,11 +2,12 @@
 # provider keys, Android device or paid service is used by this acceptance.
 [CmdletBinding()]
 param(
-    [string]$Root = (Split-Path -Parent $PSScriptRoot),
+    [string]$Root,
     [Parameter(Mandatory = $true)][string]$EvidencePath
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if (-not $Root) { $Root = Split-Path -Parent $PSScriptRoot }
 $script:stage = 'preflight'
 $script:checks = New-Object 'System.Collections.Generic.List[string]'
 $script:allOutput = ''
@@ -120,6 +121,10 @@ try {
             $duplicateNames = @($functionNames | Group-Object | Where-Object { $_.Count -gt 1 })
             Assert-That ($duplicateNames.Count -eq 0) 'no duplicate launcher functions'
         }
+        if ($file.Name -eq 'pair-blackhole-phone.ps1') {
+            $restartPaths = @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.StringConstantExpressionAst] -and $node.Value -like 'scripts*resident.ps1' }, $true))
+            Assert-That ($restartPaths.Count -eq 1 -and (Test-Path -LiteralPath (Join-Path $Root $restartPaths[0].Value))) 'pairing GUI restart target exists'
+        }
     }
 
     New-Item -ItemType Directory -Path $testRoot | Out-Null
@@ -155,11 +160,11 @@ try {
     Assert-That ([int]$taskXml.Task.Settings.RestartOnFailure.Count -ge 1 -and [int]$taskXml.Task.Settings.RestartOnFailure.Count -le 5) 'bounded scheduler retry'
     Assert-That (($task.Actions | Out-String) -notmatch 'service\.mjs') 'task does not launch Linux container entrypoint'
     $configPath = Join-Path $residentHome 'config.json'
-    $config = Get-Content -Raw -LiteralPath $configPath | ConvertFrom-Json
+    $config = Get-Content -Raw -Encoding UTF8 -LiteralPath $configPath | ConvertFrom-Json
     Assert-That ($config.version -eq 1 -and $config.port -eq $testPort -and $null -eq $config.phone) 'one local configuration, phone disabled by default'
     foreach ($privatePath in @($residentHome, $configPath, $config.dataDir, (Split-Path -Parent $config.tokenFile), $config.tokenFile)) { Assert-PrivateAcl $privatePath }
     $tokenHash = (Get-FileHash -LiteralPath $config.tokenFile -Algorithm SHA256).Hash
-    $ownerBefore = Get-Content -Raw -LiteralPath (Join-Path $residentHome 'owner.json')
+    $ownerBefore = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $residentHome 'owner.json')
 
     $script:stage = 'start_and_native_enrollment'
     $null = Run-Launcher 'start'
@@ -194,7 +199,7 @@ try {
     $script:stage = 'idempotent_install'
     $null = Run-Launcher 'install'
     Assert-That ((Get-FileHash -LiteralPath $config.tokenFile -Algorithm SHA256).Hash -eq $tokenHash) 'reinstall does not rotate pairing key'
-    Assert-That ((Get-Content -Raw -LiteralPath (Join-Path $residentHome 'owner.json')) -ceq $ownerBefore) 'reinstall preserves installation identity'
+    Assert-That ((Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $residentHome 'owner.json')) -ceq $ownerBefore) 'reinstall preserves installation identity'
 
     $script:stage = 'stop_restart_reconnect'
     $null = Run-Launcher 'stop'
@@ -236,7 +241,7 @@ try {
         # No -PairingToken supplied: exercises the CSPRNG auto-generation path
         # (blackhole-resident.ps1 no longer prompts interactively for a key).
         $null = Run-Launcher 'install' @{ HomeDir = $autoKeyHome; TaskName = $autoKeyTaskName; Port = $autoKeyPort; InitializeNewStore = $true }
-        $autoKeyConfig = Get-Content -Raw -LiteralPath (Join-Path $autoKeyHome 'config.json') | ConvertFrom-Json
+        $autoKeyConfig = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $autoKeyHome 'config.json') | ConvertFrom-Json
         $generatedSecret = [IO.File]::ReadAllText($autoKeyConfig.tokenFile).Trim()
         Assert-That ($generatedSecret.Length -ge 16 -and $generatedSecret.Length -le 512) 'auto-generated pairing key length within contract'
         Assert-That ($generatedSecret -notmatch '\s') 'auto-generated pairing key has no whitespace'
@@ -274,7 +279,7 @@ try {
     Assert-That ((Export-ScheduledTask -TaskName $collisionTaskName -TaskPath '\') -ceq $collisionBefore) 'unowned task XML remains unchanged'
     # Even a matching owner file is not authority to mutate a different task.
     New-Item -ItemType Directory -Force -Path $collisionHome | Out-Null
-    $collisionOwner = Get-Content -Raw -LiteralPath (Join-Path $residentHome 'owner.json') | ConvertFrom-Json
+    $collisionOwner = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $residentHome 'owner.json') | ConvertFrom-Json
     $collisionOwner.taskName = $collisionTaskName
     $collisionOwner.installId = $testId
     $collisionOwner | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $collisionHome 'owner.json') -Encoding UTF8
@@ -288,7 +293,7 @@ try {
     Wait-Core $false
     Assert-That ($null -eq (Get-ScheduledTask -TaskName $taskName -TaskPath '\' -ErrorAction SilentlyContinue)) 'owned scheduled task removed'
     Assert-That (Test-Path -LiteralPath (Join-Path $config.dataDir 'state.json')) 'uninstall preserves durable state'
-    $diskEnvelope = Get-Content -Raw -LiteralPath (Join-Path $config.dataDir 'state.json') | ConvertFrom-Json
+    $diskEnvelope = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $config.dataDir 'state.json') | ConvertFrom-Json
     $diskState = $diskEnvelope.payload | ConvertFrom-Json
     Assert-That (@($diskState.jobs | Where-Object { $_.id -eq $jobId }).Count -eq 1) 'uninstall preserves original job identity'
     $diskArtifact = $diskState.artifacts.PSObject.Properties[$artifactId].Value

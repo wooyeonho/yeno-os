@@ -32,6 +32,7 @@ import {assertProductionCapacity,productionCapacity,ProductionCapacityError,RESE
 import {RESEARCH_TRACKS,ResearchError,validateResearchInput,validateResearchBundle,collectResearchEvidence,createResearchPrompt,researchCitationIds} from './lib/research.mjs';
 import {createWebSessions,WebSessionError} from './lib/web-session.mjs';
 import {createWebPairings} from './lib/web-pairing.mjs';
+import {createNativePairings} from './lib/native-pairing.mjs';
 import {planAutopilot,getAutopilotStatus,validateAutopilot,validateAutopilotJob} from './lib/autopilot.mjs';
 import {researchEvidenceCsv,researchForAiInput,researchVideoInput} from './lib/autopilot-outputs.mjs';
 import {CapabilityError,importCapability,verifyCapability,activateCapability,disableCapability,rollbackCapability,executeCapability,getCapabilityStatus,createCapabilityRequest,validateCapabilityRequest} from './lib/capabilities.mjs';
@@ -172,7 +173,7 @@ export function createYenoServer(options={}) {
  if(typeof token!=='string'||token.length<16){releaseLock();throw new Error('YENO_TOKEN must contain at least 16 characters.');}
  const tokenHash=digest(token);
  const webSessions=createWebSessions({key:token,now:options.webSessionNow??Date.now,cookieNamespace:options.webCookieNamespace??null});
- const webPairings=createWebPairings({now:options.webSessionNow??Date.now});
+ const nativePairings=createNativePairings(); const webPairings=createWebPairings({now:options.webSessionNow??Date.now});
  const hankkiRateLimit=createHankkiRateLimiter();
  const aiBase=env.YENO_AI_BASE_URL??'', aiModel=env.YENO_AI_MODEL??'', aiKey=env.YENO_AI_API_KEY??'';
  let aiEndpoint=null;
@@ -1481,7 +1482,10 @@ export function createYenoServer(options={}) {
        else if(job.type==='evolution')job.draft=evolutionDocument();
        else if(job.type==='agent'){
          const controller=new AbortController();controllers.set(job.id,controller);
-         const timeout=setTimeout(()=>controller.abort(),Math.max(1,Math.min(90000,job.deadlineAt?Date.parse(job.deadlineAt)-Date.now():90000)));
+         // Local Shadow workers can require separate, bounded project/source
+         // reads before writing. Keep the network-provider deadline intact.
+         const limitMs=job.shadowAssignment&&configFor(job).provider==='local'?300000:90000;
+         const timeout=setTimeout(()=>controller.abort(),Math.max(1,Math.min(limitMs,job.deadlineAt?Date.parse(job.deadlineAt)-Date.now():limitMs)));
          try {
            const bundle=job.researchRequest?await prepareResearch(job,controller.signal,valid):null;
            if(!valid())return;
@@ -1714,7 +1718,7 @@ export function createYenoServer(options={}) {
      if(!url.pathname.startsWith('/api/')){
        if(req.method!=='GET'&&req.method!=='HEAD')throw new HttpError(405,'Method not allowed');
        const allowed={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/command-request.mjs':'command-request.mjs','/source-reference-labels.mjs':'source-reference-labels.mjs','/world-view.mjs':'world-view.mjs','/studio-view.mjs':'studio-view.mjs','/studio.css':'studio.css','/absorption-routing.mjs':'absorption-routing.mjs','/world-land.svg':'world-land.svg','/style.css':'style.css','/manifest.webmanifest':'manifest.webmanifest','/icon.svg':'icon.svg','/web-client.mjs':'web-client.mjs','/sw.js':'sw.js','/offline.html':'offline.html'};
-       Object.assign(allowed,{'/code-view.mjs':'code-view.mjs','/code.css':'code.css','/voice-view.mjs':'voice-view.mjs','/voice.css':'voice.css','/cockpit.css':'cockpit.css','/capability-view.mjs':'capability-view.mjs','/autopilot-view.mjs':'autopilot-view.mjs','/autopilot-view-engine.mjs':'autopilot-view-engine.mjs','/research-view.mjs':'research-view.mjs','/hankki/answer':'hankki-answer.html','/hankki-answer.mjs':'hankki-answer.mjs','/hankki-answer.css':'hankki-answer.css'});
+       Object.assign(allowed,{'/jarvis':'jarvis.html','/jarvis.html':'jarvis.html','/jarvis.mjs':'jarvis.mjs','/code-view.mjs':'code-view.mjs','/code.css':'code.css','/voice-view.mjs':'voice-view.mjs','/voice.css':'voice.css','/cockpit.css':'cockpit.css','/capability-view.mjs':'capability-view.mjs','/autopilot-view.mjs':'autopilot-view.mjs','/autopilot-view-engine.mjs':'autopilot-view-engine.mjs','/research-view.mjs':'research-view.mjs','/hankki/answer':'hankki-answer.html','/hankki-answer.mjs':'hankki-answer.mjs','/hankki-answer.css':'hankki-answer.css'});
        Object.assign(allowed,{'/icon-192.png':'icon-192.png','/icon-512.png':'icon-512.png','/device-connect.mjs':'device-connect.mjs'});
        Object.assign(allowed,{'/growth-view.mjs':'growth-view.mjs'});
        Object.assign(allowed,{'/living-core-view.mjs':'living-core-view.mjs','/living-core.css':'living-core.css'});
@@ -1801,6 +1805,30 @@ export function createYenoServer(options={}) {
        if(principal.device.revokedAt){res.setHeader('Set-Cookie',webSessions.clear(req));return respond(res,200,{loggedOut:true,revoked:true,deviceId:id});}
        const result=await mutation(req,url,b,()=>{s.devices[id].revokedAt=now();event(`Browser connection revoked: ${id}`);return {status:200,payload:{loggedOut:true,revoked:true,deviceId:id}};},{required:true,safetyAction:true,fingerprintPath:`/api/devices/${id}/web-logout`});
        res.setHeader('Set-Cookie',webSessions.clear(req));return respond(res,result.status,result.payload);
+     }
+     if(req.method==='POST'&&url.pathname.startsWith('/api/v1/pairing/invites')){
+       const owner=authenticate(req,false);
+       if(owner.kind!=='pairing')throw new HttpError(403,'Owner credential required.');
+       ensureDurable();
+       const b=await body(req,4096);
+       if(url.pathname==='/api/v1/pairing/invites'){
+         if(Object.keys(b).some(key=>key!=='requestId'))throw new HttpError(400,'Only requestId is accepted.');
+         const phoneHost=(env.YENO_ALLOWED_HOSTS??'').split(',').map(value=>value.trim()).find(value=>/^[a-z0-9.-]+\.ts\.net:9443$/.test(value));
+         return respond(res,201,{invitation:nativePairings.issue(b.requestId,`https://${phoneHost??''}`)});
+       }
+       const cancel=/^\/api\/v1\/pairing\/invites\/([a-f0-9-]{36})\/cancel$/.exec(url.pathname);
+       if(cancel)return respond(res,200,nativePairings.cancel(cancel[1]));
+       throw new HttpError(404,'Unknown invitation action.');
+     }
+     if(req.method==='POST'&&url.pathname==='/api/v1/devices/enroll-invite'){
+       const b=await body(req,4096);
+       if(Object.keys(b).some(key=>!['requestId','name','platform'].includes(key))||!['android','windows'].includes(b.platform))throw new HttpError(400,'Invalid native enrollment.');
+       const invitationId=nativePairings.claim(bearer(req),b.requestId);
+       const result=await mutation(req,url,b,()=>{
+         if(Object.values(s.devices).filter(device=>!device.revokedAt).length>=100)throw new HttpError(409,'Too many active devices.');
+         return {status:201,payload:{device:enrollDevice(b)}};
+       },{required:true,fingerprintPath:`/api/native-invitations/${invitationId}/enroll`});
+       return respond(res,result.status,{device:enrollmentResponse(result.payload.device)});
      }
      const versioned=url.pathname.startsWith('/api/v1/');
      if(versioned&&req.method==='POST'&&url.pathname==='/api/v1/devices/enroll'){
@@ -2206,7 +2234,11 @@ export function createYenoServer(options={}) {
          if((match=text.match(/^프로젝트\s+작업\s*[:：]\s*([^|]+)\|\s*(.+)$/is))){const project=resolveProject(s.projects,match[1]),work=requiredText(match[2],60000);return {status:201,payload:{kind:'job',job:projectDocumentJob(project,projectBriefDocument(project,work),`${project.name} 작업 준비서`,'preparation')}};}
          if((match=text.match(/^(?:기억해|remember)\s*[:：]\s*(.+)$/is)))return {status:201,payload:{kind:'memory',memory:addMemory({text:match[1]})}};
          if((match=text.match(/^(?:찾아줘|find)\s*[:：]\s*(.+)$/is))){requireModule('memory');return {status:200,payload:{kind:'search',memories:s.memories.filter(m=>m.text.toLocaleLowerCase().includes(match[1].trim().toLocaleLowerCase()))}};}
-         if((match=text.match(/^(?:문서 만들어|document)\s*[:：]\s*(.+)$/is)))return {status:201,payload:{kind:'job',job:publicJob(newJob({type:'document',text:match[1]}))}};
+         if((match=text.match(/^(?:문서 만들어|document)\s*[:：]\s*(.+)$/is))){
+           const documentText=match[1].trim();
+           const title=Array.from(documentText.replace(/\s+/g,' ')).slice(0,72).join('');
+           return {status:201,payload:{kind:'job',job:publicJob(newJob({type:'document',text:match[1],title}))}};
+         }
          if(/^(?:진단해|diagnose)$/i.test(text))return {status:201,payload:{kind:'job',job:publicJob(newJob({type:'diagnostics'}))}};
          if(/^(?:개선점 찾아줘|evolve)$/i.test(text))return {status:201,payload:{kind:'job',job:publicJob(newJob({type:'evolution'}))}};
          if(agentSettings.ready)return {status:201,payload:{kind:'job',job:publicJob(newJob({type:'agent',text,title:'BLACKHOLE 요청'}))}};
@@ -2264,5 +2296,5 @@ export async function start(options={}) {
 }
 
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
- start().then(runtime=>{const addr=runtime.server.address();console.log(`YENO OS ${VERSION} ready at http://${process.env.YENO_HOST??'127.0.0.1'}:${addr.port}`);console.log(`PAIRING TOKEN: ${runtime.token}`);console.log('Keep this token private. Pair in the browser; do not put the token in a URL.');for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{runtime.shutdown();setTimeout(()=>process.exit(0),100).unref();});}).catch(error=>{console.error(`YENO startup failed: ${error.message}`);process.exitCode=1;});
+ start().then(runtime=>{const addr=runtime.server.address();console.log(`YENO OS ${VERSION} ready at http://${process.env.YENO_HOST??'127.0.0.1'}:${addr.port}`);console.log('Owner credential output is disabled. Use the Windows resident and private pairing GUI for new device enrollment.');for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{runtime.shutdown();setTimeout(()=>process.exit(0),100).unref();});}).catch(error=>{console.error(`YENO startup failed: ${error.message}`);process.exitCode=1;});
 }

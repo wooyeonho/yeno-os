@@ -26,7 +26,7 @@ const {chromium} = require('playwright');
 
 const dataDir = mkdtempSync(join(tmpdir(), 'blackhole-mobile-shot-'));
 const owner = 'synthetic-mobile-shot-owner-key';
-const core = await start({host: '127.0.0.1', port: 0, dataDir, token: owner, env: {}});
+const core = await start({host: '127.0.0.1', port: 0, dataDir, token: owner, env: {YENO_ALLOWED_HOSTS: 'acceptance.example.ts.net:9443'}});
 const corePort = core.server.address().port;
 
 const distDir = new URL('./dist/', import.meta.url);
@@ -51,7 +51,7 @@ const proxy = http.createServer((req, res) => {
 await new Promise(resolve => proxy.listen(0, '127.0.0.1', resolve));
 const proxyOrigin = `http://127.0.0.1:${proxy.address().port}`;
 
-const outDir = new URL('./mobile-evidence/', import.meta.url);
+const outDir = new URL('../../build-artifacts/handoff-r3-20260926/distinct-job-title-browser/', import.meta.url);
 mkdirSync(outDir, {recursive: true});
 const outPath = name => fileURLToPath(new URL(name, outDir));
 
@@ -61,11 +61,20 @@ const VIEWPORTS = [
   {width: 430, height: 900, label: '430px'},
 ];
 
-function mockTauri() {
+function mockTauri(settings) {
   const vault = new Map(), savedFiles = new Map(), callbacks = new Map();
   let sequence = 0, saveCount = 0;
   const activeRequests = new Map(), responses = new Map();
   async function invoke(command, args = {}, options = {}) {
+    if (command === 'local_resident_origin') return '';
+    if (command === 'plugin:barcode-scanner|scan') {
+      const response = await fetch(settings.proxyOrigin + '/api/v1/pairing/invites', {
+        method: 'POST', headers: {authorization: `Bearer ${settings.owner}`, 'content-type': 'application/json'},
+        body: JSON.stringify({requestId: crypto.randomUUID()}),
+      });
+      if (!response.ok) throw new Error('Synthetic QR issuance failed');
+      return {content: JSON.stringify({version: 1, ...(await response.json()).invitation}), format: 'QR_CODE', bounds: null};
+    }
     if (command === 'plugin:path|resolve_directory') return '/synthetic-app-data';
     if (command === 'plugin:path|join') return args.paths.join('/');
     if (command.startsWith('plugin:stronghold|')) {
@@ -77,7 +86,9 @@ function mockTauri() {
     if (command === 'plugin:http|fetch') { const id = ++sequence; activeRequests.set(id, args.clientConfig); return id; }
     if (command === 'plugin:http|fetch_send') {
       const c = activeRequests.get(args.rid);
-      const response = await fetch(c.url, {method: c.method, headers: c.headers, ...(c.data ? {body: new Uint8Array(c.data)} : {})});
+      const route = new URL(c.url);
+      if (route.origin !== 'https://acceptance.example.ts.net:9443') throw new Error('Unexpected native HTTP origin');
+      const response = await fetch(settings.proxyOrigin + route.pathname + route.search, {method: c.method, headers: c.headers, ...(c.data ? {body: new Uint8Array(c.data)} : {})});
       responses.set(args.rid, new Uint8Array(await response.arrayBuffer()));
       return {status: response.status, statusText: response.statusText, url: c.url, headers: [...response.headers], rid: args.rid};
     }
@@ -105,15 +116,15 @@ function mockTauri() {
 
 let browser;
 try {
-  browser = await chromium.launch({headless: true, executablePath});
+  browser = await chromium.launch(executablePath ? {headless: true, executablePath} : {headless: true, channel: 'msedge'});
   for (const viewport of VIEWPORTS) {
     const context = await browser.newContext({viewport: {width: viewport.width, height: viewport.height}, isMobile: true, hasTouch: true});
-    await context.addInitScript(mockTauri);
+    await context.addInitScript(mockTauri, {proxyOrigin, owner});
     const page = await context.newPage();
     try {
       await page.goto(proxyOrigin, {waitUntil: 'networkidle'});
-      await page.locator('#origin').fill(proxyOrigin);
-      await page.locator('#pairing').fill(owner);
+      await page.locator('#scan-invitation').click();
+      await page.waitForFunction(() => document.querySelector('#origin')?.value === 'https://acceptance.example.ts.net:9443');
       await page.locator('#vault-password').fill('synthetic-unlock-password');
       await page.locator('#pair-button').click();
       await page.locator('#workspace').waitFor({state: 'visible', timeout: 10000});
@@ -129,12 +140,21 @@ try {
       await page.locator('#command-result').waitFor({state: 'visible', timeout: 10000});
       await page.screenshot({path: outPath(`home-with-result-${viewport.label}.png`)});
 
-      // 3) A real queued job, visible on the Work (작업) tab.
-      await page.locator('#text').fill('문서 만들어: 모바일 화면 검증용 문서');
+      // 3) Two real document requests must have distinct titles in Work.
+      const firstTitle = `모바일 ${viewport.label} 화면 검증용 문서 첫 번째`;
+      const secondTitle = `모바일 ${viewport.label} 화면 검증용 문서 두 번째`;
+      await page.locator('#text').fill(`문서 만들어: 모바일 ${viewport.label} 화면 검증용 문서 첫 번째`);
       await page.locator('#submit-command').click();
-      await page.locator('#command-result').getByText('작업을 접수했습니다').waitFor({timeout: 10000});
+      await page.locator('#receipt-meta').filter({hasText: `모바일 ${viewport.label} 화면 검증용 문서 첫 번째`}).waitFor({timeout: 10000});
+      await page.locator('#text').fill(`문서 만들어: 모바일 ${viewport.label} 화면 검증용 문서 두 번째`);
+      await page.locator('#submit-command').click();
+      await page.locator('#receipt-meta').filter({hasText: `모바일 ${viewport.label} 화면 검증용 문서 두 번째`}).waitFor({timeout: 10000});
       await page.locator('[data-native-view="jobs"]').click();
-      await page.locator('.job').first().waitFor({timeout: 10000});
+      await page.locator('#jobs .job').filter({hasText: firstTitle}).waitFor({timeout: 10000});
+      await page.locator('#jobs .job').filter({hasText: secondTitle}).waitFor({timeout: 10000});
+      if (await page.locator('#jobs .job').filter({hasText: firstTitle}).count() !== 1 || await page.locator('#jobs .job').filter({hasText: secondTitle}).count() !== 1) throw new Error('Expected one distinct card for each current-viewport request');
+      if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error('Document titles caused horizontal overflow');
+      await page.evaluate(() => window.scrollTo(0, 0));
       await page.screenshot({path: outPath(`work-${viewport.label}.png`)});
 
       // 4) Emergency stop, from the real /api/control endpoint.

@@ -29,8 +29,9 @@ test('installer has one complete dispatcher and bounded resident task policy', (
   assert.ok(script.includes('-RestartCount 5'));
 });
 
-test('installer preserves ownership and data with masked pairing-key input', () => {
-  assert.ok(script.includes('-AsSecureString'));
+test('installer preserves ownership and data with automatic private pairing-key generation', () => {
+  assert.doesNotMatch(script, /Read-Host/);
+  assert.ok(script.includes('RandomNumberGenerator'));
   assert.ok(script.includes('ZeroFreeBSTR'));
   assert.ok(script.includes('SetAccessRuleProtection($true,$false)'));
   assert.ok(script.includes('InitializeNewStore'));

@@ -21,3 +21,5 @@ build-artifacts/
 **/__pycache__/
 apps/controller/src-tauri/gen/android/
 apps/controller/mobile-evidence/
+
+apps/controller/src-tauri/gen/schemas/

@@ -469,6 +469,8 @@ button:disabled {
 .job strong {
   display: block;
   font-size: 0.95rem;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
 }
 .job p {
   margin: 0.35rem 0;

@@ -21,8 +21,8 @@ test('Koyeb config maps the assigned hostname and port with an isolated volume d
   assert.equal(config.env.YENO_HOST, '0.0.0.0');
   assert.equal(config.env.YENO_PORT, '8790');
   assert.equal(config.env.YENO_ALLOWED_HOSTS, env.KOYEB_PUBLIC_DOMAIN);
-  assert.equal(config.diskRoot, '/var/lib/yeno');
-  assert.equal(config.dataDir, '/var/lib/yeno/data');
+  assert.equal(config.diskRoot, path.resolve('/var/lib/yeno'));
+  assert.equal(config.dataDir, path.resolve('/var/lib/yeno/data'));
   assert.equal(koyebConfig({ ...env, PORT: '12000', YENO_PORT: '12000' }).env.YENO_PORT, '12000');
   assert.equal(koyebConfig({ ...env, YENO_ALLOWED_HOSTS: 'core.example.net' }).env.YENO_ALLOWED_HOSTS, `core.example.net,${env.KOYEB_PUBLIC_DOMAIN}`);
   for (const change of [

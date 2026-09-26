@@ -27,7 +27,10 @@ function createPrivate(file,bytes) {
   try {fs.writeFileSync(fd,bytes);fs.fsyncSync(fd);}catch(error){fs.closeSync(fd);fs.unlinkSync(file);throw error;}
   fs.closeSync(fd);
   const directory=fs.openSync(parent,'r');
-  try{fs.fsyncSync(directory);}finally{fs.closeSync(directory);}
+  try{fs.fsyncSync(directory);}catch(error){
+    // Windows directory handles do not support fsync; file flush failures still propagate.
+    if(process.platform!=='win32'||error.code!=='EPERM')throw error;
+  }finally{fs.closeSync(directory);}
 }
 function keyFrom(file) {
   const text=readPrivate(file,128).toString('utf8').trim();

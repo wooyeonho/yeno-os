@@ -3,7 +3,7 @@
 param(
   [ValidateSet('install','start','stop','restart','status','uninstall','run','phone-install','phone-uninstall')]
   [string]$Action = 'status',
-  [string]$Root = (Join-Path $PSScriptRoot '..'),
+  [string]$Root,
   [string]$HomeDir = (Join-Path $env:LOCALAPPDATA 'BLACKHOLE\resident-v2'),
   [string]$TaskName = 'BLACKHOLE Core v2',
   [ValidateRange(1024,65535)][int]$Port = 8790,
@@ -13,6 +13,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if (-not $Root) { $Root = Join-Path $PSScriptRoot '..' }
 $PortWasSpecified = $PSBoundParameters.ContainsKey('Port')
 $Root = [IO.Path]::GetFullPath($Root)
 $HomeDir = [IO.Path]::GetFullPath($HomeDir)

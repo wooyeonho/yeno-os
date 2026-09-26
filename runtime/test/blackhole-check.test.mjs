@@ -34,6 +34,10 @@ test('isolated mode passes the full loop on a throwaway runtime and reports the 
   assert.equal(report.deployment, 'local');
   assert.equal(report.deploymentMatchesSource, true);
   assert.ok(report.steps.find(s => s.name === 'deployment_identity')?.ok);
+  assert.equal(report.pairingMode, 'one-time-invite');
+  for (const name of ['invite_issued', 'invite_enrolled', 'invite_same_request_recovered', 'invite_reuse_rejected', 'invite_lost_after_restart']) {
+    assert.equal(report.steps.find(s => s.name === name)?.ok, true, `${name} must be proven by the isolated check`);
+  }
   assert.equal(report.outcome, 'PASS');
   assert.ok(report.steps.find(s => s.name === 'revoked_token_rejected')?.ok);
   const text = out.join('\n') + fs.readFileSync(jsonPath, 'utf8');

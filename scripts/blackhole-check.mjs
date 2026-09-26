@@ -7,11 +7,13 @@
 //   options: --json <path>  write the secret-free JSON report there (default: stdout only)
 //
 // basic    : reads /api/v1/health of the target core (no auth). Nothing is written.
-// isolated : starts a throwaway local runtime (temp data dir, synthetic pairing token),
-//            enrolls a test device, submits one document command, verifies the artifact
+// isolated : starts a throwaway local runtime (temp data dir, synthetic owner token),
+//            issues a one-time invite for a synthetic private origin, enrolls
+//            a test Android-labeled device, submits one document command, verifies the artifact
 //            SHA-256 as the server serves it, restarts the runtime process state
 //            (shutdown + start on the same data dir), re-reads the SAME job/artifact,
-//            then revokes the test device. No network, no provider key, no real device.
+//            then revokes the test device. No external network, private HTTPS
+//            bridge, provider key or real device.
 // live     : the same enroll -> command -> hash -> reconnect re-read -> revoke sequence
 //            against a real core. The pairing token is read ONLY from process.env
 //            .YENO_TOKEN, never printed, never written to the report. "Reconnect" here
@@ -74,16 +76,33 @@ async function http(base, route, {method = 'GET', token = null, body = null} = {
 
 // The shared sequence used by both isolated and live modes. `reconnect` is
 // what "app close/reopen" means for this mode (process restart vs fresh HTTP).
-async function runLoop(report, {base, pairingToken, reconnect}) {
+async function runLoop(report, {base, pairingToken, reconnect, useInvitation = false}) {
   const step = (name, ok, detail = null) => { report.steps.push({name, ok, detail}); if (!ok) throw new Error(`${name}: ${detail ?? 'failed'}`); };
   const health = await http(base, '/api/v1/health');
   step('health', health.status === 200 && health.json?.authRequired === true, `status ${health.status}`);
   report.apiVersion = health.json.apiVersion; report.schemaVersion = health.json.version ?? null;
 
+  let enrollmentToken = pairingToken;
+  if (useInvitation) {
+    const issued = await http(base, '/api/v1/pairing/invites', {method: 'POST', token: pairingToken, body: {requestId: randomUUID()}});
+    const invitation = issued.json?.invitation;
+    step('invite_issued', issued.status === 201 && invitation?.origin === 'https://acceptance.example.ts.net:9443' && typeof invitation.token === 'string', `status ${issued.status}`);
+    enrollmentToken = invitation.token;
+    report.pairingMode = 'one-time-invite';
+  }
   const enrollReq = randomUUID();
-  const enroll = await http(base, '/api/v1/devices/enroll', {method: 'POST', token: pairingToken, body: {name: 'blackhole-check', platform: 'check-tool', requestId: enrollReq}});
+  const enrollRoute = useInvitation ? '/api/v1/devices/enroll-invite' : '/api/v1/devices/enroll';
+  const enrollBody = {name: 'blackhole-check', platform: useInvitation ? 'android' : 'check-tool', requestId: enrollReq};
+  const enroll = await http(base, enrollRoute, {method: 'POST', token: enrollmentToken, body: enrollBody});
   step('enroll', enroll.status === 201 && typeof enroll.json?.device?.deviceToken === 'string', `status ${enroll.status} ${enroll.json?.error ?? ''}`);
   const deviceToken = enroll.json.device.deviceToken, deviceId = enroll.json.device.id;
+  if (useInvitation) {
+    step('invite_enrolled', enroll.status === 201 && typeof deviceId === 'string', `status ${enroll.status}`);
+    const retry = await http(base, enrollRoute, {method: 'POST', token: enrollmentToken, body: enrollBody});
+    step('invite_same_request_recovered', retry.status === 201 && retry.json?.device?.id === deviceId && retry.json?.device?.deviceToken === deviceToken, `status ${retry.status}`);
+    const reused = await http(base, enrollRoute, {method: 'POST', token: enrollmentToken, body: {...enrollBody, requestId: randomUUID()}});
+    step('invite_reuse_rejected', reused.status === 409, `status ${reused.status}`);
+  }
 
   const state1 = await http(base, '/api/v1/state', {token: deviceToken});
   step('authenticated_state', state1.status === 200, `status ${state1.status}`);
@@ -114,7 +133,7 @@ async function runLoop(report, {base, pairingToken, reconnect}) {
   report.jobStatus = job?.status ?? 'unknown';
   step('job_terminal', job?.status === 'completed', `status ${job?.status} ${job?.error ?? ''}`);
   const artifactId = job.artifacts?.[0]?.id;
-  step('artifact_attached', typeof artifactId === 'string', 'job has no artifact');
+  step('artifact_attached', typeof artifactId === 'string', artifactId ? 'artifact attached' : 'job has no artifact');
 
   const a1 = await http(base, `/api/v1/artifacts/${artifactId}`, {token: deviceToken});
   step('artifact_download', a1.status === 200, `status ${a1.status}`);
@@ -125,6 +144,10 @@ async function runLoop(report, {base, pairingToken, reconnect}) {
 
   // "app close/reopen"
   const base2 = await reconnect();
+  if (useInvitation) {
+    const stale = await http(base2, enrollRoute, {method: 'POST', token: enrollmentToken, body: {...enrollBody, requestId: randomUUID()}});
+    step('invite_lost_after_restart', stale.status === 401, `status ${stale.status}`);
+  }
   const st2 = await http(base2, '/api/v1/state', {token: deviceToken});
   step('reconnect_state', st2.status === 200, `status ${st2.status}`);
   const job2 = (st2.json?.jobs ?? []).find(j => j.id === jobId) ?? null;
@@ -157,10 +180,11 @@ async function modeBasic(report, core) {
 async function modeIsolated(report) {
   const {start} = await import(pathToFileURL(path.join(RUNTIME_DIR, 'server.mjs')).href);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'blackhole-check-')), token = `check-${randomUUID()}-${randomUUID()}`;
-  let runtime = await start({host: '127.0.0.1', port: 0, dataDir: dir, token, env: {}});
+  const options = {host: '127.0.0.1', port: 0, dataDir: dir, token, env: {YENO_ALLOWED_HOSTS: 'acceptance.example.ts.net:9443'}};
+  let runtime = await start(options);
   const base = () => `http://127.0.0.1:${runtime.server.address().port}`;
   try {
-    await runLoop(report, {base: base(), pairingToken: token, reconnect: async () => { runtime.shutdown(); runtime = await start({host: '127.0.0.1', port: 0, dataDir: dir, token, env: {}}); return base(); }});
+    await runLoop(report, {base: base(), pairingToken: token, useInvitation: true, reconnect: async () => { runtime.shutdown(); runtime = await start(options); return base(); }});
     report.restartReadback = report.sameJobIdSameArtifactHash ? 'PASS(process_restart)' : 'FAIL';
     report.outcome = 'PASS';
   } finally { try { runtime.shutdown(); } catch {} fs.rmSync(dir, {recursive: true, force: true}); }

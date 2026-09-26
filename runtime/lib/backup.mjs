@@ -343,7 +343,10 @@ export function decryptBackup(archive, key) {
 
 function syncDirectory(directory) {
   const fd = fs.openSync(directory, 'r');
-  try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  try { fs.fsyncSync(fd); } catch (error) {
+    // Windows rejects directory flushes; do not suppress file flush or other I/O errors.
+    if (process.platform !== 'win32' || error.code !== 'EPERM') throw error;
+  } finally { fs.closeSync(fd); }
 }
 function writeExclusive(filename, content, createdFiles) {
   const fd = fs.openSync(filename, 'wx', 0o600);

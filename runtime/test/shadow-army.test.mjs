@@ -7,6 +7,7 @@ import {randomUUID} from 'node:crypto';
 import {start} from '../server.mjs';
 import {openStore} from '../lib/store.mjs';
 import {planShadowMission, shadowJobFromSpec, shadowDependenciesMet, shadowDependencyFailed, verifyShadowArtifacts, verifyFailureSummary, shadowFailureReason, missionStatus, ShadowArmyError, SHADOW_ROLES} from '../lib/shadow-army.mjs';
+import {agentConfig, agentTool, runAgent} from '../lib/agent.mjs';
 
 // Phase D — Real Shadow Army (issue #25 §6), first slice: real project goal
 // -> two independent shadows -> a dependent builder -> a separate deterministic
@@ -72,6 +73,37 @@ test('shadowJobFromSpec: independent shadows start queued, dependents start hone
   assert.equal(builder.status, 'paused'); assert.equal(builder.pauseReason, 'dependencyPending');
   assert.equal(verifier.status, 'paused'); assert.equal(verifier.type, 'verify');
   assert.equal(shadowDependenciesMet(builder, jobs), false, 'builder deps are not complete yet');
+  assert.equal(missionStatus(plan.missionId, {jobs}).phase, 'running', 'queued workers take precedence over a builder waiting on dependencies');
+  const blocked = jobs.map(job => ['scout', 'researcher'].includes(job.shadowAssignment.role) ? {...job, status: 'paused', pauseReason: 'providerMissing'} : job);
+  assert.equal(missionStatus(plan.missionId, {jobs: blocked}).phase, 'blocked', 'provider hold with no runnable worker is a real block');
+});
+
+test('Shadow workers can read only their assigned project snapshot and its source records', async t => {
+  const h=await setup(t);
+  const project=await createProject(h);
+  const other=await createProject(h);
+  const plan=planShadowMission(h.disk(),{projectId:project.id,goal:'EXTRA-136 근거와 미확인 사항을 구분한다'});
+  const job=shadowJobFromSpec(plan.specs.find(spec=>spec.role==='scout'),new Date().toISOString());
+  const state=h.disk();state.jobs.push(job);
+  state.sources=[
+    {id:randomUUID(),projectId:project.id,title:'EXTRA-136',canonicalUrl:'https://example.com/partial',readingStatus:'partial',decision:'pending',summary:'원문 재열람 미실시',application:'깊이 가림 조건을 시험한다',riskNotes:'기기와 엔진 미확인'},
+    {id:randomUUID(),projectId:other.id,title:'다른 프로젝트 비공개',canonicalUrl:'https://example.com/other',readingStatus:'read',decision:'pending',summary:'PRIVATE_OTHER_PROJECT',application:'PRIVATE_OTHER_PROJECT',riskNotes:'PRIVATE_OTHER_PROJECT'},
+  ];
+  const signal=new AbortController().signal;
+  const context=await agentTool({name:'project_read',args:{}},state,()=>assert.fail('No network'),signal,job);
+  assert.equal(context.project.id,project.id);
+  const sources=await agentTool({name:'project_sources',args:{}},state,()=>assert.fail('No network'),signal,job);
+  assert.deepEqual(sources.sources.map(source=>source.id),[state.sources[0].id]);
+  assert.equal(sources.sources[0].application,'깊이 가림 조건을 시험한다');
+  assert.equal(sources.sources[0].riskNotes,'기기와 엔진 미확인');
+  assert.equal(JSON.stringify(sources).includes('PRIVATE_OTHER_PROJECT'),false);
+  await runAgent({job,state,config:agentConfig(MODEL_ENV),save:()=>{},signal,fetchImpl:async(_url,req)=>{
+    const offered=JSON.parse(req.body).tools.map(tool=>tool.function.name);
+    assert.ok(offered.includes('project_read')&&offered.includes('project_sources'));
+    assert.equal(offered.includes('source_read_release'),false,'non-release project sources must not advertise the official-release reader');
+    assert.equal(offered.includes('ecosystem_read'),false,'project evidence tasks must not advertise an unrelated catalog reader');
+    return ok('부분 열람 상태와 미확인 사항을 구분했습니다.');
+  }});
 });
 
 test('verifyShadowArtifacts is deterministic: passes only a completed job with an artifact and no unknown call outcome', () => {

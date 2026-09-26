@@ -3,6 +3,9 @@ import '../../../runtime/public/living-core.css';
 import '../../../runtime/public/project-universe.css';
 import '../../../runtime/public/drive-orbit.css';
 import './style.css';
+import {invoke} from '@tauri-apps/api/core';
+import {scan, cancel, Format} from '@tauri-apps/plugin-barcode-scanner';
+import {parseInvitation, type Invitation} from './native-pairing.ts';
 import { fetch } from '@tauri-apps/plugin-http';
 import { appDataDir, join } from '@tauri-apps/api/path';
 import { Stronghold, type Store } from '@tauri-apps/plugin-stronghold';
@@ -21,7 +24,7 @@ import { createNativeHomeNavigation } from './native-home.ts';
 import { createNativeProjects } from './native-projects.ts';
 import { createNativeDrives } from './native-drives.ts';
 
-type Job = { id: string; title: string; status: string; version: number; updatedAt: string; artifacts: { id: string; name: string }[]; projectId?: string; pauseReason?: string };
+type Job = { id: string; title: string; status: string; version: number; updatedAt: string; artifacts: { id: string; name: string }[]; projectId?: string; pauseReason?: string; error?: string };
 // BLACKHOLE Living Core (Phase A): a trimmed, already-derived projection of
 // the real Persistent Core record, embedded directly in GET /api/state so
 // this binding needs no second network round trip. Every field here is real
@@ -57,6 +60,8 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const encoder = new TextEncoder(), decoder = new TextDecoder();
 const vaultMarker = 'yeno.native-vault.v1';
 let connection: Connection | null = null;
+let invitation: Invitation | null = null;
+let localOrigin: string | null = null, useLocalResident = false;
 let state: State | null = null;
 let commands: CommandSession | null = null;
 let lastSeen: Date | null = null;
@@ -231,6 +236,11 @@ function render() {
     const title = document.createElement('strong'); title.textContent = job.title;
     const meta = document.createElement('p'); meta.textContent = `${JOB_STATUS_LABEL[job.status] ?? job.status} · ${new Date(job.updatedAt).toLocaleString()}`;
     node.append(title, meta);
+    if (job.status === 'failed') {
+      const failure = document.createElement('p');
+      failure.textContent = `${job.error || '본체에서 실패 사유를 확인하지 못했습니다.'} 원인을 확인한 뒤 새 요청으로 다시 시도하세요. 자동 재실행하지 않습니다.`;
+      node.append(failure);
+    }
     for (const artifact of job.artifacts) {
       const button = document.createElement('button'); button.className = 'artifact'; button.textContent = `결과 열기: ${artifact.name}`;
       button.onclick = () => guard(() => openArtifact(artifact.id, artifact.name)); node.append(button);
@@ -286,20 +296,27 @@ async function pair(event: SubmitEvent) {
   pairing = true; $<HTMLButtonElement>('pair-button').disabled = true;
   try {
     showMessage();
-    const origin = normalizeOrigin($<HTMLInputElement>('origin').value);
+    if (!invitation && !(useLocalResident && localOrigin)) throw new Error('먼저 PC의 등록 QR을 스캔하세요.');
+    const selected = useLocalResident ? null : parseInvitation(JSON.stringify(invitation));
+    const origin = selected?.origin ?? localOrigin!;
     const password = $<HTMLInputElement>('vault-password').value;
     if (password.length < 8) throw new Error('보관소 암호를 8자 이상 입력하세요.');
     await openVault(password);
     // Persist an enrollment ID before transmission. Network retries must not register more devices.
-    const enrollmentKey = `yeno.enrollment.v1:${encodeURIComponent(origin)}`;
+    const enrollmentKey = `yeno.enrollment.v2:${encodeURIComponent(origin)}:${selected?.id ?? 'local'}`;
     const enrollmentId = localStorage.getItem(enrollmentKey) || requestId();
     localStorage.setItem(enrollmentKey, enrollmentId);
     let body: { device: { id: string; deviceToken: string } };
     try {
-      body = await request(`${origin}/api/v1/devices/enroll`, {
-        method: 'POST', headers: { authorization: `Bearer ${$<HTMLInputElement>('pairing').value}`, 'content-type': 'application/json' },
+      if (useLocalResident) {
+        const local = await invoke<Connection>('enroll_local_resident', {requestId: enrollmentId, expectedOrigin: origin});
+        body = {device: {id: local.deviceId, deviceToken: local.token}};
+      } else {
+      body = await request(`${origin}/api/v1/devices/enroll-invite`, {
+        method: 'POST', headers: { authorization: `Bearer ${selected!.token}`, 'content-type': 'application/json' },
         body: JSON.stringify({ name: 'YENO Android Controller', platform: 'android', requestId: enrollmentId }),
       }, response => response.json());
+      }
     } catch (error) {
       if (isDefinitiveRejection(error)) localStorage.removeItem(enrollmentKey);
       throw error;
@@ -309,7 +326,7 @@ async function pair(event: SubmitEvent) {
     await saveConnection(value);
     localStorage.setItem(vaultMarker, 'present');
     localStorage.removeItem(enrollmentKey);
-    $<HTMLInputElement>('pairing').value = ''; $<HTMLInputElement>('vault-password').value = '';
+    invitation = null; $<HTMLInputElement>('vault-password').value = '';
     await activate(value); await refresh();
   } finally { pairing = false; $<HTMLButtonElement>('pair-button').disabled = false; }
 }
@@ -515,6 +532,38 @@ document.addEventListener('click', event => {
   guard(async () => { const url = new URL(link.href); if (url.protocol !== 'https:' || url.username || url.password) throw new Error('HTTPS 외부 링크만 열 수 있습니다.'); await openUrl(url.href); });
 });
 $('unlock-form').addEventListener('submit', event => guard(() => unlock(event as SubmitEvent)));
+async function scanInvitation() {
+  if (pairing) return;
+  const scanButton = document.getElementById('scan-invitation');
+  if (!(scanButton instanceof HTMLButtonElement)) return;
+  invitation = null; useLocalResident = false;
+  $<HTMLInputElement>('origin').value = '';
+  scanButton.disabled = true;
+  $('cancel-scan').hidden = false;
+  try {
+    const scanned = await scan({formats:[Format.QRCode], windowed:false});
+    invitation = parseInvitation(scanned.content);
+    $<HTMLInputElement>('origin').value = invitation.origin;
+    $('invitation-status').textContent = `PC 주소를 확인한 뒤 연결하세요. 초대 만료: ${new Date(invitation.expiresAt).toLocaleTimeString()}`;
+    showMessage();
+  } catch (error) {
+    if (error instanceof Error) showMessage('QR 스캔을 완료하지 못했습니다. 카메라 권한과 초대 유효기간을 확인하세요.');
+    else showMessage('스캔이 취소되었거나 카메라를 사용할 수 없습니다. 다시 시도하세요.');
+  } finally { scanButton.disabled = false; $('cancel-scan').hidden = true; }
+}
+void invoke<string>('local_resident_origin').then(origin => {
+  if (!/^http:\/\/127\.0\.0\.1:\d+$/.test(origin)) return;
+  localOrigin = origin;
+  $('connect-local').hidden = false;
+}).catch(() => {});
+$('connect-local').onclick = () => {
+  if (pairing || !localOrigin) return;
+  invitation = null; useLocalResident = true;
+  $<HTMLInputElement>('origin').value = localOrigin;
+  $('invitation-status').textContent = '이 Windows 사용자 계정의 본체에 연결합니다. 보관소 암호를 정하고 기기 등록을 누르세요.';
+};
+$('scan-invitation').onclick = () => guard(scanInvitation);
+$('cancel-scan').onclick = () => guard(async () => { await cancel(); });
 $('pair').addEventListener('submit', event => guard(() => pair(event as SubmitEvent)));
 $('command').addEventListener('submit', event => guard(() => submit(event as SubmitEvent)));
 $('refresh').onclick = () => guard(refresh);

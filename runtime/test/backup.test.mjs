@@ -84,7 +84,10 @@ test('clean restore preserves histories, stops work and AI, revokes old devices,
   assert.deepEqual(recovered.events.slice(1), f.state.events); assert.match(recovered.events[0].text, /Fresh owner key\/device enrollment required/);
   assert.equal(digest(fs.readFileSync(path.join(targetDir, 'artifacts', `${f.artifactId}.md`))), digest(f.content));
   assert.equal(fs.existsSync(path.join(targetDir, 'pairing-token')), false); assert.equal(fs.existsSync(path.join(targetDir, 'restore-in-progress')), false);
-  assert.equal(fs.statSync(targetDir).mode & 0o777, 0o700); assert.equal(fs.statSync(path.join(targetDir, 'state.json')).mode & 0o777, 0o600);
+  // POSIX modes do not represent Windows ACLs; the Windows installer suite checks those separately.
+  if (process.platform !== 'win32') {
+    assert.equal(fs.statSync(targetDir).mode & 0o777, 0o700); assert.equal(fs.statSync(path.join(targetDir, 'state.json')).mode & 0o777, 0o600);
+  }
 });
 
 test('wrong keys, authenticated envelope tampering and truncation fail before creating a restore directory', t => {

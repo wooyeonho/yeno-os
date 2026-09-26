@@ -249,6 +249,7 @@ test('a real restart preserves the shadow-mode log exactly, and GET /api/state\'
   const missionResponse = await h.post('/api/shadow-army/missions', {projectId: project.id, goal: '목표'});
   const scout = missionResponse.body.mission.shadows.find(s => s.role === 'scout'), researcher = missionResponse.body.mission.shadows.find(s => s.role === 'researcher');
   await h.wait(scout.jobId); await h.wait(researcher.jobId);
+  await h.until(() => h.disk().jobs.every(job => ['completed', 'failed', 'cancelled'].includes(job.status)), 'all mission jobs settle before the restart snapshot');
   const beforeLog = h.disk().jevShadowLog;
   assert.ok(beforeLog.length >= 2, 'both leaf shadows must already have a real logged decision before restart');
   const beforeCalibration = (await h.get('/api/state')).body.jev.calibration;
