@@ -24,6 +24,17 @@ function fixture(provider='anthropic',limit='8') {
   const controller=new AbortController();let saves=0;
   return {job,state,config,controller,signal:controller.signal,save:()=>{saves++;},saves:()=>saves};
 }
+
+test('empty local response preserves only transport and usage metadata for diagnosis',async()=>{
+  const f=fixture('local');
+  await assert.rejects(runAgent({...f,fetchImpl:async()=>json({choices:[{finish_reason:'stop',message:{content:'',tool_calls:[]}}],usage:{prompt_tokens:2063,completion_tokens:0}})}),error=>{
+    assert.equal(error.code,'empty_model_response');
+    assert.deepEqual(error.responseMeta,{httpStatus:200,finishReason:'stop',promptTokens:2063,completionTokens:0,contentLength:0});
+    return true;
+  });
+  assert.equal(f.job.agentJournal.calls[0].status,'unknown');
+  assert.equal(JSON.stringify(f.job.agentJournal).includes('responseMeta'),false);
+});
 const source=()=>({id:randomUUID(),title:'Original release',url:'https://github.com/openai/codex/releases/tag/v-test',canonicalUrl:'https://github.com/openai/codex/releases/tag/v-test',readingStatus:'unread',decision:'pending',summary:'',application:'',riskNotes:'',version:1,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function eventually(read,predicate) {for(let i=0;i<150;i++){const result=read();if(predicate(result))return result;await pause(20);}assert.fail('Expected state did not arrive');}

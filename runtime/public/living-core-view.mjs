@@ -177,6 +177,7 @@ export function createLivingCoreView({root, onNavigate = () => {}}) {
     if (destroyed) return;
     const core = state?.core || null;
     const visualState = coreVisualState({activity: core?.activity, emergencyStop: state?.emergencyStop === true, online});
+    const voiceReady = online && state?.emergencyStop !== true;
     root.innerHTML = `
       <div class="living-orb-wrap">
         <div class="living-orb ${esc(visualState)}" aria-hidden="true"><span class="living-orb-ring"></span><span class="living-orb-core"></span></div>
@@ -185,7 +186,7 @@ export function createLivingCoreView({root, onNavigate = () => {}}) {
           <p class="living-sentence">${esc(sentenceFor(core, visualState))}</p>
         </div>
       </div>
-      <button type="button" class="button primary living-voice-cta" data-living-action="voice">블랙홀에게 말하기</button>
+      <button type="button" class="button primary living-voice-cta" data-living-action="voice" ${voiceReady ? '' : 'disabled'}>블랙홀에게 말하기</button>
       ${missionCardHTML(core)}
       ${recoveryCardHTML(state)}
       ${signalRowHTML(core)}
@@ -197,7 +198,7 @@ export function createLivingCoreView({root, onNavigate = () => {}}) {
 
   function handleClick(event) {
     const button = event.target.closest?.('[data-living-action]');
-    if (!button || !root.contains(button)) return;
+    if (!button || !root.contains(button) || button.disabled) return;
     if (button.dataset.livingAction === 'voice') onNavigate('voice');
     // The optional second projectId argument is additive: every existing
     // caller that only reads the first argument keeps working unchanged.

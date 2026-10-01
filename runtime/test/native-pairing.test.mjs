@@ -104,4 +104,10 @@ test('owner model choice saves installed loopback model without altering key or 
   assert.equal(fs.readFileSync(tokenFile,'utf8')===token,true);
   await assert.rejects(ownerLocalModel(home,'save-model','cloud-model',transport));
   await assert.rejects(ownerLocalModel(home,'save-model','qwen2.5:3b',async url=>Response.json(url.endsWith('/api/tags')?{models:[{name:'qwen2.5:3b'}]}:{jobs:[{status:'running'}]})));
+  const providerFile = path.join(home, 'provider.dpapi');
+  fs.writeFileSync(providerFile, 'encrypted-and-inactive');
+  fs.writeFileSync(path.join(home,'config.json'),JSON.stringify({...config,providerFile}));
+  await ownerLocalModel(home,'save-model','qwen2.5:3b',transport);
+  assert.equal(Object.hasOwn(JSON.parse(fs.readFileSync(path.join(home,'config.json'),'utf8')),'providerFile'),false);
+  assert.equal(fs.readFileSync(providerFile,'utf8'),'encrypted-and-inactive');
 });

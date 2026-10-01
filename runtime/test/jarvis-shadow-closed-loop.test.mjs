@@ -23,7 +23,7 @@ import {missionStatus} from '../lib/shadow-army.mjs';
 // shadow-army.test.mjs / phone-acceptance.test.mjs - no real provider keys.
 const MODEL_ENV = {YENO_AGENT_PROVIDER: 'openai', YENO_OPENAI_API_KEY: 'synthetic-openai-key', YENO_OPENAI_MODEL: 'synthetic-openai', YENO_AGENT_DAILY_CALL_LIMIT: '20'};
 const ok = text => new Response(JSON.stringify({choices: [{finish_reason: 'stop', message: {content: text, tool_calls: []}}], usage: {prompt_tokens: 30, completion_tokens: 20}}), {headers: {'Content-Type': 'application/json'}});
-const SEMANTIC_PASS_VERDICT = JSON.stringify({verdict: 'pass', confidence: 0.9, criteria: [{criterion: '목표 충족', status: 'met', reason: '산출물이 목표와 성공 기준을 실제로 다룸', evidenceRefs: ['builder-artifact']}], summary: '목표를 실제로 달성함'});
+const SEMANTIC_PASS_VERDICT = JSON.stringify({verdict: 'pass', confidence: 0.9, criteria: [{criterion: '목표 충족', status: 'met', reason: '산출물이 목표와 성공 기준을 실제로 다룸', evidenceRefs: ['실제 Shadow 산출물 본문']}], summary: '목표를 실제로 달성함'});
 
 async function setup(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'blackhole-jarvis-shadow-loop-')), token = 'synthetic-jarvis-shadow-loop-owner-token';

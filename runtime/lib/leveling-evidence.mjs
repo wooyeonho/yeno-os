@@ -1,5 +1,8 @@
 import {verifyExecution} from './outcome-verification.mjs';
+import {sha256} from './outcome-verification.mjs';
 import {buildSkillHistory, validateSkillHistory, INTERVENTION_KINDS} from './solo-leveling.mjs';
+import {missionStatus} from './shadow-army.mjs';
+import {resolveVerifiedResult} from './blackhole-core.mjs';
 
 // BLACKHOLE Solo Leveling evidence derivation (pure, no wiring).
 //
@@ -23,11 +26,52 @@ import {buildSkillHistory, validateSkillHistory, INTERVENTION_KINDS} from './sol
 // from evidence on every call; the stored previous history only carries the
 // promotion trail.
 export const LEVELING_EVIDENCE_VERSION = 1;
-export const ENGINES = Object.freeze({capability: 'capabilities', code: 'codeWorkshop'});
+export const ENGINES = Object.freeze({capability: 'capabilities', code: 'codeWorkshop', shadow: 'shadowArmy'});
 const OWNER_PAUSE_REASONS = Object.freeze(['owner', 'autopilotStopped']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const registryOf = (state, engine) => state[ENGINES[engine]];
+const shadowSkillId = entry => `shadow-${entry.id}`;
+const shadowJobs = state => (state.jobs ?? []).filter(job => job.shadowAssignment && ['scout', 'researcher', 'builder', 'verifier'].includes(job.shadowAssignment.role));
+function shadowEvidence(state) {
+  const shadows=state.shadowRoster?.entries ?? [];
+  const entries = shadows.map(entry => ({id: shadowSkillId(entry)}));
+  const owned = new Map(shadows.flatMap(entry => entry.missions.map(missionId => [`${missionId}:${entry.role}`, entry])));
+  const participant = job => shadows.find(entry=>entry.id===job.shadowAssignment.preferredShadowId&&entry.role===job.shadowAssignment.role)
+    ?? owned.get(`${job.shadowAssignment.missionId}:${job.shadowAssignment.role}`);
+  const missions = new Map();
+  const verified = job => {
+    const missionId = job.shadowAssignment.missionId;
+    if (!owned.has(`${missionId}:${job.shadowAssignment.role}`)) return false;
+    if (!missions.has(missionId)) {
+      const mission = missionStatus(missionId, state);
+      const semantic = (state.jobs ?? []).find(candidate => candidate.id === mission?.semantic?.jobId);
+      missions.set(missionId, mission?.phase === 'completed' && mission.verify?.result?.verified === true && !!resolveVerifiedResult(semantic, state).ref);
+    }
+    return missions.get(missionId) === true;
+  };
+  const history = [];
+  const executions = [];
+  for (const job of shadowJobs(state)) {
+    if (!UUID.test(job.id ?? '') || !['completed', 'failed'].includes(job.status)) continue;
+    const entry=participant(job);
+    if(!entry)continue;
+    const skillId = shadowSkillId(entry);
+    const artifact = (job.artifacts ?? []).map(ref => state.artifacts?.[ref.id]).find(item => item?.jobId === job.id && /^[0-9a-f]{64}$/.test(item.sha256 ?? ''));
+    const success = job.status === 'completed' && typeof job.input === 'string' && !!artifact && verified(job);
+    if (success) history.push({at: job.updatedAt ?? job.createdAt, action: 'run', id: skillId, hash: artifact.sha256,
+      runId: job.id, inputSha256: sha256(job.input), outputSha256: artifact.sha256});
+    executions.push({jobId: job.id, skillId, status: job.status, executionVerified: success,
+      authorizedBy: authorizedByFor(job, state), at: job.updatedAt ?? job.createdAt});
+  }
+  const interventions = [];
+  for (const job of shadowJobs(state)) {
+    const kind = job.status === 'cancelled' ? 'stop' : job.status === 'paused' && OWNER_PAUSE_REASONS.includes(job.pauseReason) ? 'pause' : null;
+    const entry=participant(job);
+    if (kind && entry && UUID.test(job.id ?? '')) interventions.push({jobId: job.id, skillId: shadowSkillId(entry), kind, by: 'owner', at: job.updatedAt ?? job.createdAt});
+  }
+  return {registry: {entries, history}, executions, interventions};
+}
+const registryOf = (state, engine) => engine === 'shadow' ? shadowEvidence(state).registry : state[ENGINES[engine]];
 const skillIdOf = (job, engine) => engine === 'capability' ? job.capabilityRequest?.id ?? null : job.codeTask?.request?.id ?? null;
 const requestOf = (job, engine) => engine === 'capability' ? job.capabilityRequest : job.codeTask?.request;
 const isEngineJob = (job, engine) => engine === 'capability' ? job.type === 'capability' : job.type === 'code' && job.codeTask?.mode === 'run';
@@ -47,6 +91,7 @@ function authorizedByFor(job, state) {
 // (executionVerified:false), which solo-leveling counts against the skill.
 export function executionsFromState(state, engine) {
   if (!Object.hasOwn(ENGINES, engine)) throw new TypeError(`unknown engine ${String(engine)}`);
+  if (engine === 'shadow') return shadowEvidence(state).executions;
   const registry = registryOf(state, engine);
   if (!registry || !Array.isArray(registry.history)) return [];
   const out = [];
@@ -68,6 +113,7 @@ export function executionsFromState(state, engine) {
 // Owner interventions that the durable state still attests to.
 export function interventionsFromState(state, engine) {
   if (!Object.hasOwn(ENGINES, engine)) throw new TypeError(`unknown engine ${String(engine)}`);
+  if (engine === 'shadow') return shadowEvidence(state).interventions;
   const registry = registryOf(state, engine);
   if (!registry || !Array.isArray(registry.history)) return [];
   const out = [];

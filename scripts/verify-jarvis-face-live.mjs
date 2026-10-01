@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {randomBytes, createHash} from 'node:crypto';
-import {mkdtempSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
+import {copyFileSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -11,13 +11,13 @@ import {start} from '../runtime/server.mjs';
 const require = createRequire(new URL('../apps/controller/package.json', import.meta.url));
 const {chromium} = require('playwright');
 const dataDir = mkdtempSync(join(tmpdir(), 'blackhole-jarvis-live-'));
-const outDir = new URL('../build-artifacts/jarvis-face-v2-20260926/', import.meta.url);
+const outDir = new URL('../build-artifacts/jarvis-e2e-20260927/', import.meta.url);
 mkdirSync(outDir, {recursive:true});
 const token = randomBytes(32).toString('hex');
 const sha256 = path => createHash('sha256').update(readFileSync(path)).digest('hex');
-const screenshotNames = ['desktop-1440.png','mobile-400.png','controls-1440.png','controls-mobile-400.png','unpaired-mobile-400.png','model-missing-saved.png'];
+const screenshotNames = ['desktop-1440.png','mobile-400.png','controls-1440.png','controls-mobile-400.png','unpaired-mobile-400.png','model-missing-saved.png','idle-0.png','idle-900.png','reduced-motion-0.png','reduced-motion-700.png','a4-result.png','a5-mobile.png','a6-0.png','a6-1.png','a7-0.png','a7-1.png'];
 let core, browser;
-const report = {server:null,css:false,csp:false,inlineStyles:false,externalFonts:0,desktop:null,mobile:null,controls:null,unpairedGate:null,conversationOffline:null,modelFallback:null,reducedMotion:null,errors:[]};
+const report = {server:null,css:false,orbModule:false,csp:false,inlineStyles:false,externalFonts:0,desktop:null,mobile:null,motion:null,verifyingRing:null,controls:null,unpairedGate:null,conversationOffline:null,modelFallback:null,reducedMotion:null,errors:[]};
 try {
   core = await start({host:'127.0.0.1',port:0,dataDir,token,env:{}});
   const origin = `http://127.0.0.1:${core.server.address().port}`;
@@ -43,10 +43,22 @@ try {
   await gatePage.waitForFunction(()=>document.querySelector('#pair-screen')?.hidden===true,null,{timeout:12000});
   report.unpairedGate.ownerApproved = true;
   const context = await browser.newContext({baseURL:origin,viewport:{width:1440,height:900},storageState:await unpaired.storageState()});
+  // This suite covers the retained 2D scene. The separate WebGL suite tests
+  // the primary renderer, motion, reduced motion, and the disabled-WebGL path.
+  await context.addInitScript(()=>{
+    const original=HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext=function(kind,...args){
+      if(kind==='webgl'||kind==='webgl2')return null;
+      return original.call(this,kind,...args);
+    };
+  });
   await unpaired.close();
   const css = await context.request.get('/jarvis.css');
   report.css = css.status()===200 && (css.headers()['content-type']||'').includes('text/css');
   assert.equal(report.css,true,'CSS served by the real allowlist');
+  const orbModule = await context.request.get('/jarvis-orb.mjs');
+  report.orbModule = orbModule.status()===200 && (await orbModule.text()).includes('startJarvisOrb');
+  assert.equal(report.orbModule,true,'Canvas module served by the real allowlist');
   const page = await context.newPage();
   const commandRoutes=[];
   page.on('request',request=>{const route=new URL(request.url()).pathname;if(['/api/voice','/api/commands'].includes(route))commandRoutes.push(route);});
@@ -65,9 +77,41 @@ try {
   await page.waitForTimeout(400);
   await page.screenshot({path:fileURLToPath(new URL('desktop-1440.png',outDir)),fullPage:true});
   report.desktop = {width:desktopStyle.width,mode:await page.locator('#mode').textContent()};
+  await page.setViewportSize({width:1280,height:800});
+  const motionFrames=await page.evaluate(async()=>{
+    const canvas=document.querySelector('#orb'),ctx=canvas.getContext('2d');
+    const ratio=canvas.width/canvas.getBoundingClientRect().width;
+    const x=Math.round(canvas.width*.5),y=Math.round(canvas.height*.35);
+    const capture=()=>{
+      const intensity=r=>{
+        const data=ctx.getImageData(Math.round(x+r*ratio),y,1,1).data;
+        return data[0]*.2126+data[1]*.7152+data[2]*.0722;
+      };
+      const peaks=[];
+      for(let r=155;r<=205;r++){
+        const value=intensity(r);
+        if(value>intensity(r-1)&&value>=intensity(r+1))peaks.push({radius:r,intensity:Math.round(value*10)/10});
+      }
+      return {at:performance.now(),peaks:peaks.sort((a,b)=>b.intensity-a.intensity).slice(0,5),png:canvas.toDataURL('image/png').split(',')[1]};
+    };
+    await new Promise(resolve=>{const check=()=>Math.sin(performance.now()*Math.PI*2/1400)>.98?resolve():setTimeout(check,10);check();});
+    const first=capture();
+    await new Promise(resolve=>setTimeout(resolve,900));
+    const second=capture();
+    return {first,second};
+  });
+  writeFileSync(new URL('idle-0.png',outDir),Buffer.from(motionFrames.first.png,'base64'));
+  writeFileSync(new URL('idle-900.png',outDir),Buffer.from(motionFrames.second.png,'base64'));
+  report.motion={firstPeaks:motionFrames.first.peaks,secondPeaks:motionFrames.second.peaks,elapsedMs:Math.round(motionFrames.second.at-motionFrames.first.at),pixelShaEqual:sha256(fileURLToPath(new URL('idle-0.png',outDir)))===sha256(fileURLToPath(new URL('idle-900.png',outDir)))};
+  assert.equal(report.motion.pixelShaEqual,false,'Idle orb changes with allowed motion');
+  assert.ok(Math.abs(report.motion.firstPeaks[0].radius-report.motion.secondPeaks[0].radius)>=3,'Idle core ring radius changes by at least 3px');
+  await page.setViewportSize({width:1440,height:900});
   await page.locator('#control-toggle').click();
   assert.equal(await page.locator('#controls').isVisible(),true);
   await page.screenshot({path:fileURLToPath(new URL('controls-1440.png',outDir)),fullPage:true});
+  await page.locator('#emergency-toggle').click();
+  assert.equal(await page.locator('#stop-confirm').isVisible(),true);
+  assert.equal(await page.locator('#emergency-toggle').getAttribute('data-stopped'),'false','First click only asks for confirmation');
   await page.locator('#emergency-toggle').click();
   await page.waitForFunction(()=>document.querySelector('#emergency-toggle')?.dataset.stopped==='true');
   await page.locator('#emergency-toggle').click();
@@ -97,7 +141,7 @@ try {
   assert.equal(report.modelFallback,'saved-in-real-core');
   await page.waitForTimeout(400);
   await page.screenshot({path:fileURLToPath(new URL('model-missing-saved.png',outDir)),fullPage:true});
-  await page.setViewportSize({width:400,height:840});
+  await page.setViewportSize({width:400,height:800});
   await page.screenshot({path:fileURLToPath(new URL('mobile-400.png',outDir)),fullPage:true});
   await page.locator('#control-toggle').click();
   await page.screenshot({path:fileURLToPath(new URL('controls-mobile-400.png',outDir)),fullPage:true});
@@ -107,9 +151,45 @@ try {
   await page.emulateMedia({reducedMotion:'reduce'});
   report.reducedMotion = await page.evaluate(()=>matchMedia('(prefers-reduced-motion: reduce)').matches);
   assert.equal(report.reducedMotion,true);
+  await page.waitForResponse(response=>new URL(response.url()).pathname==='/api/drives/status'&&response.ok(),{timeout:5000});
+  await page.waitForTimeout(100);
+  const reducedFrames=await page.evaluate(async()=>{
+    const canvas=document.querySelector('#orb');
+    const first=canvas.toDataURL('image/png').split(',')[1];
+    await new Promise(resolve=>setTimeout(resolve,700));
+    return {first,second:canvas.toDataURL('image/png').split(',')[1]};
+  });
+  writeFileSync(new URL('reduced-motion-0.png',outDir),Buffer.from(reducedFrames.first,'base64'));
+  writeFileSync(new URL('reduced-motion-700.png',outDir),Buffer.from(reducedFrames.second,'base64'));
+  assert.equal(sha256(fileURLToPath(new URL('reduced-motion-0.png',outDir))),sha256(fileURLToPath(new URL('reduced-motion-700.png',outDir))),'Reduced-motion orb has no time-dependent animation');
+  const statePage=await context.newPage();
+  await statePage.goto('/jarvis.css');
+  await statePage.setContent('<!doctype html><html><head><link rel="stylesheet" href="/jarvis.css"></head><body><canvas id="orb"></canvas></body></html>');
+  const verifyingColor=await statePage.evaluate(async()=>{
+    const strokes=[];
+    window.__jarvisStrokeStyles=strokes;
+    const original=CanvasRenderingContext2D.prototype.stroke;
+    CanvasRenderingContext2D.prototype.stroke=function(...args){strokes.push(this.strokeStyle);return original.apply(this,args);};
+    const {startJarvisOrb}=await import('/jarvis-orb.mjs');
+    const css=getComputedStyle(document.documentElement);
+    startJarvisOrb({core:{activity:'verifying',activeShadowCount:0,pendingApprovalCount:0},online:true},()=>css.getPropertyValue('--j-focus').trim(),()=>0);
+    return `rgba(${css.getPropertyValue('--j-focus-rgb').trim()},0.63)`;
+  });
+  await statePage.waitForFunction(expected=>window.__jarvisStrokeStyles?.some(value=>value.replaceAll(' ','')===expected.replaceAll(' ','')),verifyingColor,{timeout:2000});
+  report.verifyingRing={expected:verifyingColor,matched:true};
+  await statePage.close();
   assert.equal(report.externalFonts,0);
   assert.deepEqual(report.errors,[]);
-  report.sourceSha256 = Object.fromEntries(['runtime/public/jarvis.html','runtime/public/jarvis.css','runtime/public/jarvis.mjs','runtime/public/jarvis-scene-model.mjs'].map(name=>[name,sha256(fileURLToPath(new URL(`../${name}`,import.meta.url)))]));
+  for (const [source,target] of [
+    ['model-missing-saved.png','a4-result.png'],
+    ['mobile-400.png','a5-mobile.png'],
+    ['idle-0.png','a6-0.png'],
+    ['idle-900.png','a6-1.png'],
+    ['reduced-motion-0.png','a7-0.png'],
+    ['reduced-motion-700.png','a7-1.png'],
+  ]) copyFileSync(new URL(source,outDir),new URL(target,outDir));
+  writeFileSync(new URL('console.txt',outDir),'CSP violations: 0\nConsole errors: 0\n');
+  report.sourceSha256 = Object.fromEntries(['runtime/public/jarvis.html','runtime/public/jarvis.css','runtime/public/jarvis.mjs','runtime/public/jarvis-orb.mjs','runtime/public/jarvis-scene-model.mjs'].map(name=>[name,sha256(fileURLToPath(new URL(`../${name}`,import.meta.url)))]));
   report.screenshotSha256 = Object.fromEntries(screenshotNames.map(name=>[name,sha256(fileURLToPath(new URL(name,outDir)))]));
   writeFileSync(new URL('report.json',outDir),JSON.stringify(report,null,2));
   console.log(JSON.stringify(report));

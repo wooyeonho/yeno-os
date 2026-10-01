@@ -10,7 +10,7 @@ import {planShadowMission, shadowJobFromSpec, validateShadowAssignment, shadowBl
 import {evaluateDecisions, buildVerifierEscalateRequest} from '../lib/jev.mjs';
 import {
   SemanticVerificationError, VERDICTS, CRITERION_STATUSES, INDEPENDENCE_LABELS, SEMANTIC_VERDICT_VERSION,
-  parseSemanticVerdictDraft, buildSemanticVerdict, validateSemanticVerdict, validateIndependenceLabel,
+  parseSemanticVerdictDraft, assertPassEvidenceGrounded, buildSemanticVerdict, validateSemanticVerdict, validateIndependenceLabel,
   semanticVerificationPrompt, renderSemanticVerdictReport,
 } from '../lib/semantic-verification.mjs';
 
@@ -23,10 +23,11 @@ import {
 const OPENAI_KEY = 'synthetic-openai-key-not-a-real-credential';
 const MODEL_ENV = {YENO_AGENT_PROVIDER: 'openai', YENO_OPENAI_API_KEY: OPENAI_KEY, YENO_OPENAI_MODEL: 'synthetic-openai', YENO_AGENT_DAILY_CALL_LIMIT: '20'};
 const GROK_ENV = {...MODEL_ENV, YENO_GROK_API_KEY: 'synthetic-grok-key-not-a-real-credential', YENO_GROK_MODEL: 'synthetic-grok-model', YENO_GROK_DAILY_CALL_LIMIT: '10'};
+const LOCAL_ENV = {YENO_AGENT_PROVIDER: 'local', YENO_LOCAL_MODEL: 'qwen2.5:3b', YENO_LOCAL_BASE_URL: 'http://127.0.0.1:11434/v1/chat/completions', YENO_AGENT_DAILY_CALL_LIMIT: '20'};
 const ok = text => new Response(JSON.stringify({choices: [{finish_reason: 'stop', message: {content: text, tool_calls: []}}], usage: {prompt_tokens: 30, completion_tokens: 20}}), {headers: {'Content-Type': 'application/json'}});
 const isSemanticRequest = body => body.messages.some(m => typeof m.content === 'string' && m.content.includes('independent semantic verifier'));
 
-const PASS_VERDICT = {verdict: 'pass', confidence: 0.9, criteria: [{criterion: '목표 충족', status: 'met', reason: '산출물이 목표와 성공 기준을 실제로 다룸', evidenceRefs: ['builder-artifact']}], summary: '목표를 실제로 달성함'};
+const PASS_VERDICT = {verdict: 'pass', confidence: 0.9, criteria: [{criterion: '목표 충족', status: 'met', reason: '산출물이 목표와 성공 기준을 실제로 다룸', evidenceRefs: ['실제 Shadow 산출물 본문']}], summary: '목표를 실제로 달성함'};
 const FAIL_VERDICT = {verdict: 'fail', confidence: 0.8, criteria: [{criterion: '목표 충족', status: 'not_met', reason: '산출물이 성공 기준을 실제로 다루지 못함', evidenceRefs: ['builder-artifact']}], summary: '목표를 달성하지 못함'};
 const UNCERTAIN_VERDICT = {verdict: 'uncertain', confidence: 0.4, criteria: [{criterion: '목표 충족', status: 'uncertain', reason: '증거가 판단하기에 불충분함', evidenceRefs: ['builder-artifact']}], summary: '증거 불충분으로 판단 불가'};
 
@@ -74,6 +75,20 @@ async function runFullMission(h, project, extra = {}) {
   assert.equal(verifyJob.status, 'completed', JSON.stringify(verifyJob.verifyResult));
   return {missionResponse, mission, builder, builderJob, verifyJob};
 }
+
+test('local semantic verifier requests a typed JSON schema without constraining worker prose', async t => {
+  const h = await setup(t, {env: LOCAL_ENV});
+  const project = await createProject(h);
+  const {mission} = await runFullMission(h, project);
+  const semanticJob = await h.wait(mission.semantic.jobId, ['completed', 'failed']);
+  assert.equal(semanticJob.status, 'completed', semanticJob.error);
+  const semanticCall = h.modelCalls.find(call => isSemanticRequest(call.body));
+  const format = semanticCall.body.response_format;
+  assert.equal(format?.type, 'json_schema');
+  assert.equal(format.json_schema.schema.properties.criteria.items.properties.evidenceRefs.type, 'array');
+  assert.equal(format.json_schema.schema.properties.criteria.items.properties.evidenceRefs.items.type, 'string');
+  assert.ok(h.modelCalls.filter(call => !isSemanticRequest(call.body)).every(call => call.body.response_format === undefined));
+});
 
 // ---------------------------------------------------------------------------
 // Pure unit tests: the verdict contract itself (semantic-verification.mjs)
@@ -232,6 +247,28 @@ test('deterministic PASS alone never completes the mission; semantic PASS opens 
   assert.ok(promptText.includes('실제 산출물을 완성한다'), 'goal must be present in the real captured verifier input');
   assert.equal(promptText.includes(OPENAI_KEY), false, 'no raw credential may ever reach the semantic verifier prompt');
   assert.equal(promptText.includes('Shadow Army의 Builder'), false, 'the builder\'s own hidden system instructions/reasoning must never be forwarded, only its rendered artifact content');
+});
+
+test('generic evidenceRefs cannot turn a Builder artifact into a semantic PASS', async t => {
+  const generic = {...PASS_VERDICT, criteria: [{...PASS_VERDICT.criteria[0], evidenceRefs: ['검토 대상 산출물 (builder artifact)']}]};
+  const h = await setup(t, {semanticText: JSON.stringify(generic)});
+  const project = await createProject(h);
+  const {missionResponse, mission} = await runFullMission(h, project);
+  const semanticJob = await h.wait(mission.semantic.jobId, ['completed', 'failed']);
+  assert.equal(semanticJob.status, 'failed');
+  assert.match(semanticJob.error, /pass_evidence_not_in_artifact/);
+  assert.equal(missionStatus(missionResponse.body.missionId, h.disk()).phase, 'failed');
+  assert.equal(h.disk().memoryEvents.some(event => event.sourceRefs?.some(ref => ref.type === 'job' && ref.id === semanticJob.id)), false);
+  assert.equal(h.disk().projects.find(item => item.id === project.id).milestones.some(item => item.completed), false);
+});
+
+test('each passing criterion cites visible Builder body text, not a supporting note or generated footer', () => {
+  const artifact = '실제 Shadow 산출물 본문\n두 번째 검증 가능한 결과 문장\n---\nBLACKHOLE AI 초안 · local / model';
+  const second = {...PASS_VERDICT.criteria[0], criterion: '두 번째 기준', evidenceRefs: ['두 번째 검증 가능한 결과 문장']};
+  assert.doesNotThrow(() => assertPassEvidenceGrounded({...PASS_VERDICT, criteria: [PASS_VERDICT.criteria[0], second]}, artifact));
+  assert.throws(() => assertPassEvidenceGrounded({...PASS_VERDICT, criteria: [PASS_VERDICT.criteria[0], {...second, evidenceRefs: ['참고 자료에만 있는 문장입니다']}]}, artifact), /pass_evidence_not_in_artifact/);
+  assert.throws(() => assertPassEvidenceGrounded({...PASS_VERDICT, criteria: [{...second, evidenceRefs: ['BLACKHOLE AI 초안 · local']}]}, artifact), /pass_evidence_not_in_artifact/);
+  assert.doesNotThrow(() => assertPassEvidenceGrounded(FAIL_VERDICT, artifact));
 });
 
 test('a semantic FAIL verdict blocks the milestone and is reported honestly as semantic_fail (scenario 3, 16)', async t => {

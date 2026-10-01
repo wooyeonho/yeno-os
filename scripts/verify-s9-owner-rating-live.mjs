@@ -1,0 +1,66 @@
+import assert from 'node:assert/strict';
+import {createHash, randomBytes} from 'node:crypto';
+import {createRequire} from 'node:module';
+import {mkdtempSync,mkdirSync,readFileSync,writeFileSync} from 'node:fs';
+import {rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {start} from '../runtime/server.mjs';
+import {openStore} from '../runtime/lib/store.mjs';
+import {exportBackup,decryptBackup} from '../runtime/lib/backup.mjs';
+
+const require=createRequire(new URL('../apps/controller/package.json',import.meta.url));
+const {chromium}=require('playwright');
+const out=new URL('../build-artifacts/s9-20261001/',import.meta.url);
+mkdirSync(out,{recursive:true});
+const dataDir=mkdtempSync(join(tmpdir(),'blackhole-s9-rating-live-'));
+const token=randomBytes(32).toString('hex');
+const sha=file=>createHash('sha256').update(readFileSync(new URL(file,out))).digest('hex');
+let core,browser;
+const report={evidenceClass:'SYNTHETIC_PROVIDER_REAL_LOCAL_HTTP_EDGE',modelCalls:0,rating:null,restarted:false,backup:false,screenshot:null};
+try{
+  core=await start({host:'127.0.0.1',port:0,dataDir,token,env:{YENO_AGENT_PROVIDER:'auto',YENO_AGENT_DAILY_CALL_LIMIT:'2',YENO_NVIDIA_MODEL:'synthetic-rating-model',YENO_NVIDIA_API_KEY:'synthetic-fixture-only'},agentFetch:async()=>{
+    report.modelCalls++;
+    return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:'합성 결과입니다.'}}],usage:{prompt_tokens:10,completion_tokens:8}}),{status:200,headers:{'content-type':'application/json'}});
+  }});
+  const origin=`http://127.0.0.1:${core.server.address().port}`;
+  browser=await chromium.launch({headless:true,channel:'msedge'});
+  const context=await browser.newContext({baseURL:origin,viewport:{width:400,height:840},reducedMotion:'reduce'});
+  const page=await context.newPage();
+  await page.goto('/jarvis');await page.locator('#device-connect').click();
+  await page.locator('#device-connect-reference').waitFor({state:'visible'});
+  const requestId=await page.locator('#device-connect-reference').textContent();
+  const approval=await context.request.post('/api/web/pairing/approve',{headers:{Authorization:`Bearer ${token}`,Origin:origin},data:{requestId}});
+  assert.equal(approval.status(),200);
+  await page.locator('#pair-screen').waitFor({state:'hidden'});
+  await page.locator('#in').fill('결과 평가 시험');await page.locator('#send').click();
+  await page.locator('#result-rating').waitFor({state:'visible',timeout:18000});
+  await page.locator('#result-rating button[data-stars="4"]').click();
+  await page.waitForFunction(()=>document.querySelector('#rating-status')?.textContent==='소유자 평가 4/5 · 자체 보고');
+  const ratingsResponse=await context.request.get('/api/result-ratings',{headers:{'X-Yeno-Browser':'1'}});
+  assert.equal(ratingsResponse.status(),200);
+  const ratings=await ratingsResponse.json();
+  assert.equal(ratings.entries.length,1);
+  const row=ratings.entries[0];
+  assert.equal(row.stars,4);assert.equal(row.verificationType,'self_reported');assert.equal(row.authority,'owner');
+  assert.equal(row.authorizesDispatch,false);
+  const file='owner-rating-400.png';await page.screenshot({path:fileURLToPath(new URL(file,out)),fullPage:true});
+  report.screenshot={file,sha256:sha(file)};
+  report.rating={jobId:row.jobId,artifactSha256:row.artifactSha256,stars:row.stars,verificationType:row.verificationType,authority:row.authority};
+  await browser.close();browser=null;
+  const closed=new Promise(resolve=>core.server.once('close',resolve));core.shutdown();await closed;core=null;
+  const reopened=openStore(dataDir);
+  report.restarted=reopened.state.resultRatings.entries[0].artifactSha256===row.artifactSha256;
+  assert.equal(report.restarted,true);
+  const key=randomBytes(32);
+  report.backup=decryptBackup(exportBackup({state:reopened.state,dataDir,key}),key).state.resultRatings.entries[0].artifactSha256===row.artifactSha256;
+  assert.equal(report.backup,true);
+  assert.equal(report.modelCalls,1);
+  writeFileSync(new URL('owner-rating-report.json',out),JSON.stringify(report,null,2)+'\n');
+  console.log(JSON.stringify(report));
+}finally{
+  await browser?.close();
+  const closed=core?new Promise(resolve=>core.server.once('close',resolve)):null;core?.shutdown();await closed;
+  if(dataDir.startsWith(tmpdir())&&dataDir.includes('blackhole-s9-rating-live-'))await rm(dataDir,{recursive:true,force:true});
+}

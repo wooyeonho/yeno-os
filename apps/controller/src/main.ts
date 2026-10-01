@@ -65,7 +65,7 @@ let localOrigin: string | null = null, useLocalResident = false;
 let state: State | null = null;
 let commands: CommandSession | null = null;
 let lastSeen: Date | null = null;
-let connectionStatus: 'checking' | 'online' | 'unavailable' = 'checking';
+let connectionStatus: 'checking' | 'online' | 'unavailable' | 'auth_rejected' = 'checking';
 let refreshing = false, submitting = false, pairing = false, disconnecting = false;
 let nativeVault: { stronghold: Stronghold; store: Store } | null = null;
 let vaultPassword: string | null = null;
@@ -150,15 +150,27 @@ async function request<T>(url: string, init: RequestInit, decode: (response: Res
     return await decode(response);
   } finally { window.clearTimeout(timer); }
 }
+function connectionFailureStatus(error: unknown, responseStarted: boolean): typeof connectionStatus | null {
+  if (error instanceof HttpFailure) return error.status === 401 ? 'auth_rejected' : null;
+  return responseStarted ? null : 'unavailable';
+}
+function recordConnectionFailure(target: Connection, error: unknown, responseStarted: boolean) {
+  const failure = connectionFailureStatus(error, responseStarted);
+  if (target !== connection || !failure) return;
+  const enteredRejection = failure === 'auth_rejected' && connectionStatus !== 'auth_rejected';
+  connectionStatus = failure; renderConnection(); renderPending();
+  if (enteredRejection) showMessage();
+}
 async function api<T>(path: string, init: RequestInit = {}, target = connection): Promise<T> {
   if (!target) throw new Error('기기가 연결되지 않았습니다.');
+  let responseStarted = false;
   try {
     return await request(versionedUrl(target.origin, `/api${path}`), {
       ...init,
       headers: { authorization: `Bearer ${target.token}`, ...(init.body ? { 'content-type': 'application/json' } : {}), ...init.headers },
-    }, response => response.json() as Promise<T>);
+    }, response => { responseStarted = true; return response.json() as Promise<T>; });
   } catch (error) {
-    if (target === connection) { connectionStatus = 'unavailable'; renderConnection(); }
+    recordConnectionFailure(target, error, responseStarted);
     throw error;
   }
 }
@@ -184,7 +196,11 @@ async function activate(value: Connection) {
     send: command => api('/commands', { method: 'POST', body: JSON.stringify(command) }, value),
   });
   studioStorage = storage;
-  studio = createStudioView({root, api: createStudioApi({connection:value, request, isCurrent:() => connection === value && !disconnecting}),
+  studio = createStudioView({root, api: createStudioApi({connection:value, request: async (url, init, decode) => {
+    let responseStarted = false;
+    try { return await request(url, init, response => { responseStarted = true; return decode(response); }); }
+    catch (error) { recordConnectionFailure(value, error, responseStarted); throw error; }
+  }, isCurrent:() => connection === value && !disconnecting}),
     storage, storageKey:key, notify:showMessage, saveFile:async ({blob,filename,sha256}) => {
       if (connection !== value || !sha256) throw new Error('파일을 다시 열어 주세요.');
       const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -206,9 +222,14 @@ function renderConnection() {
   $('unlock').hidden = !locked;
   $('setup').hidden = connected || locked;
   $('workspace').hidden = !connected;
-  $('connection').textContent = !connected ? (locked ? '보관소 잠김' : '연결 안 됨') : connectionStatus === 'online' ? '코어 응답 확인됨' : connectionStatus === 'checking' ? '연결 확인 중' : '최신 상태 확인 실패';
+  $('connection').dataset.state = connected ? connectionStatus : 'disconnected';
+  $('connection').textContent = !connected ? (locked ? '보관소 잠김' : '연결 안 됨') : connectionStatus === 'online' ? '코어 응답 확인됨' : connectionStatus === 'checking' ? '연결 확인 중' : connectionStatus === 'auth_rejected' ? '기기 인증 거부됨' : '최신 상태 확인 실패';
+  $('connection-guidance').hidden = !connected || connectionStatus !== 'auth_rejected';
   $('seen').textContent = lastSeen ? `마지막 상태 확인 · ${lastSeen.toLocaleString()} · revision ${state?.revision ?? '?'}` : '서버 상태를 아직 확인하지 못했습니다.';
+  if (connected && connectionStatus === 'auth_rejected') $('local-forget').hidden = false;
   $('stop').textContent = state?.emergencyStop ? '전체 멈춤 해제' : '전체 멈춤';
+  $<HTMLButtonElement>('stop').disabled = disconnecting || connectionStatus === 'auth_rejected';
+  $<HTMLButtonElement>('disconnect').disabled = disconnecting || connectionStatus === 'auth_rejected';
   livingCoreView.updateState(state, connectionStatus === 'online' && !disconnecting);
   nativeProjects.updateProjects(state?.projects, state?.jobs);
   studio?.setState(state ? {...state, online: connectionStatus === 'online' && !disconnecting} : null);
@@ -219,8 +240,8 @@ function renderPending() {
   const pending = commands?.pending;
   $('pending').textContent = pending ? `접수 확인 대기: ${pending.text}\n앱을 다시 열어도 이 명령과 요청 ID를 보존합니다.` : '';
   $('retry-command').hidden = !pending;
-  $<HTMLButtonElement>('submit-command').disabled = submitting || disconnecting;
-  $<HTMLButtonElement>('retry-command').disabled = submitting || disconnecting;
+  $<HTMLButtonElement>('submit-command').disabled = submitting || disconnecting || connectionStatus === 'auth_rejected';
+  $<HTMLButtonElement>('retry-command').disabled = submitting || disconnecting || connectionStatus === 'auth_rejected';
 }
 const JOB_STATUS_LABEL: Record<string, string> = {
   queued: '대기 중', running: '진행 중', paused: '일시정지됨',
@@ -285,9 +306,15 @@ async function refresh() {
     const next = await api<State>('/state', {}, target), changed = state?.revision !== next.revision;
     if (target !== connection) return;
     state = next; lastSeen = new Date(); connectionStatus = 'online'; render();
+    try {
+      const overview = await api<{nightReport:{cycleDate:string}|null;reviewDraftCount:number}>('/channel-overview', {}, target);
+      if (target === connection) $('channel-overview').textContent = `밤사이 보고 ${overview.nightReport?.cycleDate ?? '없음'} · 검토 초안 ${overview.reviewDraftCount}건`;
+    } catch {
+      if (target === connection) $('channel-overview').textContent = '밤사이 보고·검토 초안 상태를 확인하지 못했습니다.';
+    }
     if (changed && activeView === 'studio') await studio?.refresh();
   } catch (error) {
-    if (target === connection) { connectionStatus = 'unavailable'; renderConnection(); $('seen').textContent += ` · ${errorText(error)}`; }
+    if (target === connection) { renderConnection(); if (connectionStatus !== 'auth_rejected') $('seen').textContent += ` · ${errorText(error)}`; }
   } finally { refreshing = false; }
 }
 async function pair(event: SubmitEvent) {
@@ -362,10 +389,11 @@ async function openArtifact(id: string, name: string) {
   clearArtifact();
   const target = connection, generation = artifactEpoch;
   let file: VerifiedFile;
+  let responseStarted = false;
   try {
-    file = await request(versionedUrl(target.origin, `/api/artifacts/${id}`), { headers: { authorization: `Bearer ${target.token}` } }, response => readVerifiedFile(response, name));
+    file = await request(versionedUrl(target.origin, `/api/artifacts/${id}`), { headers: { authorization: `Bearer ${target.token}` } }, response => { responseStarted = true; return readVerifiedFile(response, name); });
   } catch (error) {
-    if (target === connection) { connectionStatus = 'unavailable'; renderConnection(); }
+    recordConnectionFailure(target, error, responseStarted);
     throw error;
   }
   if (target !== connection || generation !== artifactEpoch) return;

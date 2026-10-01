@@ -89,6 +89,20 @@ test('Kirby skills render with real names resolved from the capability/code cata
   h.close();
 });
 
+test('a verified execution decline is visible with its counts without changing the skill grade',()=>{
+  const h=setup();
+  const state=fixtureState();
+  state.growth.capabilities.skills[0].executionTrend={status:'declining',windowSize:5,previous:{verified:5,total:5},latest:{verified:1,total:5},observed:10};
+  h.view.updateState(state,fixtureQuestData());
+  const card=[...h.root.querySelectorAll('.cockpit-cap-card')].find(item=>item.textContent.includes('연구 근거 공백 정리'));
+  assert.match(card.textContent,/실행 검증률 하락/);
+  assert.match(card.textContent,/5\/5.*1\/5/);
+  assert.match(card.textContent,/출력 품질/);
+  assert.match(card.textContent,/C등급/);
+  assert.doesNotMatch(card.textContent,/자동 중지/);
+  h.close();
+});
+
 test('a skill grade change is a real diff against what this device last saw, not a fabricated recency window',()=>{
   const storage=memoryStorage(),h=setup({storage});
   h.view.updateState(fixtureState(),fixtureQuestData());

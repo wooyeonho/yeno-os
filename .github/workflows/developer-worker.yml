@@ -28,6 +28,11 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/worker-logs"
           node scripts/verify-web-ui.mjs 2>&1 | tee "$RUNNER_TEMP/worker-logs/web-ui.txt"
+      - name: Static policy for model-authored candidates
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/worker-logs"
+          node --test workers/developer/static-guard.test.mjs 2>&1 | tee "$RUNNER_TEMP/worker-logs/static-policy.txt"
       - name: Build test image without private source or credentials
         run: |
           docker build -f workers/developer/Verification.Dockerfile -t blackhole-worker-check .

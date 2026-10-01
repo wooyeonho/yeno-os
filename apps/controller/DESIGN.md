@@ -3,7 +3,7 @@
 ## 1. Scope
 Preserve the existing native controller and its Korean interface. Add safe enrollment to the existing auth card, without redesigning other screens.
 ## 2. Tokens
-Reuse src/style.css: --bg, --panel, --panel-2, --line, --accent, --text, --muted, --danger, --warning, --shadow. Existing Inter/system-ui typography and spacing remain authoritative.
+Reuse src/style.css: --bg, --panel, --panel-2, --line, --accent, --text, --muted, --danger, --danger-line, --danger-panel, --warning, --shadow. The last two tokens provide the border and background for rejected device authentication. Existing Inter/system-ui typography and spacing remain authoritative.
 ## 3. Layout
 Use existing app-shell/auth-card/form/label/button primitives. Android uses QR scan; Windows also offers its installed local resident through native IPC; selected private core address and invitation expiry are visible before enrollment.
 ## 4. Typography

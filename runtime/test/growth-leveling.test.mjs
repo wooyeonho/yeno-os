@@ -61,6 +61,8 @@ test('growth.mjs gradeSkill wired to a real solo-leveling history reaches B on r
   // growthOverview threads levelingById per skill id, same shape the UI reads.
   const overview=growthOverview(state.capabilities,'capability',{levelingById});
   assert.equal(overview.skills.find(s=>s.id==='digest').grade,'A');
+  assert.equal(overview.skills.find(s=>s.id==='digest').executionTrend.status,'insufficient_evidence');
+  assert.equal(overview.skills.find(s=>s.id==='digest').executionTrend.observed,4);
   assert.equal(overview.counts.A,1);
 
   // triage itself never composed anything (nothing consumes its output before

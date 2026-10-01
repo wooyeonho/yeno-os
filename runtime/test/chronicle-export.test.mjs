@@ -1,0 +1,33 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {createRequire} from 'node:module';
+import {openStore} from '../lib/store.mjs';
+import {runNightCycle} from '../lib/night-cycle.mjs';
+import {exportNightChronicle} from '../../scripts/export-night-chronicle.mjs';
+const require=createRequire(new URL('../package.json',import.meta.url));
+const {unzipSync,strFromU8}=require('fflate');
+
+test('stored local night report exports identical Markdown and parseable offline EPUB',()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'blackhole-s19-chronicle-'));
+ const output=path.join(dir,'exports');
+ const store=openStore(dir);
+ store.state.nightCycle.window={timeZone:'UTC',startMinute:0,endMinute:1439};
+ const result=runNightCycle(store.state,'2026-10-01T12:00:00.000Z');
+ assert.equal(result.ran,true);store.save();
+ const exported=exportNightChronicle(dir,output,result.report.cycleDate);
+ assert.equal(exported.markdown.sha256,result.report.sha256);
+ assert.equal(exported.published,false);
+ const epub=fs.readFileSync(exported.epub.path);
+ assert.equal(epub.toString('ascii',0,4),'PK\x03\x04');
+ assert.equal(epub.readUInt16LE(8),0,'the first mimetype entry must use ZIP store, not deflate');
+ assert.equal(epub.toString('utf8',30,38),'mimetype');
+ const files=unzipSync(epub);
+ assert.equal(Object.keys(files).length,5);
+ assert.equal(strFromU8(files.mimetype),'application/epub+zip');
+ assert.match(strFromU8(files['OEBPS/chapter.xhtml']),/밤사이 보고/);
+ assert.match(strFromU8(files['OEBPS/chapter.xhtml']),/실제 저장 기록만 정리했습니다/);
+ assert.throws(()=>exportNightChronicle(dir,output,result.report.cycleDate),'exports never overwrite an earlier artifact');
+});

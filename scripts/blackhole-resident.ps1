@@ -253,7 +253,18 @@ function Show-Status {
   $config = Get-Config
   $instance = Read-Json $InstancePath
   $healthy = Test-CoreHealth
-  [ordered]@{taskName=$TaskName;taskState=$(if($task){[string]$task.State}else{'NotRegistered'});lastTaskResult=$(if($taskInfo){$taskInfo.LastTaskResult}else{$null});coreHealthy=$healthy;instanceState=$(if($instance){$instance.state}else{$null});phoneStatus=$(if($healthy -and $instance.phone){$instance.phone.status}else{'unavailable'});phoneUrl=$(if($config.phone){"https://$($config.phone.dnsName):9443"}else{$null});dataDirectory=$DataDir;tokenFilePresent=(Test-Path -LiteralPath $TokenFile);instanceId=$(if($instance){$instance.instanceId}else{$null})} | ConvertTo-Json -Compress
+  [ordered]@{taskName=$TaskName;taskState=$(if($task){[string]$task.State}else{'NotRegistered'});managementAvailable=$true;lastTaskResult=$(if($taskInfo){$taskInfo.LastTaskResult}else{$null});coreHealthy=$healthy;instanceState=$(if($instance){$instance.state}else{$null});phoneStatus=$(if($healthy -and $instance.phone){$instance.phone.status}else{'unavailable'});phoneUrl=$(if($config.phone){"https://$($config.phone.dnsName):9443"}else{$null});dataDirectory=$DataDir;tokenFilePresent=(Test-Path -LiteralPath $TokenFile);instanceId=$(if($instance){$instance.instanceId}else{$null})} | ConvertTo-Json -Compress
+}
+function Show-ReadOnlyStatus {
+  try {
+    Show-Status
+    return
+  } catch {
+    # Observation is safe without ownership; management and authenticated
+    # health are not. Never turn a foreign task into a manageable resident.
+    $task = Get-ScheduledTask -TaskName $TaskName -TaskPath '\' -ErrorAction SilentlyContinue
+    [ordered]@{taskName=$TaskName;taskState=$(if($task){[string]$task.State}else{'NotRegistered'});managementAvailable=$false;coreHealthy=$null;phoneStatus='unverified';ownershipStatus='unverified'} | ConvertTo-Json -Compress
+  }
 }
 
 if ($MyInvocation.InvocationName -eq '.') { return }
@@ -263,7 +274,7 @@ switch ($Action) {
   'start' { Start-Core; Show-Status }
   'stop' { Stop-Core; Show-Status }
   'restart' { Stop-Core; Start-Core; Show-Status }
-  'status' { Show-Status }
+  'status' { Show-ReadOnlyStatus }
   'uninstall' {
     Stop-Core
     if (Get-OwnedTask) { Unregister-ScheduledTask -TaskName $TaskName -TaskPath '\' -Confirm:$false }

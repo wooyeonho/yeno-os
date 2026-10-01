@@ -19,12 +19,18 @@ function exactKeys(value, keys) {
     && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 }
 export function validateResidentConfig(value) {
-  const keys = value && Object.hasOwn(value, 'localModel') ? [...CONFIG_KEYS, 'localModel'] : CONFIG_KEYS;
+  const keys = [...CONFIG_KEYS];
+  if (value && Object.hasOwn(value, 'localModel')) keys.push('localModel');
+  if (value && Object.hasOwn(value, 'providerFile')) keys.push('providerFile');
   if (!exactKeys(value, keys) || value.version !== 1) throw coded('RESIDENT_CONFIG_INVALID');
+  if (Object.hasOwn(value, 'localModel') && Object.hasOwn(value, 'providerFile')) throw coded('RESIDENT_PROVIDER_CONFLICT');
   if (Object.hasOwn(value, 'localModel')) validateDesktopProviders(localProviders(value.localModel));
   for (const key of ['dataDir', 'tokenFile', 'controlDir']) {
     if (typeof value[key] !== 'string' || !path.isAbsolute(value[key]) || /[\r\n\0]/.test(value[key])) throw coded('RESIDENT_PATH_INVALID');
   }
+  if (Object.hasOwn(value, 'providerFile') && (typeof value.providerFile !== 'string'
+    || path.dirname(value.providerFile) !== path.dirname(value.tokenFile)
+    || path.basename(value.providerFile) !== 'provider.dpapi' || /[\r\n\0]/.test(value.providerFile))) throw coded('RESIDENT_PROVIDER_PATH_INVALID');
   if (value.dataDir === value.controlDir || !Number.isInteger(value.port) || value.port < 1024 || value.port > 65535 || value.port === 9443) throw coded('RESIDENT_PORT_OR_DIRECTORY_INVALID');
   if (value.phone !== null && (!exactKeys(value.phone, ['dnsName', 'executable'])
     || typeof value.phone.dnsName !== 'string' || !DNS_NAME.test(value.phone.dnsName)
@@ -59,6 +65,32 @@ export function serveConfigurationIsEmpty(value) {
 function childEnvironment() {
   const allowed = new Set(['PATH', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'TMPDIR', 'HOME', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'PROGRAMDATA']);
   return Object.fromEntries(Object.entries(process.env).filter(([key]) => allowed.has(key.toUpperCase())));
+}
+export function residentProviderCrypto(action, encoded) {
+  return new Promise((resolve, reject) => {
+    if (!['Protect', 'Unprotect'].includes(action) || typeof encoded !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded) || encoded.length > 32768)
+      return reject(coded('RESIDENT_PROVIDER_CRYPTO_FAILED'));
+    const systemRoot = process.env.SystemRoot ?? process.env.WINDIR;
+    if (!systemRoot || !path.isAbsolute(systemRoot)) return reject(coded('RESIDENT_PROVIDER_CRYPTO_FAILED'));
+    const executable = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    const helper = fileURLToPath(new URL('../scripts/resident-provider.ps1', import.meta.url));
+    const child = spawn(executable, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', helper, '-Action', action],
+      { shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'], env: childEnvironment() });
+    let output = '', settled = false;
+    const finish = (error, value) => { if (settled) return; settled = true; clearTimeout(timer); error ? reject(coded('RESIDENT_PROVIDER_CRYPTO_FAILED')) : resolve(value); };
+    const timer = setTimeout(() => { child.kill(); finish(true); }, 10000);
+    child.stdout.on('data', chunk => { output += chunk.toString('ascii'); if (output.length > 32768) { child.kill(); finish(true); } });
+    child.on('error', () => finish(true));
+    child.on('close', code => {
+      if (code !== 0 || !/^[A-Za-z0-9+/]+={0,2}\r?\n?$/.test(output)) return finish(true);
+      finish(null, output.trim());
+    });
+    child.stdin.on('error', () => finish(true));
+    child.stdin.end(encoded + '\n');
+  });
+}
+async function unprotectProviders(encrypted) {
+  return Buffer.from(await residentProviderCrypto('Unprotect', encrypted), 'base64').toString('utf8');
 }
 async function runTailscale(executable, args) {
   try {
@@ -145,8 +177,19 @@ export async function startResident(input, adapters = {}) {
   }
   // Dedicated local mode: only explicit config controls host, data and token.
   // Do not inherit provider credentials, proxy hosts or cloud deployment settings.
+  let providerEnv = {};
+  if (config.localModel) providerEnv = { ...desktopProviderEnvironment(localProviders(config.localModel)), YENO_LOCAL_BASE_URL: 'http://127.0.0.1:11434/v1/chat/completions' };
+  if (config.providerFile) {
+    try {
+      const stat = fs.lstatSync(config.providerFile);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 32768) throw coded('RESIDENT_PROVIDER_FILE_INVALID');
+      const encrypted = fs.readFileSync(config.providerFile, 'utf8').trim();
+      if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encrypted)) throw coded('RESIDENT_PROVIDER_FILE_INVALID');
+      providerEnv = desktopProviderEnvironment(validateDesktopProviders(JSON.parse(await (adapters.unprotectProviders ?? unprotectProviders)(encrypted))));
+    } catch { throw coded('RESIDENT_PROVIDER_FILE_INVALID'); }
+  }
   const runtime = await (adapters.start ?? start)({ dataDir: config.dataDir, token, host: '127.0.0.1', port: config.port,
-    env: { ...(config.localModel ? {...desktopProviderEnvironment(localProviders(config.localModel)), YENO_LOCAL_BASE_URL:'http://127.0.0.1:11434/v1/chat/completions'} : {}), YENO_ALLOWED_HOSTS: phoneReady ? `${config.phone.dnsName}:9443` : '' } });
+    env: { ...providerEnv, YENO_ALLOWED_HOSTS: phoneReady ? `${config.phone.dnsName}:9443` : '' } });
   let child = null, stopping = null, poll = null, probeTimer = null, phoneProbe = null;
   let resolveClosed, rejectClosed;
   const closed = new Promise((resolve, reject) => { resolveClosed = resolve; rejectClosed = reject; });
@@ -225,6 +268,13 @@ async function main() {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch(error => {
     const code = /^(?:RESIDENT_[A-Z_]+|EADDRINUSE|EACCES|EPERM|ENOENT)$/.test(error?.code ?? '') ? error.code : 'RESIDENT_START_OR_STOP_FAILED';
+    // Scheduled tasks have no visible stderr. Keep only this allowlisted code
+    // in the private control directory so startup failures can be diagnosed
+    // without copying credentials, stack traces or provider responses.
+    try {
+      const config = validateResidentConfig(readJson(process.argv[3]));
+      writeJson(path.join(config.controlDir, 'startup-error.json'), { code, at: new Date().toISOString() });
+    } catch { /* An invalid config or unavailable control directory cannot be logged safely. */ }
     console.error(`BLACKHOLE resident error: ${code}. Use status and the local diagnostic checks.`);
     process.exitCode = 1;
   });

@@ -2,6 +2,11 @@ name: Verify runtime on request
 
 on:
   workflow_dispatch:
+    inputs:
+      run_full:
+        description: 'Run the full local test union after fast and integration'
+        type: boolean
+        default: false
   push:
     branches:
       - codex
@@ -16,7 +21,7 @@ concurrency:
 jobs:
   runtime:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,7 +33,12 @@ jobs:
         run: npm ci --prefix runtime --ignore-scripts --no-audit --no-fund
       - name: Install locked UI verification dependencies
         run: npm ci --prefix apps/controller --ignore-scripts --no-audit --no-fund
-      - name: Run runtime tests
+      - name: Run fast contract tests
+        run: npm run test:fast
+      - name: Run integration tests
+        run: npm run test:integration
+      - name: Run full test union only on manual request
+        if: github.event_name == 'workflow_dispatch' && inputs.run_full == true
         run: npm test
       - name: Verify browser login and durable request recovery
         run: npm run verify:web

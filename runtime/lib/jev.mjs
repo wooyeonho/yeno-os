@@ -31,6 +31,9 @@ export const JEV_CALIBRATION_VERSION = 'jev-baseline-rules-v0';
 export const DECISION_STATUSES = Object.freeze(['decided', 'uncertain', 'abstain', 'blocked']);
 
 export const JEV_QUESTIONS = Object.freeze({
+  absorbWorthy:Object.freeze({id:'absorbWorthy',kind:'boolean'}),
+  ariseWorthy:Object.freeze({id:'ariseWorthy',kind:'boolean'}),
+  candidateLicenseOk:Object.freeze({id:'candidateLicenseOk',kind:'boolean'}),
   shadowDispatch: Object.freeze({id: 'shadowDispatch', kind: 'choice', options: Object.freeze(['dispatch', 'hold', 'escalate'])}),
   dependencyReady: Object.freeze({id: 'dependencyReady', kind: 'boolean'}),
   parallelSafe: Object.freeze({id: 'parallelSafe', kind: 'boolean'}),
@@ -99,9 +102,10 @@ function answerOf(status, value, confidence, evidenceUsed) {
 // construction.
 function evaluateDependencyReady(state) {
   const ids = state.dependsOnJobIds;
+  if(!Array.isArray(ids)||ids.some(id=>typeof id!=='string'))return answerOf('abstain',null,0,[]);
   if (!ids.length) return answerOf('decided', true, 1, []);
   const evidenceUsed = ids.map(id => ({type: 'job', id}));
-  if (ids.some(id => state.jobStatuses[id] === undefined)) return answerOf('abstain', null, 0, evidenceUsed);
+  if (!object(state.jobStatuses)||ids.some(id => state.jobStatuses[id] === undefined)) return answerOf('abstain', null, 0, evidenceUsed);
   return answerOf('decided', ids.every(id => state.jobStatuses[id] === 'completed'), 1, evidenceUsed);
 }
 
@@ -133,7 +137,7 @@ function evaluateVerifierEscalate(state) {
 // Evaluation order across ALL known questions, not just the shadow-dispatch
 // ones - `shadowDispatch` must run after `dependencyReady`/`parallelSafe`
 // (it reads their answers), everything else is order-independent.
-const RESPONSE_ORDER = ['dependencyReady', 'parallelSafe', 'verifierEscalate', 'shadowDispatch'];
+const RESPONSE_ORDER = ['dependencyReady', 'parallelSafe', 'verifierEscalate', 'shadowDispatch','absorbWorthy','ariseWorthy','candidateLicenseOk'];
 
 // Evaluates every requested question. Questions are logically independent
 // (each one's evidence is read straight from `state`), so evaluating them
@@ -150,6 +154,7 @@ export function evaluateDecisions(request, at) {
     else if (id === 'parallelSafe') answers[id] = evaluateParallelSafe(request.state);
     else if (id === 'shadowDispatch') answers[id] = evaluateShadowDispatch(request.state, answers, request.policyContext);
     else if (id === 'verifierEscalate') answers[id] = evaluateVerifierEscalate(request.state);
+    else answers[id]=evaluateConcept(id,request.state);
   }
   const latencyMs = Date.now() - started;
   const response = {
@@ -279,4 +284,11 @@ export function validateJevShadowLog(log) {
     if (entry.calibrationVersion !== JEV_CALIBRATION_VERSION) fail('알 수 없는 jevShadowLog calibrationVersion입니다.');
     if (typeof entry.fingerprint !== 'string' || entry.fingerprint.length !== 64) fail('jevShadowLog 항목의 fingerprint가 잘못되었습니다.');
   }
+}
+
+function evaluateConcept(id,state){
+ const ref=state.subjectId? [{type:'concept_evidence',id:state.subjectId}]:[];
+ if(id==='candidateLicenseOk'){const r=state.repository;if(!r||typeof r.archived!=='boolean'||typeof r.disabled!=='boolean'||!Object.hasOwn(r,'license')||!/^[a-f0-9]{40}$/.test(r.commit??''))return answerOf('abstain',null,0,ref);return answerOf('decided',!r.archived&&!r.disabled&&['MIT','Apache-2.0','BSD-2-Clause','BSD-3-Clause','ISC'].includes(r.license),1,ref);}
+ if(id==='absorbWorthy'){const e=state.absorbEvidence;if(!e||typeof e.sourceVerified!=='boolean'||!Array.isArray(e.fixtureResults)||e.fixtureResults.some(v=>typeof v!=='boolean'))return answerOf('abstain',null,0,ref);return answerOf('decided',e.sourceVerified&&e.fixtureResults.length>=2&&e.fixtureResults.length<=8&&e.fixtureResults.every(Boolean),1,ref);}
+ const e=state.ariseEvidence;if(!e||typeof e.verified!=='boolean'||!Array.isArray(e.triggers))return answerOf('abstain',null,0,ref);return answerOf('decided',e.verified&&e.triggers.some(t=>['previous_failed_mission','verifier_recovered','owner_mark'].includes(t.kind)&&typeof t.reference==='string'),1,ref);
 }

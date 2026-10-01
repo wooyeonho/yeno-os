@@ -43,6 +43,12 @@ export function recallMemories(state, request, {limit = MAX_RECALL} = {}) {
     readingStatus: source.readingStatus, decision: source.decision,
     implementationStatus: source.implementationStatus, url: source.canonicalUrl ?? source.url ?? source.sourceLocator,
   });
+  for (const entry of state.ledger?.entries ?? []) candidates.push({
+    id: entry.id, kind: 'ledger', type: 'source',
+    text: [entry.name, ...(entry.aliases ?? []), entry.intent, entry.nextAction].filter(Boolean).join('\n'),
+    createdAt: entry.importedAt, projectId: null,
+    category: entry.category, nature: entry.nature, evidenceStatus: entry.evidenceStatus,
+  });
   for (const m of state.memories ?? []) candidates.push({id: m.id, kind: 'memory', type: 'note', text: m.text, createdAt: m.createdAt, projectId: null});
   const scored = candidates.map(c => ({...c, score: score(requestTokens, c.text)})).filter(c => c.score > 0)
     .sort((a, b) => b.score - a.score || String(b.createdAt).localeCompare(String(a.createdAt)) || a.id.localeCompare(b.id))
@@ -56,7 +62,9 @@ export function recallMemories(state, request, {limit = MAX_RECALL} = {}) {
 export function recallPromptBlock(recall) {
   if (!recall.recalled.length) return '';
   const lines = recall.recalled.map((r, i) => {
-    const reference = r.kind === 'source'
+    const reference = r.kind === 'ledger'
+      ? `ledger/${r.id} · ${r.category}/${r.nature} · ${r.evidenceStatus}`
+      : r.kind === 'source'
       ? `source/${r.id}/v${r.version} · ${r.readingStatus}/${r.decision}/${r.implementationStatus} · ${r.url}`
       : `${r.kind}/${r.type}/${r.createdAt}`;
     return `${i + 1}. [${reference}] ${r.text.replace(/\s+/g, ' ')}`;

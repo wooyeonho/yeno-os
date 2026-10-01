@@ -185,6 +185,20 @@ test('clicking the voice CTA and each drill-down surface navigates to the correc
   h.close();
 });
 
+test('voice CTA is disabled when offline or emergency stopped', () => {
+  const h = setup();
+  const fixture = {core: coreFixture(), emergencyStop: false, projects: [], memories: []};
+  h.view.updateState(fixture, false);
+  assert.equal(h.root.querySelector('.living-voice-cta').disabled, true);
+  h.root.querySelector('.living-voice-cta').dispatchEvent(new h.dom.window.Event('click', {bubbles: true}));
+  assert.deepEqual(h.navigated, []);
+  h.view.updateState({...fixture, emergencyStop: true}, true);
+  assert.equal(h.root.querySelector('.living-voice-cta').disabled, true);
+  h.view.updateState(fixture, true);
+  assert.equal(h.root.querySelector('.living-voice-cta').disabled, false);
+  h.close();
+});
+
 test('the mission card opens the real linked project when focusProjectId exists, otherwise falls back to the quest surface', () => {
   const h = setup();
   h.view.updateState({core: coreFixture({missionGoal: '목표', focusProjectId: 'proj-42', focusProjectName: 'P'}), emergencyStop: false, projects: [], memories: []}, true);

@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "ledgerId": "EXTRA-136",
+  "evidenceClass": "verified-local-2d-svg",
+  "htmlSha256": "4672d40e6bbd75ee2857fd829cfb7fa8612858538762b581948718c9dbd25220",
+  "canvas": [
+    960,
+    600
+  ],
+  "portal": {
+    "shape": "ellipse aperture with opaque frame and wall",
+    "center": [
+      480,
+      286
+    ],
+    "radius": [
+      170,
+      200
+    ],
+    "depthPlane": 50
+  },
+  "subject": "original glowing orb",
+  "frames": [
+    {
+      "name": "front",
+      "position": 50,
+      "depth": 20,
+      "visibility": "front",
+      "layer": "front"
+    },
+    {
+      "name": "hidden",
+      "position": 0,
+      "depth": 70,
+      "visibility": "hidden",
+      "layer": "behind"
+    },
+    {
+      "name": "reappear",
+      "position": 50,
+      "depth": 70,
+      "visibility": "through",
+      "layer": "behind"
+    },
+    {
+      "name": "partial-edge",
+      "position": 78,
+      "depth": 70,
+      "visibility": "through",
+      "layer": "behind"
+    },
+    {
+      "name": "outside",
+      "position": 100,
+      "depth": 70,
+      "visibility": "hidden",
+      "layer": "behind"
+    },
+    {
+      "name": "front-outside",
+      "position": 0,
+      "depth": 20,
+      "visibility": "front",
+      "layer": "front"
+    }
+  ],
+  "observations": [
+    "Rear orb is rendered only through the ellipse clipPath; wall and frame occlude the rest.",
+    "At the right aperture boundary the rear orb is partially visible, then disappears outside.",
+    "These are discrete verified 2D frames; no continuous video, camera tracking, AR headset or original-reel reproduction was tested."
+  ],
+  "browserChecks": {
+    "widths": [
+      375,
+      768,
+      1280
+    ],
+    "screenshots": 17,
+    "reportSha256": "27f1a7fcc70bc80ed0b4ad4e6da542f63f71fd65e334f26e2d74157f1f86cdcb"
+  }
+}

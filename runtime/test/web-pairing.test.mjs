@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import {spawn} from 'node:child_process';
+import {once} from 'node:events';
+import {createInterface} from 'node:readline';
+import {fileURLToPath} from 'node:url';
 import {request as httpRequest} from 'node:http';
 import {randomUUID} from 'node:crypto';
 import {start} from '../server.mjs';
@@ -161,4 +165,47 @@ test('only new requests consume bounded creation capacity, recovered after expir
   assert.throws(() => pairs.begin(req, true), error => error.status === 429);
   time += 600001;
   assert.notEqual(pairs.begin(req, true).entry.id, first.entry.id);
+});
+
+test('native owner GUI can approve the first browser without phone HTTPS or revealing the owner key', async t => {
+  const f = await fixture(t), started = await f.begin();
+  const home = path.join(f.dir, 'owner-gui');
+  fs.mkdirSync(home);
+  const tokenFile = path.join(home, 'pairing.token');
+  fs.writeFileSync(tokenFile, OWNER);
+  fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({
+    version: 1, dataDir: f.dir, controlDir: path.join(home, 'control'), tokenFile,
+    port: Number(new URL(f.origin()).port), phone: null,
+  }));
+  assert.equal((await f.request('/api/state', {cookie: started.cookie})).status, 401);
+  const {ownerBrowserPairing} = await import('../owner-pairing.mjs');
+  await assert.rejects(ownerBrowserPairing(home, 'not-a-reference'), /INVALID_BROWSER_REFERENCE/);
+  assert.equal((await f.devices()).length, 0);
+  const approved = await ownerBrowserPairing(home, started.body.id);
+  assert.deepEqual(approved, {id: started.body.id, status: 'approved'});
+  assert.equal(JSON.stringify(approved).includes(OWNER), false);
+  const collected = await f.request(ROUTE, {cookie: started.cookie});
+  assert.equal(collected.body.authenticated, true);
+  assert.equal((await f.request('/api/state', {cookie: collected.cookie})).status, 200);
+  assert.equal((await f.devices()).length, 1);
+
+  const second = await f.begin();
+  const bridge = spawn(process.execPath, [fileURLToPath(new URL('../owner-pairing.mjs', import.meta.url)), '--gui-pipe'], {
+    stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
+  });
+  t.after(() => bridge.kill());
+  const lines = createInterface({input: bridge.stdout});
+  const output = once(lines, 'line');
+  const closed = once(bridge, 'close');
+  bridge.stdin.end(JSON.stringify({home, action: 'approve-browser', id: second.body.id}) + '\n');
+  const [line] = await output;
+  const [exitCode] = await closed;
+  assert.equal(exitCode, 0);
+  assert.deepEqual(JSON.parse(line), {ok: true, id: second.body.id, status: 'approved'});
+  assert.equal((await f.request(ROUTE, {cookie: second.cookie})).body.authenticated, true);
+  assert.equal((await f.devices()).length, 2);
+  const expired = await f.begin();
+  f.advance(10 * 60 * 1000 + 1);
+  await assert.rejects(ownerBrowserPairing(home, expired.body.id), /BROWSER_REFERENCE_EXPIRED/);
+  assert.equal((await f.devices()).length, 2);
 });

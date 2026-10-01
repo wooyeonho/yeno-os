@@ -4,7 +4,7 @@
 //
 //   node scripts/android-release.mjs check                       versioning + signing readiness (no secret values printed)
 //   node scripts/android-release.mjs configure --gen <gen/android> write keystore.properties + patch build.gradle.kts (after `tauri android init`)
-//   node scripts/android-release.mjs permissions --gen <gen/android> add RECORD_AUDIO to AndroidManifest.xml (after `tauri android init`; safe for debug and release builds, no secrets needed)
+//   node scripts/android-release.mjs permissions --gen <gen/android> add RECORD_AUDIO and exclude controller state from Android backups (after `tauri android init`; no secrets needed)
 //   node scripts/android-release.mjs ledger --apk <p> --aab <p>  append the built release to docs/builds/android-release-ledger.json
 //
 // Signing material is supplied ONLY through environment variables (GitHub
@@ -158,6 +158,14 @@ export function patchGradle(source) {
 // closed if no <manifest> tag is found at all, so a template shape change
 // can never silently ship without the permission.
 const RECORD_AUDIO_PERMISSION = 'android.permission.RECORD_AUDIO';
+const BACKUP_ATTRIBUTES = Object.freeze({
+  'android:allowBackup': 'false',
+  'android:fullBackupContent': '@xml/blackhole_backup_rules',
+  'android:dataExtractionRules': '@xml/blackhole_data_extraction_rules'
+});
+const BACKUP_EXCLUSIONS = ['root', 'device_root', 'external'].map(domain => `        <exclude domain="${domain}" path="." />`).join('\n');
+const LEGACY_BACKUP_RULES = `<?xml version="1.0" encoding="utf-8"?>\n<full-backup-content>\n${BACKUP_EXCLUSIONS}\n</full-backup-content>\n`;
+const DATA_EXTRACTION_RULES = `<?xml version="1.0" encoding="utf-8"?>\n<data-extraction-rules>\n    <cloud-backup>\n${BACKUP_EXCLUSIONS}\n    </cloud-backup>\n    <device-transfer>\n${BACKUP_EXCLUSIONS}\n    </device-transfer>\n</data-extraction-rules>\n`;
 
 export function patchManifestPermissions(source) {
   if (source.includes(RECORD_AUDIO_PERMISSION)) return {changed: false, source};
@@ -168,12 +176,43 @@ export function patchManifestPermissions(source) {
   return {changed: true, source: source.slice(0, insertAt) + line + source.slice(insertAt)};
 }
 
+function patchManifestBackup(source) {
+  const application = source.match(/<application\b[^>]*>/);
+  if (!application) throw new ReleaseError('AndroidManifest.xml에서 <application> 태그를 찾지 못했습니다.', 'MANIFEST_SHAPE');
+  let next = application[0];
+  for (const [name, value] of Object.entries(BACKUP_ATTRIBUTES)) {
+    const existing = next.match(new RegExp(`${name}="([^"]*)"`));
+    if (existing && existing[1] !== value) throw new ReleaseError(`${name} 값이 예상과 다릅니다.`, 'BACKUP_CONFLICT');
+    if (!existing) next = next.replace(/>$/, ` ${name}="${value}">`);
+  }
+  return {changed: next !== application[0], source: source.replace(application[0], next)};
+}
+
+function writeBackupRule(file, expected) {
+  if (fs.existsSync(file)) {
+    if (fs.readFileSync(file, 'utf8') !== expected) throw new ReleaseError(`기존 백업 규칙이 다릅니다: ${file}`, 'BACKUP_RULES_CONFLICT');
+    return false;
+  }
+  fs.mkdirSync(path.dirname(file), {recursive: true});
+  fs.writeFileSync(file, expected);
+  return true;
+}
+
 export function configurePermissions({genDir}) {
   const manifestPath = path.join(genDir, 'app', 'src', 'main', 'AndroidManifest.xml');
   if (!fs.existsSync(manifestPath)) throw new ReleaseError(`${manifestPath} 없음 — 먼저 tauri android init을 실행하세요.`, 'GEN_MISSING');
-  const patched = patchManifestPermissions(fs.readFileSync(manifestPath, 'utf8'));
-  if (patched.changed) fs.writeFileSync(manifestPath, patched.source);
-  return {manifestPatched: patched.changed};
+  const permissions = patchManifestPermissions(fs.readFileSync(manifestPath, 'utf8'));
+  const patched = patchManifestBackup(permissions.source);
+  const xmlDir = path.join(genDir, 'app', 'src', 'main', 'res', 'xml');
+  // Validate both pre-existing files before modifying the manifest or creating anything.
+  for (const [file, expected] of [['blackhole_backup_rules.xml', LEGACY_BACKUP_RULES], ['blackhole_data_extraction_rules.xml', DATA_EXTRACTION_RULES]]) {
+    const target = path.join(xmlDir, file);
+    if (fs.existsSync(target) && fs.readFileSync(target, 'utf8') !== expected) throw new ReleaseError(`기존 백업 규칙이 다릅니다: ${target}`, 'BACKUP_RULES_CONFLICT');
+  }
+  if (permissions.changed || patched.changed) fs.writeFileSync(manifestPath, patched.source);
+  const legacyRulesWritten = writeBackupRule(path.join(xmlDir, 'blackhole_backup_rules.xml'), LEGACY_BACKUP_RULES);
+  const modernRulesWritten = writeBackupRule(path.join(xmlDir, 'blackhole_data_extraction_rules.xml'), DATA_EXTRACTION_RULES);
+  return {manifestPatched: permissions.changed || patched.changed, backupRulesWritten: legacyRulesWritten || modernRulesWritten};
 }
 
 export function configureSigning({genDir, env, keystoreDir}) {
@@ -240,7 +279,7 @@ export function main(argv, env = process.env) {
   if (cmd === 'permissions') {
     const genDir = arg(argv, '--gen') ?? path.join(REPO_ROOT, 'apps/controller/src-tauri/gen/android');
     const result = configurePermissions({genDir});
-    return `PERMISSIONS: AndroidManifest.xml ${result.manifestPatched ? 'patched (RECORD_AUDIO added)' : 'already has RECORD_AUDIO'}`;
+    return `ANDROID MANIFEST: ${result.manifestPatched ? 'patched' : 'already patched'}; backup rules ${result.backupRulesWritten ? 'written' : 'already present'}`;
   }
   if (cmd === 'ledger') {
     const apk = arg(argv, '--apk'), aab = arg(argv, '--aab');

@@ -10,14 +10,12 @@
 //
 // This module is the reconciliation: the one place `id` and both label
 // forms live, imported by both quests.mjs and motivation.mjs so they can
-// never drift apart again. It changes NOTHING persisted or displayed today:
+// never drift apart again. Persisted identity is stable; E1 restores sin labels:
 // - `id` is byte-for-byte the same seven values already stored in every
 //   quest record's `driveId` (greed/gluttony/envy/pride/lust/wrath/sloth) -
 //   changing these would corrupt every persisted quest.
-// - `legacyName`/`label` are the exact Korean strings quests.mjs/
-//   motivation.mjs already display today (including quests.mjs's own prior
-//   partial softening of pride->긍지 and lust->매혹) - existing UI/tests that
-//   assert on this text keep working unchanged.
+// - `legacyName` is unchanged. `label` now matches it, intentionally restoring
+//   pride->오만 and lust->색욕 under the 2026-09-29 E1 directive.
 // - `worldName`/`worldNameEn` are NEW, additive fields: the owner-facing
 //   semantic vocabulary the Phase C contract asks for (Wealth/Evolution/
 //   Knowledge/Freedom/Honor/Influence/Creation). Nothing reads them yet
@@ -43,8 +41,8 @@ export const DRIVE_CANON = Object.freeze([
   {id: 'greed', legacyName: '강욕', label: '강욕', worldName: '부', worldNameEn: 'Wealth'},
   {id: 'gluttony', legacyName: '폭식', label: '폭식', worldName: '지식', worldNameEn: 'Knowledge'},
   {id: 'envy', legacyName: '질투', label: '질투', worldName: '영향력', worldNameEn: 'Influence'},
-  {id: 'pride', legacyName: '오만', label: '긍지', worldName: '명예', worldNameEn: 'Honor'},
-  {id: 'lust', legacyName: '색욕', label: '매혹', worldName: '창조', worldNameEn: 'Creation'},
+  {id: 'pride', legacyName: '오만', label: '오만', worldName: '명예', worldNameEn: 'Honor'},
+  {id: 'lust', legacyName: '색욕', label: '색욕', worldName: '창조', worldNameEn: 'Creation'},
   {id: 'wrath', legacyName: '분노', label: '분노', worldName: '진화', worldNameEn: 'Evolution'},
   {id: 'sloth', legacyName: '나태', label: '나태', worldName: '자유', worldNameEn: 'Freedom'},
 ].map(entry => Object.freeze(entry)));

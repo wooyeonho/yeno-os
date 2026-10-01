@@ -129,6 +129,39 @@ test('configurePermissions: writes RECORD_AUDIO into the generated AndroidManife
   assert.throws(() => configurePermissions({genDir: fs.mkdtempSync(path.join(os.tmpdir(), 'yeno-gen-empty-'))}), e => e.code === 'GEN_MISSING');
 });
 
+test('post-init Android patch excludes device credentials and pending commands from cloud and device transfer', () => {
+  const gen = fs.mkdtempSync(path.join(os.tmpdir(), 'yeno-gen-backup-'));
+  const mainDir = path.join(gen, 'app', 'src', 'main');
+  fs.mkdirSync(mainDir, {recursive: true});
+  const manifestPath = path.join(mainDir, 'AndroidManifest.xml');
+  fs.writeFileSync(manifestPath, MANIFEST);
+  configurePermissions({genDir: gen});
+  const manifest = fs.readFileSync(manifestPath, 'utf8');
+  assert.match(manifest, /android:allowBackup="false"/);
+  assert.match(manifest, /android:fullBackupContent="@xml\/blackhole_backup_rules"/);
+  assert.match(manifest, /android:dataExtractionRules="@xml\/blackhole_data_extraction_rules"/);
+  const legacy = fs.readFileSync(path.join(mainDir, 'res', 'xml', 'blackhole_backup_rules.xml'), 'utf8');
+  const modern = fs.readFileSync(path.join(mainDir, 'res', 'xml', 'blackhole_data_extraction_rules.xml'), 'utf8');
+  assert.match(legacy, /<exclude domain="root" path="\."\s*\/>/);
+  assert.match(modern, /<cloud-backup>[\s\S]*?<exclude domain="root" path="\."\s*\/>[\s\S]*?<\/cloud-backup>/);
+  assert.match(modern, /<device-transfer>[\s\S]*?<exclude domain="root" path="\."\s*\/>[\s\S]*?<\/device-transfer>/);
+  configurePermissions({genDir: gen});
+  assert.equal(fs.readFileSync(manifestPath, 'utf8'), manifest, 'repeat post-init patch must preserve the manifest');
+  const conflictGen = fs.mkdtempSync(path.join(os.tmpdir(), 'yeno-gen-backup-conflict-'));
+  const conflictMain = path.join(conflictGen, 'app', 'src', 'main');
+  fs.mkdirSync(path.join(conflictMain, 'res', 'xml'), {recursive: true});
+  const conflictManifest = path.join(conflictMain, 'AndroidManifest.xml');
+  fs.writeFileSync(conflictManifest, MANIFEST);
+  fs.writeFileSync(path.join(conflictMain, 'res', 'xml', 'blackhole_backup_rules.xml'), '<different/>');
+  assert.throws(() => configurePermissions({genDir: conflictGen}), e => e.code === 'BACKUP_RULES_CONFLICT');
+  assert.equal(fs.readFileSync(conflictManifest, 'utf8'), MANIFEST, 'conflicting generated rules must not half-patch the manifest');
+});
+
+test('release build template applies post-init Android permission and backup patch before packaging', () => {
+  const workflow = fs.readFileSync(new URL('../docs/workflows/android-release.yml.template', import.meta.url), 'utf8');
+  assert.match(workflow, /android init[\s\S]*?node scripts\/android-release\.mjs permissions[\s\S]*?android build/);
+});
+
 test('signer digest: read from apksigner; debug certificate is never a release', () => {
   const digest = 'd'.repeat(64);
   const exec = out => () => out;

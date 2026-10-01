@@ -14,6 +14,7 @@ import {randomUUID} from 'node:crypto';
 import {start} from '../server.mjs';
 import {openStore} from '../lib/store.mjs';
 import {planAutopilot, getAutopilotStatus} from '../lib/autopilot.mjs';
+import {productionCapacity} from '../lib/production-capacity.mjs';
 
 async function setup(t, options = {}) {
   const dataDir = options.dataDir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'blackhole-scheduler-fix-'));
@@ -48,8 +49,11 @@ test('scheduler stays alive and reschedules on a real ~150ms cadence, with no du
 });
 
 test('scheduler exception injection: a real ProductionCapacityError thrown inside runAutopilot() is caught, logged once, retried after retryAt (not every tick), and the loop keeps serving requests', async t => {
-  // The dataDir's store is pre-inflated PAST the 16MiB backup-capacity
-  // limit and autopilot pre-enabled BEFORE start() loads it - mutating the
+  // The dataDir's store is pre-inflated beyond the 16MiB backup limit with
+  // its 1MiB headroom and autopilot pre-enabled BEFORE start() loads it. A
+  // 15.1MiB event is enough to cross the actual admission threshold while
+  // keeping this Windows test child below its observed native crash range.
+  // Mutating the
   // file through a second openStore() while the live server also owns and
   // periodically overwrites its own in-memory copy would just get clobbered
   // by the server's next save(). Loading it at startup instead means the
@@ -63,7 +67,8 @@ test('scheduler exception injection: a real ProductionCapacityError thrown insid
     const pre = openStore(dataDir);
     pre.state.autopilot.enabled = true;
     pre.state.autopilot.enabledAt = new Date().toISOString();
-    pre.state.events.push({id: randomUUID(), at: new Date().toISOString(), text: 'x'.repeat(17*1024*1024)});
+    pre.state.events.push({id: randomUUID(), at: new Date().toISOString(), text: 'x'.repeat(Math.ceil(15.1*1024*1024))});
+    assert.equal(productionCapacity(pre.state).withinCapacity,false);
     pre.save('state_changed');
   }
   const h = await setup(t, {dataDir});

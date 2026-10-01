@@ -7,6 +7,7 @@ import {
   RecoveryOneOfError, buildRecoveryOneOfCircuit, decodeRecoveryOneOfCounts,
   validateRecoveryOneOfCircuit, validateRecoveryOneOfSelection,
 } from '../lib/recovery-one-of-qpu.mjs';
+import {optimizeRecoveryOneOf} from '../lib/quantum-statevector.mjs';
 
 const missionId='11111111-1111-4111-8111-111111111111';
 const projectId='22222222-2222-4222-8222-222222222222';
@@ -42,6 +43,17 @@ function contextFor(count=2,{mixedRisk=false,equalCosts=false}={}) {
 }
 
 const build=(context=contextFor())=>buildRecoveryOneOfCircuit(context);
+
+test('open-source simulator runs an actual three-alternative recovery circuit without dispatch authority',()=>{
+  const result=optimizeRecoveryOneOf(contextFor(3),{gridSize:8,shots:128,seed:91});
+  assert.equal(result.sweep.length,64);
+  assert.equal(result.best.uniformBaseline,3/8);
+  assert.ok(result.best.feasibleProbability>=0.6,`feasible probability ${result.best.feasibleProbability}`);
+  assert.equal(result.counts.reduce((sum,item)=>sum+item.count,0),128);
+  assert.equal(result.selection.observedShots,128);
+  assert.equal(result.authorizesDispatch,false);
+  assert.equal(result.selection.authorizesDispatch,false);
+});
 
 test('builds a replay-bound OpenQASM 3 gate circuit only from 2–4 PASS-verified JEV alternatives',()=>{
   const context=contextFor();

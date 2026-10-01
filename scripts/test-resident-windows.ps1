@@ -171,6 +171,7 @@ try {
     Wait-Core $true
     $status = (Run-Launcher 'status') | ConvertFrom-Json
     Assert-That ($status.coreHealthy -eq $true) 'status checks real authenticated HTTP readiness'
+    Assert-That ($status.managementAvailable -eq $true) 'owned status allows management only after ownership validation'
     Assert-That ($status.phoneStatus -ne 'available') 'no unconfigured phone availability claim'
     Assert-That ((Request-Core 'GET' '/api/state' 'invalid-ci-token').status -eq 401) 'incorrect owner credential rejected'
     $enrollment = Request-Core 'POST' '/api/v1/devices/enroll' $token @{ name = 'Windows CI native contract'; platform = 'android'; requestId = [Guid]::NewGuid().ToString() }
@@ -283,6 +284,9 @@ try {
     $collisionOwner.taskName = $collisionTaskName
     $collisionOwner.installId = $testId
     $collisionOwner | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $collisionHome 'owner.json') -Encoding UTF8
+    $foreignStatus = (Run-Launcher 'status' @{ TaskName = $collisionTaskName; HomeDir = $collisionHome }) | ConvertFrom-Json
+    Assert-That ($foreignStatus.taskState -ne 'NotRegistered' -and $foreignStatus.managementAvailable -eq $false -and $foreignStatus.coreHealthy -eq $null) 'status observes a foreign task without claiming ownership or authenticated health'
+    Assert-That ((Export-ScheduledTask -TaskName $collisionTaskName -TaskPath '\') -ceq $collisionBefore) 'read-only foreign status preserves task XML'
     $refused = $false
     try { $null = Run-Launcher 'uninstall' @{ TaskName = $collisionTaskName; HomeDir = $collisionHome } } catch { $refused = $true }
     Assert-That $refused 'matching owner file cannot authorize uninstall of different task action'

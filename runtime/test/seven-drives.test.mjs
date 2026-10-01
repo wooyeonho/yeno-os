@@ -14,6 +14,15 @@ test('the canon is a true bijection of seven distinct ids and seven distinct own
   assert.ok(Object.isFrozen(DRIVE_IDS));
 });
 
+test('E1 restores original sin labels while preserving canonical identity and territory', () => {
+  // Intentional display change: pride/lust no longer use the softened 긍지/매혹 labels.
+  assert.deepEqual(DRIVE_CANON.map(drive => [drive.id, drive.label, drive.legacyName, drive.worldName]), [
+    ['greed', '강욕', '강욕', '부'], ['gluttony', '폭식', '폭식', '지식'],
+    ['envy', '질투', '질투', '영향력'], ['pride', '오만', '오만', '명예'],
+    ['lust', '색욕', '색욕', '창조'], ['wrath', '분노', '분노', '진화'], ['sloth', '나태', '나태', '자유'],
+  ]);
+});
+
 test('driveWorldName/driveWorldNameEn/driveCanon resolve every real id and reject unknown ones', () => {
   for (const id of DRIVE_IDS) {
     assert.equal(typeof driveWorldName(id), 'string');

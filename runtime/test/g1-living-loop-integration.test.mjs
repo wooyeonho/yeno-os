@@ -20,7 +20,7 @@ import {missionStatus} from '../lib/shadow-army.mjs';
 const MODEL_ENV = {YENO_AGENT_PROVIDER: 'openai', YENO_OPENAI_API_KEY: 'synthetic-openai-key', YENO_OPENAI_MODEL: 'synthetic-openai', YENO_AGENT_DAILY_CALL_LIMIT: '20'};
 const ok = text => new Response(JSON.stringify({choices: [{finish_reason: 'stop', message: {content: text, tool_calls: []}}], usage: {prompt_tokens: 30, completion_tokens: 20}}), {headers: {'Content-Type': 'application/json'}});
 const SEMANTIC_FAIL = JSON.stringify({verdict: 'fail', confidence: 0.8, criteria: [{criterion: '목표 충족', status: 'not_met', reason: '산출물이 성공 기준을 실제로 다루지 못함', evidenceRefs: ['builder-artifact']}], summary: '목표를 달성하지 못함'});
-const SEMANTIC_PASS = JSON.stringify({verdict: 'pass', confidence: 0.9, criteria: [{criterion: '목표 충족', status: 'met', reason: '산출물이 목표와 성공 기준을 실제로 다룸', evidenceRefs: ['builder-artifact']}], summary: '목표를 실제로 달성함'});
+const SEMANTIC_PASS = JSON.stringify({verdict: 'pass', confidence: 0.9, criteria: [{criterion: '목표 충족', status: 'met', reason: '산출물이 목표와 성공 기준을 실제로 다룸', evidenceRefs: ['실제 Shadow 산출물 본문']}], summary: '목표를 실제로 달성함'});
 
 async function setup(t, {semantic = SEMANTIC_PASS} = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'blackhole-g1-loop-')), token = 'synthetic-g1-owner-token';

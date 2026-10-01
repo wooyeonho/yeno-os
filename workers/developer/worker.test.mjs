@@ -1,5 +1,14 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {execFileSync} from 'node:child_process';
-import {runDeveloperTask,headOf,dockerArguments,validateContract,DockerSandbox,snapshotRepository} from './worker.mjs';import {PATCH_SCHEMA,sha256} from '../../runtime/lib/repository-patch.mjs';
+import {atomic,runDeveloperTask,headOf,dockerArguments,validateContract,DockerSandbox,snapshotRepository} from './worker.mjs';import {PATCH_SCHEMA,sha256} from '../../runtime/lib/repository-patch.mjs';
+test('atomic developer journal persists a replacement on this host',t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'blackhole-worker-atomic-'));
+ t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+ const file=path.join(dir,'journal.json');
+ atomic(file,{phase:'created'});
+ atomic(file,{phase:'candidate_verified'});
+ assert.deepEqual(JSON.parse(fs.readFileSync(file,'utf8')),{phase:'candidate_verified'});
+ assert.deepEqual(fs.readdirSync(dir),['journal.json']);
+});
 const code='export const sum = xs => 0;\n',fixed='export const sum = xs => xs.reduce((a,b)=>a+b,0);\n';
 function fixture(t){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'blackhole-worker-test-')),root=path.join(dir,'repo');fs.mkdirSync(path.join(root,'projects/demo'),{recursive:true});fs.writeFileSync(path.join(root,'projects/demo/main.mjs'),code);fs.writeFileSync(path.join(root,'projects/demo/main.test.mjs'),"import test from 'node:test';import assert from 'node:assert/strict';import {sum} from './main.mjs';test('positive',()=>assert.equal(sum([2,4]),6));test('empty',()=>assert.equal(sum([]),0));test('negative',()=>assert.equal(sum([-2,1]),-1));\n");execFileSync('git',['init','-q'],{cwd:root});execFileSync('git',['add','.'],{cwd:root});execFileSync('git',['-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm','baseline'],{cwd:root});const contract={id:'sum-fixture',baseCommit:headOf(root),goal:'Fix sum without changing tests',editablePaths:['projects/demo/main.mjs'],contextPaths:[],testFiles:['projects/demo/main.test.mjs']};t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));return {dir,root,contract,journalPath:path.join(dir,'journal.json')};}
 const patch=(task,content=fixed)=>({schema:PATCH_SCHEMA,baseCommit:task.baseCommit,changes:[{path:task.files[0].path,beforeSha256:task.files[0].sha256,content}]});
@@ -12,6 +21,17 @@ test('test failure feeds one repair, immutable tests and original source survive
  assert.equal((await runDeveloperTask({...f,model,sandbox,publish})).phase,j.phase);assert.equal(calls,2);assert.equal(published,1);
 });
 test('no useful patch after two attempts does not publish',async t=>{const f=fixture(t);let n=0;const j=await runDeveloperTask({...f,model:async task=>{n++;return patch(task,'export const sum = xs => 7;');},sandbox:{run:async()=>result(false)},publish:async()=>assert.fail('must not publish')});assert.equal(j.phase,'failed');assert.equal(n,2);assert.equal(j.patch,undefined);});
+test('unsafe model code is rejected before candidate execution, then a safe repair can proceed',async t=>{
+ const f=fixture(t);let calls=0,runs=0;
+ const j=await runDeveloperTask({...f,
+   model:async task=>patch(task,++calls===1?"export const sum = xs => fetch('https://example.invalid/collect');\n":fixed),
+   sandbox:{run:async({workspace})=>{runs++;return result(fs.readFileSync(path.join(workspace,'projects/demo/main.mjs'),'utf8')===fixed);}}
+ });
+ assert.equal(j.phase,'candidate_verified',JSON.stringify(j));
+ assert.equal(j.attempts[0].error,'static_policy_rejected');
+ assert.equal(runs,2,'only the baseline and repaired candidate may execute');
+ assert.equal(calls,2);
+});
 test('lost model reply holds unknown reservation and restart cannot duplicate it',async t=>{const f=fixture(t);let n=0;const options={...f,model:async()=>{n++;throw Error('lost');},sandbox:{run:async()=>result(false)}};const a=await runDeveloperTask(options);assert.equal(a.phase,'unknown');assert.equal(a.attempts[0].status,'unknown');const b=await runDeveloperTask(options);assert.equal(b.phase,'unknown');assert.equal(n,1);});
 test('stop stops before another model call and keeps a paused journal',async t=>{const f=fixture(t),abort=new AbortController();let n=0;const j=await runDeveloperTask({...f,signal:abort.signal,model:async task=>{n++;abort.abort();return patch(task);},sandbox:{run:async()=>result(false)}});assert.equal(j.phase,'paused');assert.equal(n,1);});
 test('scope and safety controls cannot be changed by a task',t=>{const f=fixture(t);assert.throws(()=>validateContract({...f.contract,editablePaths:['runtime/lib/agent.mjs']}));assert.throws(()=>validateContract({...f.contract,testFiles:[]}));assert.throws(()=>validateContract({...f.contract,command:['sh','-c','true']}));});

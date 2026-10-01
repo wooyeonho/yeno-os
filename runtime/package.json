@@ -16,7 +16,15 @@
     "check:living-loop": "node ../scripts/verify-living-loop-live.mjs"
   },
   "dependencies": {
+    "fflate": "0.8.3",
     "qrcode": "1.5.4",
-    "quickjs-emscripten": "0.32.0"
+    "quantum-circuit": "0.9.251",
+    "quickjs-emscripten": "0.32.0",
+    "wilson-score-interval": "2.1.0"
+  },
+  "overrides": {
+    "quantum-circuit": {
+      "mathjs": "7.6.0"
+    }
   }
 }

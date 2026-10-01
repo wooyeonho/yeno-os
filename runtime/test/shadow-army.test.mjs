@@ -24,15 +24,20 @@ const ok = text => new Response(JSON.stringify({choices: [{finish_reason: 'stop'
 // job in the pipeline - distinguished from a worker-role call only by its
 // own real system prompt (never by job id/order), exactly how a real
 // provider would only ever see the request it was actually sent.
-const SEMANTIC_PASS_VERDICT = JSON.stringify({verdict: 'pass', confidence: 0.9, criteria: [{criterion: '목표 충족', status: 'met', reason: '산출물이 목표와 성공 기준을 실제로 다룸', evidenceRefs: ['builder-artifact']}], summary: '목표를 실제로 달성함'});
+const SEMANTIC_PASS_VERDICT = JSON.stringify({verdict: 'pass', confidence: 0.9, criteria: [{criterion: '목표 충족', status: 'met', reason: '산출물이 목표와 성공 기준을 실제로 다룸', evidenceRefs: ['실제 Shadow 산출물 본문']}], summary: '목표를 실제로 달성함'});
 
-async function setup(t, {env = MODEL_ENV} = {}) {
+async function setup(t, {env = MODEL_ENV, workerReply = '실제 Shadow 산출물 본문', modelDelayMs = 0} = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'blackhole-shadow-army-')), token = 'synthetic-shadow-army-owner-token';
   const modelCalls = [];
+  let activeModelCalls=0, maxActiveModelCalls=0;
   const agentFetch = async (url, req) => {
     modelCalls.push({url, body: JSON.parse(req.body)});
-    const isSemantic = JSON.parse(req.body).messages.some(m => typeof m.content === 'string' && m.content.includes('independent semantic verifier'));
-    return ok(isSemantic ? SEMANTIC_PASS_VERDICT : '실제 Shadow 산출물 본문');
+    activeModelCalls++;maxActiveModelCalls=Math.max(maxActiveModelCalls,activeModelCalls);
+    try{
+      if(modelDelayMs)await new Promise(resolve=>setTimeout(resolve,modelDelayMs));
+      const isSemantic = JSON.parse(req.body).messages.some(m => typeof m.content === 'string' && m.content.includes('independent semantic verifier'));
+      return ok(isSemantic ? SEMANTIC_PASS_VERDICT : workerReply);
+    }finally{activeModelCalls--;}
   };
   let runtime = await start({host: '127.0.0.1', port: 0, dataDir: dir, token, env, agentFetch});
   const request = async (method, route, body) => { const r = await fetch(`http://127.0.0.1:${runtime.server.address().port}${route}`, {method, headers: {Authorization: `Bearer ${token}`, 'Content-Type': 'application/json'}, ...(body ? {body: JSON.stringify(body)} : {})}); return {status: r.status, body: await r.json()}; };
@@ -42,7 +47,7 @@ async function setup(t, {env = MODEL_ENV} = {}) {
   const until = async (check, label) => { for (let i = 0; i < 400; i++) { const value = check(); if (value) return value; await new Promise(r => setTimeout(r, 20)); } assert.fail(label); };
   const restart = async () => { runtime.shutdown(); runtime = await start({host: '127.0.0.1', port: 0, dataDir: dir, token, env, agentFetch}); };
   t.after(() => { runtime.shutdown(); fs.rmSync(dir, {recursive: true, force: true}); });
-  return {dir, post, get, wait, until, restart, modelCalls, state: () => runtime.state(), disk: () => openStore(dir).state};
+  return {dir, post, get, wait, until, restart, modelCalls, maxActiveModelCalls:()=>maxActiveModelCalls, state: () => runtime.state(), disk: () => openStore(dir).state};
 }
 
 async function createProject(h, overrides = {}) {
@@ -51,10 +56,58 @@ async function createProject(h, overrides = {}) {
   return r.body.project;
 }
 
+test('auto Shadow route refuses local-only Builder and pins remote Builder and semantic verification when available',async t=>{
+  const local={YENO_AGENT_PROVIDER:'auto',YENO_AGENT_DAILY_CALL_LIMIT:'20',YENO_LOCAL_MODEL:'synthetic-local'};
+  const unavailable=await setup(t,{env:local});
+  const project=await createProject(unavailable);
+  const blocked=await unavailable.post('/api/shadow-army/missions',{projectId:project.id,goal:'원격 모델이 필요한 작업'});
+  assert.equal(blocked.status,409);
+  assert.equal(unavailable.disk().jobs.filter(job=>job.shadowAssignment).length,0);
+
+  const available=await setup(t,{env:{...local,YENO_NVIDIA_MODEL:'synthetic-remote',YENO_NVIDIA_API_KEY:'synthetic-remote-key'}});
+  const remoteProject=await createProject(available);
+  const started=await available.post('/api/shadow-army/missions',{projectId:remoteProject.id,goal:'역할별 provider를 확인한다'});
+  assert.equal(started.status,201);
+  const jobs=available.disk().jobs.filter(job=>job.shadowAssignment?.missionId===started.body.missionId);
+  assert.equal(jobs.find(job=>job.shadowAssignment.role==='scout').selectedProvider,'local');
+  assert.equal(jobs.find(job=>job.shadowAssignment.role==='researcher').selectedProvider,'local');
+  assert.equal(jobs.find(job=>job.shadowAssignment.role==='builder').selectedProvider,'nvidia');
+  assert.equal(jobs.find(job=>job.shadowAssignment.role==='semanticVerifier').selectedProvider,'nvidia');
+});
+
+test('owner-marked major verified Shadow mission promotes to D and names the same-role participant on the next mission after restart',async t=>{
+  const h=await setup(t);
+  const project=await createProject(h);
+  const first=await h.post('/api/shadow-army/missions',{projectId:project.id,goal:'첫 근거 산출물을 작성한다'});
+  assert.equal(first.status,201,JSON.stringify(first.body));
+  assert.ok(first.body.mission.shadows.every(shadow=>shadow.preferredShadowId===null));
+  assert.equal((await h.post('/api/shadow-army/major',{missionId:first.body.missionId})).status,200);
+  await h.until(()=>missionStatus(first.body.missionId,h.disk())?.phase==='completed','first verified mission completes');
+  const before=await h.get('/api/shadow-army/roster');
+  assert.equal(before.status,200);
+  assert.equal(before.body.overview.byRank.D,4);
+  const fingerprint=before.body.roster.fingerprint;
+  await h.restart();
+  const after=await h.get('/api/shadow-army/roster');
+  assert.equal(after.body.roster.fingerprint,fingerprint);
+  assert.equal(after.body.overview.byRank.D,4);
+  const second=await h.post('/api/shadow-army/missions',{projectId:project.id,goal:'다른 입력으로 두 번째 산출물을 작성한다'});
+  assert.equal(second.status,201,JSON.stringify(second.body));
+  for(const shadow of second.body.mission.shadows){
+    assert.ok(shadow.preferredShadowId,`${shadow.role} keeps a named participant`);
+    assert.ok(shadow.preferredShadowName);
+    const job=h.disk().jobs.find(candidate=>candidate.id===shadow.jobId);
+    assert.equal(job.shadowAssignment.preferredShadowId,shadow.preferredShadowId);
+  }
+  await h.until(()=>missionStatus(second.body.missionId,h.disk())?.phase==='completed','second verified mission completes');
+  assert.equal((await h.get('/api/shadow-army/roster')).body.overview.byRank.C,4);
+});
+
 test('planShadowMission is pure and rejects a bad project reference, emergency stop, and missing goal', () => {
   const state = {emergencyStop: false, projects: [{id: '11111111-1111-4111-8111-111111111111', name: 'P', status: 'active', version: 1}], jobs: []};
   assert.throws(() => planShadowMission(state, {projectId: 'not-a-real-id', goal: 'g'}), ShadowArmyError);
   assert.throws(() => planShadowMission(state, {projectId: state.projects[0].id, goal: ''}), ShadowArmyError);
+  assert.throws(() => planShadowMission(state, {projectId: state.projects[0].id, goal: 'g', builderEvidence: 'x'.repeat(2001)}), ShadowArmyError);
   assert.throws(() => planShadowMission({...state, emergencyStop: true}, {projectId: state.projects[0].id, goal: 'g'}), ShadowArmyError);
   const plan = planShadowMission(state, {projectId: state.projects[0].id, goal: '실제 목표'});
   assert.equal(plan.specs.length, 5);
@@ -90,6 +143,10 @@ test('Shadow workers can read only their assigned project snapshot and its sourc
     {id:randomUUID(),projectId:other.id,title:'다른 프로젝트 비공개',canonicalUrl:'https://example.com/other',readingStatus:'read',decision:'pending',summary:'PRIVATE_OTHER_PROJECT',application:'PRIVATE_OTHER_PROJECT',riskNotes:'PRIVATE_OTHER_PROJECT'},
   ];
   const signal=new AbortController().signal;
+  const rejected=await agentTool({name:'project_read',args:{project_id:state.sources[0].id}},state,()=>assert.fail('No network'),signal,job);
+  assert.equal(rejected.error,'unsupported_tool_or_arguments');
+  assert.deepEqual(rejected.expectedArguments,{},'the rejection tells the model the exact safe empty-argument contract');
+  assert.equal(Object.hasOwn(rejected,'project'),false,'a wrong source ID never reads a project');
   const context=await agentTool({name:'project_read',args:{}},state,()=>assert.fail('No network'),signal,job);
   assert.equal(context.project.id,project.id);
   const sources=await agentTool({name:'project_sources',args:{}},state,()=>assert.fail('No network'),signal,job);
@@ -104,6 +161,68 @@ test('Shadow workers can read only their assigned project snapshot and its sourc
     assert.equal(offered.includes('ecosystem_read'),false,'project evidence tasks must not advertise an unrelated catalog reader');
     return ok('부분 열람 상태와 미확인 사항을 구분했습니다.');
   }});
+});
+
+test('local Shadow leaf workers receive bounded assigned evidence in one tool-free call', async t => {
+  const env={YENO_AGENT_PROVIDER:'local',YENO_LOCAL_MODEL:'synthetic-local',YENO_LOCAL_BASE_URL:'http://127.0.0.1:11434/v1/chat/completions',YENO_AGENT_DAILY_CALL_LIMIT:'20'};
+  const h=await setup(t,{env,workerReply:`첫 500바이트 밖의 내용은 Builder에 보내지 않는다. ${'x'.repeat(1500)} NOTE_TAIL_SENTINEL`});
+  const project=await createProject(h);
+  const other=await createProject(h);
+  const source=await h.post('/api/sources',{url:'https://example.com/local-shadow-source',title:'할당된 부분 열람 자료',projectId:project.id,readingStatus:'partial',decision:'pending',summary:'LOCAL_ASSIGNED_EVIDENCE'});
+  assert.equal(source.status,201,JSON.stringify(source.body));
+  const hidden=await h.post('/api/sources',{url:'https://example.com/other-shadow-source',title:'다른 프로젝트 자료',projectId:other.id,summary:'PRIVATE_OTHER_PROJECT'});
+  assert.equal(hidden.status,201,JSON.stringify(hidden.body));
+  const created=await h.post('/api/shadow-army/missions',{projectId:project.id,goal:'할당된 근거를 구분해 결과를 작성한다',builderEvidence:'BUILDER_ONLY_EVIDENCE'});
+  assert.equal(created.status,201,JSON.stringify(created.body));
+  const jobs=created.body.mission.shadows;
+  for(const role of ['scout','researcher']){
+    const id=jobs.find(item=>item.role===role).jobId;
+    assert.equal((await h.wait(id,['completed','failed'])).status,'completed');
+  }
+  for(const role of ['Scout','Researcher']){
+    const call=h.modelCalls.find(item=>item.body.messages.some(message=>message.role==='user'&&message.content.includes(`Shadow Army의 ${role}`)));
+    assert.ok(call,`${role} made a model call`);
+    assert.equal(Object.hasOwn(call.body,'tools'),false);
+    assert.equal(Object.hasOwn(call.body,'tool_choice'),false);
+    const sent=JSON.stringify(call.body);
+    assert.ok(sent.includes(source.body.source.id));
+    assert.ok(sent.includes('LOCAL_ASSIGNED_EVIDENCE'));
+    assert.ok(sent.includes('partial')&&sent.includes('pending'));
+    assert.equal(sent.includes('PRIVATE_OTHER_PROJECT'),false);
+    assert.equal(sent.includes('BUILDER_ONLY_EVIDENCE'),false);
+  }
+  const builderCall=await h.until(()=>h.modelCalls.find(item=>item.body.messages.some(message=>message.role==='user'&&message.content.includes('Shadow Army의 Builder'))),'builder model call');
+  assert.equal(Object.hasOwn(builderCall.body,'tools'),false,'local Builder uses its prepared dependency evidence without tools');
+  assert.equal(Object.hasOwn(builderCall.body,'tool_choice'),false);
+  const builderInput=builderCall.body.messages.filter(message=>message.role==='user').map(message=>message.content).join('\n');
+  assert.equal(builderInput.includes('NOTE_TAIL_SENTINEL'),false,'long local leaf notes are capped before Builder');
+  assert.ok(builderInput.includes('전체는 저장된 산출물에 있음'),'the capped note is labeled as an excerpt');
+  assert.ok(builderInput.includes('BUILDER_ONLY_EVIDENCE'),'Builder keeps its private task evidence');
+});
+
+test('local Shadow workers do not overlap model requests when the local provider is slow', async t => {
+  const env={YENO_AGENT_PROVIDER:'local',YENO_LOCAL_MODEL:'synthetic-local',YENO_LOCAL_BASE_URL:'http://127.0.0.1:11434/v1/chat/completions',YENO_AGENT_DAILY_CALL_LIMIT:'20'};
+  const h=await setup(t,{env,modelDelayMs:700});
+  const project=await createProject(h);
+  const result=await h.post('/api/shadow-army/missions',{projectId:project.id,goal:'근거를 바탕으로 결과물을 작성한다'});
+  assert.equal(result.status,201,JSON.stringify(result.body));
+  const scout=result.body.mission.shadows.find(item=>item.role==='scout');
+  const researcher=result.body.mission.shadows.find(item=>item.role==='researcher');
+  assert.equal((await h.wait(scout.jobId,['completed','failed'])).status,'completed');
+  assert.equal((await h.wait(researcher.jobId,['completed','failed'])).status,'completed');
+  assert.equal(h.maxActiveModelCalls(),1,'one local model request at a time on the bounded PC');
+});
+
+test('remote Shadow workers retain parallel model requests', async t => {
+  const h=await setup(t,{modelDelayMs:700});
+  const project=await createProject(h);
+  const result=await h.post('/api/shadow-army/missions',{projectId:project.id,goal:'독립 역할을 병렬로 실행한다'});
+  assert.equal(result.status,201,JSON.stringify(result.body));
+  const scout=result.body.mission.shadows.find(item=>item.role==='scout');
+  const researcher=result.body.mission.shadows.find(item=>item.role==='researcher');
+  assert.equal((await h.wait(scout.jobId,['completed','failed'])).status,'completed');
+  assert.equal((await h.wait(researcher.jobId,['completed','failed'])).status,'completed');
+  assert.equal(h.maxActiveModelCalls(),2,'remote provider keeps both independent leaf calls in flight');
 });
 
 test('verifyShadowArtifacts is deterministic: passes only a completed job with an artifact and no unknown call outcome', () => {
@@ -134,7 +253,9 @@ test('verifyFailureSummary/shadowFailureReason: a rejected verify job is classif
 test('a real mission runs two independent shadows in parallel, gates the builder on both, and the verifier passes and updates the real project milestone + memory event', async (t) => {
   const h = await setup(t);
   const project = await createProject(h);
-  const missionResponse = await h.post('/api/shadow-army/missions', {projectId: project.id, goal: '실제 산출물을 완성한다', successCriterion: '검증 가능한 결과물 1개'});
+  const successCriterion = '검증 가능한 결과물 1개';
+  const builderEvidence = 'EVIDENCE_ONLY_FOR_BUILDER_43';
+  const missionResponse = await h.post('/api/shadow-army/missions', {projectId: project.id, goal: '실제 산출물을 완성한다', successCriterion, builderEvidence});
   assert.equal(missionResponse.status, 201, JSON.stringify(missionResponse.body));
   const {missionId} = missionResponse.body;
   const mission = missionResponse.body.mission;
@@ -159,6 +280,23 @@ test('a real mission runs two independent shadows in parallel, gates the builder
   // 'paused' must not be an accepted terminal wait state here - wait past it.
   const builderJob = await h.wait(builder.jobId, ['completed', 'failed']);
   assert.equal(builderJob.status, 'completed', builderJob.error);
+  const builderCall = h.modelCalls.find(call => call.body.messages.some(message =>
+    message.role === 'user' && message.content.includes('Shadow Army의 Builder')));
+  assert.ok(builderCall, 'builder must have received a model request');
+  assert.ok(builderCall.body.tools?.length>0,'non-local Builder keeps its existing read-only tool path');
+  const builderInput = builderCall.body.messages.filter(message => message.role === 'user').map(message => message.content).join('\n');
+  assert.ok(builderInput.includes(successCriterion), 'builder must receive the same explicit success criterion that semantic verification judges');
+  assert.ok(builderInput.includes(builderEvidence), 'builder receives the bounded task evidence');
+  for (const role of ['Scout', 'Researcher']) {
+    const leafCall = h.modelCalls.find(call => call.body.messages.some(message => message.role === 'user' && message.content.includes(`Shadow Army의 ${role}`)));
+    assert.ok(leafCall, `${role} receives a model request`);
+    assert.equal(JSON.stringify(leafCall.body).includes(builderEvidence), false, `${role} must not receive builder-only evidence`);
+  }
+  for (const dependency of [scoutJob, researcherJob]) {
+    assert.ok(builderInput.includes(dependency.id), 'builder must receive each dependency job identity');
+    assert.ok(builderInput.includes(dependency.artifacts[0].id), 'builder must receive each real artifact identity');
+    assert.ok(builderInput.includes(h.disk().artifacts[dependency.artifacts[0].id].sha256), 'builder must receive each verified artifact hash');
+  }
   // The builder job must never have been dispatched while a dependency was
   // still incomplete - the durable record's own step/status history can't be
   // replayed, but its startedAt-equivalent ordering is proved by construction

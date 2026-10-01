@@ -1,0 +1,90 @@
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import {randomBytes,createHash} from 'node:crypto';
+import {mkdtempSync,mkdirSync,readFileSync,writeFileSync} from 'node:fs';
+import {rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {start} from '../runtime/server.mjs';
+
+const require=createRequire(new URL('../apps/controller/package.json',import.meta.url));
+const {chromium}=require('playwright');
+const output=new URL('../build-artifacts/jarvis-e2e-20260927/',import.meta.url);
+mkdirSync(output,{recursive:true});
+const dataDir=mkdtempSync(join(tmpdir(),'blackhole-jarvis-command-'));
+const token=randomBytes(32).toString('hex');
+const sha256=bytes=>createHash('sha256').update(bytes).digest('hex');
+const answer='오늘 할 일 세 가지입니다. 첫째, 가장 중요한 한 가지를 정하세요. 둘째, 필요한 자료를 모으세요. 셋째, 완료 기준을 확인하세요.';
+let requests=0,core,browser;
+const report={evidenceClass:'SYNTHETIC_PROVIDER_BROWSER_E2E',networkModelCalls:0,requests:0,job:null,visibleAnswer:false,visibleProvider:false,elapsedMs:null,screenshot:null,failure:null};
+try{
+  core=await start({host:'127.0.0.1',port:0,dataDir,token,env:{YENO_AGENT_PROVIDER:'auto',YENO_AGENT_DAILY_CALL_LIMIT:'2',YENO_NVIDIA_MODEL:'synthetic-browser-model',YENO_NVIDIA_API_KEY:'synthetic-browser-key'},agentFetch:async()=>{
+    requests++;
+    return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:requests===1?answer:''}}],usage:{prompt_tokens:12,completion_tokens:requests===1?36:0}}),{status:200,headers:{'content-type':'application/json'}});
+  }});
+  const origin=`http://127.0.0.1:${core.server.address().port}`;
+  browser=await chromium.launch({headless:true,channel:'msedge'});
+  const context=await browser.newContext({baseURL:origin,viewport:{width:1440,height:900}});
+  const page=await context.newPage();
+  await page.goto('/jarvis');
+  await page.locator('#device-connect').click();
+  const ref=page.locator('#device-connect-reference');
+  await ref.waitFor({state:'visible'});
+  const requestId=await ref.textContent();
+  const approval=await context.request.post('/api/web/pairing/approve',{headers:{Authorization:`Bearer ${token}`,Origin:origin},data:{requestId}});
+  assert.equal(approval.status(),200);
+  await page.locator('#pair-screen').waitFor({state:'hidden'});
+  await page.locator('#in').fill('오늘 할 일 세 개 정리해줘');
+  const began=Date.now();
+  await page.locator('#send').click();
+  await page.waitForFunction(expected=>document.querySelector('#line')?.textContent?.includes(expected),answer,{timeout:15000});
+  await page.waitForFunction(()=>document.querySelector('#model')?.textContent?.includes('nvidia · synthetic-browser-model'),null,{timeout:15000});
+  report.elapsedMs=Date.now()-began;
+  report.visibleAnswer=await page.locator('#line').textContent()===answer;
+  report.visibleProvider=(await page.locator('#model').textContent()).includes('nvidia · synthetic-browser-model');
+  const stateResponse=await context.request.get('/api/state',{headers:{'X-Yeno-Browser':'1'}});
+  assert.equal(stateResponse.status(),200);
+  const state=await stateResponse.json();
+  const job=state.jobs.find(item=>item.title==='오늘 할 일 세 개 정리해줘');
+  assert.ok(job);
+  assert.equal(job.status,'completed');
+  assert.equal(job.provider,'nvidia');
+  assert.equal(job.model,'synthetic-browser-model');
+  report.job={id:job.id,title:job.title,status:job.status,provider:job.provider,model:job.model,artifactIds:job.artifacts.map(item=>item.id)};
+  report.requests=requests;
+  assert.equal(requests,1);
+  await page.waitForFunction(()=>{const el=document.querySelector('#line');return el&&!el.classList.contains('fade')&&Number(getComputedStyle(el).opacity)>.98;});
+  const filename='synthetic-result-1440.png';
+  const file=fileURLToPath(new URL(filename,output));
+  await page.screenshot({path:file,fullPage:true});
+  report.screenshot={file:filename,sha256:sha256(readFileSync(file))};
+  await page.locator('#in').fill('실패 시험 요청');
+  await page.locator('#send').click();
+  try{await page.waitForFunction(()=>document.querySelector('#line')?.textContent?.includes('모델이 빈 답을 줬어. 숨기지 않을게.'),null,{timeout:20000});}
+  catch(error){
+    const state=await (await context.request.get('/api/state',{headers:{'X-Yeno-Browser':'1'}})).json();
+    throw new Error(JSON.stringify({message:error.message,line:await page.locator('#line').textContent(),doing:await page.locator('#doing').textContent(),jobs:state.jobs.slice(0,2).map(job=>({title:job.title,status:job.status,error:job.error}))}));
+  }
+  const failureStateResponse=await context.request.get('/api/state',{headers:{'X-Yeno-Browser':'1'}});
+  const failureState=await failureStateResponse.json();
+  const failedJob=failureState.jobs.find(item=>item.title==='실패 시험 요청');
+  assert.equal(failedJob?.status,'failed');
+  assert.equal(requests,2,'Ambiguous empty response must not be retried');
+  await page.waitForFunction(()=>{const el=document.querySelector('#line');return el&&!el.classList.contains('fade')&&Number(getComputedStyle(el).opacity)>.98;});
+  const failureFilename='synthetic-failure-1440.png';
+  const failureFile=fileURLToPath(new URL(failureFilename,output));
+  await page.screenshot({path:failureFile,fullPage:true});
+  report.failure={jobId:failedJob.id,status:failedJob.status,visibleCode:(await page.locator('#doing').textContent()).includes('empty_model_response'),visibleKorean:true,screenshot:{file:failureFilename,sha256:sha256(readFileSync(failureFile))}};
+  assert.equal(report.failure.visibleCode,true);
+  report.requests=requests;
+  writeFileSync(new URL('synthetic-job.json',output),JSON.stringify(report.job,null,2));
+  writeFileSync(new URL('synthetic-report.json',output),JSON.stringify(report,null,2));
+  console.log(JSON.stringify(report));
+}finally{
+  await browser?.close();
+  const closed=core?new Promise(resolve=>core.server.once('close',resolve)):null;
+  core?.shutdown();
+  await closed;
+  await rm(dataDir,{recursive:true,force:true});
+}

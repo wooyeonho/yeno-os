@@ -18,7 +18,7 @@ const OPENAI_KEY = 'synthetic-openai-key-not-a-real-credential';
 const MODEL_ENV = {YENO_AGENT_PROVIDER: 'openai', YENO_OPENAI_API_KEY: OPENAI_KEY, YENO_OPENAI_MODEL: 'synthetic-openai', YENO_AGENT_DAILY_CALL_LIMIT: '20'};
 const ok = text => new Response(JSON.stringify({choices: [{finish_reason: 'stop', message: {content: text, tool_calls: []}}], usage: {prompt_tokens: 30, completion_tokens: 20}}), {headers: {'Content-Type': 'application/json'}});
 const isSemanticRequest = body => body.messages.some(m => typeof m.content === 'string' && m.content.includes('independent semantic verifier'));
-const PASS_VERDICT = {verdict: 'pass', confidence: 0.9, criteria: [{criterion: '목표 충족', status: 'met', reason: '산출물이 목표와 성공 기준을 실제로 다룸', evidenceRefs: ['builder-artifact']}], summary: '목표를 실제로 달성함'};
+const PASS_VERDICT = {verdict: 'pass', confidence: 0.9, criteria: [{criterion: '목표 충족', status: 'met', reason: '산출물이 목표와 성공 기준을 실제로 다룸', evidenceRefs: ['실제 Shadow 산출물 본문']}], summary: '목표를 실제로 달성함'};
 
 async function setup(t, {obsidian = false} = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'blackhole-f05-')), token = 'synthetic-f05-owner-token';
@@ -105,6 +105,9 @@ test('F06 (integration): a real verified mission grants role XP once, visible in
   const h = await setup(t);
   await verifiedMission(h);
   const g1 = (await h.get('/api/state')).body.growth.shadow;
+  const rosterBefore = (await h.get('/api/shadow-army/roster')).body.roster;
+  assert.deepEqual(rosterBefore.entries, [], 'birth policy v2: ordinary success grants XP but no new identity');
+  assert.ok(rosterBefore.entries.every(entry=>entry.missions.length===1));
   const builder = g1.roles.find(r => r.role === 'builder');
   assert.equal(builder.xp, 20); assert.equal(builder.level, 1); assert.equal(builder.verifiedMissions, 1);
   assert.equal(g1.roles.find(r => r.role === 'semanticVerifier').xp, 5);
@@ -112,4 +115,5 @@ test('F06 (integration): a real verified mission grants role XP once, visible in
   await h.restart();
   const g2 = (await h.get('/api/state')).body.growth.shadow;
   assert.deepEqual(g2.roles, g1.roles, 'XP is derived from durable evidence, so a restart neither loses nor doubles it');
+  assert.equal((await h.get('/api/shadow-army/roster')).body.roster.fingerprint, rosterBefore.fingerprint);
 });

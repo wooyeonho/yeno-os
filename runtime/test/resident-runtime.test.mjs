@@ -7,8 +7,10 @@ import net from 'node:net';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import { spawnSync } from 'node:child_process';
 import { startResident, validateResidentConfig, serveConfigurationIsEmpty } from '../resident.mjs';
-import { openStore } from '../lib/store.mjs';
+import { ownerRemoteProvider, ownerRemoteProviderTest } from '../owner-remote-provider.mjs';
+import { atomicWrite, openStore } from '../lib/store.mjs';
 import {start} from '../server.mjs';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -31,7 +33,7 @@ async function fixture(t) {
     for (const resident of residents) await resident.stop().catch(() => {});
     fs.rmSync(root, { recursive: true, force: true });
   });
-  const begin = async adapters => { const resident = await startResident(config, adapters); residents.push(resident); return resident; };
+  const begin = async (adapters, selectedConfig = config) => { const resident = await startResident(selectedConfig, adapters); residents.push(resident); return resident; };
   async function call(route, body, credential = token, headers = {}) {
     return new Promise((resolve, reject) => {
       const request = http.request(`http://127.0.0.1:${config.port}${route}`, { agent: false, method: body === undefined ? 'GET' : 'POST',
@@ -69,6 +71,9 @@ test('resident validates strict paths, ports and DNS; rejects inherited configur
     { phone: { dnsName: 'evil.ts.net/path', executable: process.execPath } }, { phone: { dnsName: 'windows.example.ts.net', executable: 'tailscale' } }]) {
     assert.throws(() => validateResidentConfig({ ...config, ...change }));
   }
+  const providerFile = path.join(path.dirname(config.tokenFile), 'provider.dpapi');
+  assert.throws(() => validateResidentConfig({ ...config, providerFile: path.join(config.dataDir, 'provider.dpapi') }), { code: 'RESIDENT_PROVIDER_PATH_INVALID' });
+  assert.throws(() => validateResidentConfig({ ...config, providerFile, localModel: 'qwen2.5:3b' }), { code: 'RESIDENT_PROVIDER_CONFLICT' });
 });
 
 test('resident really boots loopback core with explicit token and no inherited host/provider override', async t => {
@@ -87,6 +92,146 @@ test('resident really boots loopback core with explicit token and no inherited h
   assert.equal(info.includes(f.token), false);
   assert.equal(info.includes('untrusted-environment-value'), false);
   assert.equal(JSON.parse(info).state, 'running');
+});
+
+test('resident boots the same core with owner encrypted provider settings and never exposes a key in status', async t => {
+  const f = await fixture(t);
+  const providerFile = path.join(path.dirname(f.config.tokenFile), 'provider.dpapi');
+  const secret = 'synthetic-resident-remote-key';
+  const encrypted = Buffer.from('opaque-fixture-only').toString('base64');
+  fs.writeFileSync(providerFile, encrypted, { mode: 0o600 });
+  f.config.providerFile = providerFile;
+  const resident = await f.begin({
+    unprotectProviders: async encrypted => {
+      assert.equal(encrypted, Buffer.from('opaque-fixture-only').toString('base64'));
+      return JSON.stringify({ version: 1, providers: [{ provider: 'openai', model: 'synthetic-resident-model', apiKey: secret }], primaryProvider: 'openai', dailyCallLimit: 2 });
+    },
+  });
+  const state = await f.call('/api/state');
+  assert.equal(state.status, 200);
+  assert.equal(state.body.ai.configured, true);
+  assert.equal(state.body.agent.provider, 'openai');
+  assert.equal(JSON.stringify(state.body).includes(secret), false);
+  assert.equal(fs.readFileSync(path.join(f.config.controlDir, 'instance.json'), 'utf8').includes(secret), false);
+  await resident.stop();
+});
+
+test('Windows owner saves DPAPI provider settings for the same resident core after restart', { skip: process.platform !== 'win32' }, async t => {
+  const f = await fixture(t);
+  const configFile = path.join(f.root, 'config.json');
+  fs.writeFileSync(configFile, JSON.stringify(f.config), { mode: 0o600 });
+  const secret = 'synthetic-dpapi-resident-key';
+  let resident = await f.begin();
+  const saved = await ownerRemoteProvider(f.root, { provider: 'openai', model: 'synthetic-dpapi-model', apiKey: secret });
+  assert.equal(saved.aiEnabled, false);
+  assert.equal(saved.requiresRestart, true);
+  const next = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+  assert.equal(next.providerFile, path.join(f.root, 'provider.dpapi'));
+  assert.equal(fs.readFileSync(next.providerFile, 'utf8').includes(secret), false);
+  assert.equal(fs.readFileSync(configFile, 'utf8').includes(secret), false);
+  await resident.stop(); await resident.closed;
+  resident = await f.begin(undefined, next);
+  const state = await f.call('/api/state');
+  assert.equal(state.body.ai.configured, true);
+  assert.equal(state.body.modules.ai, false);
+  assert.equal(state.body.agent.provider, 'openai');
+  assert.equal(JSON.stringify(state.body).includes(secret), false);
+  await resident.stop();
+});
+
+test('resident refuses corrupted provider ciphertext before claiming an instance', async t => {
+  const f = await fixture(t);
+  const providerFile = path.join(f.root, 'provider.dpapi');
+  fs.writeFileSync(providerFile, 'not-base64!');
+  f.config.providerFile = providerFile;
+  await assert.rejects(f.begin(), { code: 'RESIDENT_PROVIDER_FILE_INVALID' });
+  assert.equal(fs.existsSync(path.join(f.config.controlDir, 'instance.json')), false);
+});
+
+test('headless resident startup records only a safe error code for the owner', async t => {
+  const f = await fixture(t);
+  f.config.dataDir = path.join(f.root, 'missing-data-directory');
+  const configFile = path.join(f.root, 'config.json');
+  fs.writeFileSync(configFile, JSON.stringify(f.config));
+  const child = spawnSync(process.execPath, [path.resolve('runtime/resident.mjs'), '--config', configFile],
+    { encoding: 'utf8', timeout: 10000 });
+  assert.equal(child.status, 1);
+  const record = JSON.parse(fs.readFileSync(path.join(f.config.controlDir, 'startup-error.json'), 'utf8'));
+  assert.equal(record.code, 'ENOENT');
+  assert.match(record.at, /^\d{4}-\d{2}-\d{2}T/);
+  assert.deepEqual(Object.keys(record).sort(), ['at', 'code']);
+  assert.equal(JSON.stringify(record).includes(f.token), false);
+});
+
+test('owner remote settings refuse an active job without writing a credential file', async t => {
+  const f = await fixture(t);
+  fs.writeFileSync(path.join(f.root, 'config.json'), JSON.stringify(f.config));
+  let protectedCalls = 0;
+  const transport = async () => Response.json({ jobs: [{ status: 'running' }] });
+  await assert.rejects(ownerRemoteProvider(f.root,
+    { provider: 'openai', model: 'synthetic-model', apiKey: 'synthetic-key-only' }, transport,
+    async () => { protectedCalls++; return 'opaque'; }), { message: 'OWNER_WAIT_FOR_ACTIVE_JOBS' });
+  assert.equal(protectedCalls, 0);
+  assert.equal(fs.existsSync(path.join(f.root, 'provider.dpapi')), false);
+});
+
+test('owner remote save restores the prior encrypted provider when config commit fails', async t => {
+  const f = await fixture(t);
+  const configFile = path.join(f.root, 'config.json');
+  const providerFile = path.join(f.root, 'provider.dpapi');
+  f.config.providerFile = providerFile;
+  const originalConfig = JSON.stringify(f.config) + '\n';
+  const originalCiphertext = Buffer.from('original-encrypted-provider').toString('base64') + '\n';
+  fs.writeFileSync(configFile, originalConfig);
+  fs.writeFileSync(providerFile, originalCiphertext);
+  const transport = async () => Response.json({ jobs: [] });
+  const write = (file, content) => {
+    if (file === configFile) throw new Error('synthetic config write failure');
+    atomicWrite(file, content);
+  };
+  await assert.rejects(ownerRemoteProvider(f.root,
+    { provider: 'openai', model: 'synthetic-replacement', apiKey: 'synthetic-replacement-key' },
+    transport, async () => Buffer.from('replacement-encrypted-provider').toString('base64'), write),
+  { message: 'synthetic config write failure' });
+  assert.equal(fs.readFileSync(configFile, 'utf8'), originalConfig);
+  assert.equal(fs.readFileSync(providerFile, 'utf8'), originalCiphertext);
+});
+
+test('owner remote first save removes its ciphertext when config commit fails', async t => {
+  const f = await fixture(t);
+  const configFile = path.join(f.root, 'config.json');
+  const providerFile = path.join(f.root, 'provider.dpapi');
+  const originalConfig = JSON.stringify(f.config) + '\n';
+  fs.writeFileSync(configFile, originalConfig);
+  const write = (file, content) => {
+    if (file === configFile) throw new Error('synthetic config write failure');
+    atomicWrite(file, content);
+  };
+  await assert.rejects(ownerRemoteProvider(f.root,
+    { provider: 'openai', model: 'synthetic-first-save', apiKey: 'synthetic-first-key' },
+    async () => Response.json({ jobs: [] }),
+    async () => Buffer.from('first-encrypted-provider').toString('base64'), write),
+  { message: 'synthetic config write failure' });
+  assert.equal(fs.readFileSync(configFile, 'utf8'), originalConfig);
+  assert.equal(fs.existsSync(providerFile), false);
+});
+
+test('owner one-shot provider test stays on the resident core and never upgrades synthetic transport to live', async t => {
+  const f = await fixture(t);
+  f.config.providerFile = path.join(f.root, 'provider.dpapi');
+  fs.writeFileSync(f.config.providerFile, Buffer.from('opaque-fixture').toString('base64'));
+  fs.writeFileSync(path.join(f.root, 'config.json'), JSON.stringify(f.config));
+  let modelCalls = 0;
+  await f.begin({
+    unprotectProviders: async () => JSON.stringify({ version: 1, providers: [{ provider: 'openai', model: 'synthetic-test-model', apiKey: 'synthetic-key-only' }], primaryProvider: 'openai', dailyCallLimit: 2 }),
+    start: options => start({ ...options, agentFetch: async () => { modelCalls++; throw new Error('synthetic transport must not be called'); } }),
+  });
+  const result = await ownerRemoteProviderTest(f.root);
+  assert.equal(result.status, 'BLOCKED');
+  assert.equal(result.reason, 'synthetic_transport_injected');
+  assert.equal(modelCalls, 0);
+  const state = await f.call('/api/state');
+  assert.equal(state.body.modules.ai, false);
 });
 
 test('duplicate startup preserves original instance and data writer; port collision fails without active claim', async t => {

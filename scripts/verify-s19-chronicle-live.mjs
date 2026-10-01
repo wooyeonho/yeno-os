@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {createRequire} from 'node:module';
+import {openStore} from '../runtime/lib/store.mjs';
+import {runNightCycle} from '../runtime/lib/night-cycle.mjs';
+import {exportNightChronicle} from './export-night-chronicle.mjs';
+
+const require=createRequire(new URL('../runtime/package.json',import.meta.url));
+const {unzipSync,strFromU8}=require('fflate');
+const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'blackhole-s19-export-'));
+const out=path.resolve('build-artifacts/s19-20261001/chronicle');
+const store=openStore(dataDir);
+store.state.nightCycle.window={timeZone:'UTC',startMinute:0,endMinute:1439};
+const cycle=runNightCycle(store.state,'2026-10-01T12:00:00.000Z');assert.equal(cycle.ran,true);
+store.save();
+const exported=exportNightChronicle(dataDir,out,cycle.report.cycleDate);
+const bytes=fs.readFileSync(exported.epub.path);
+assert.equal(bytes.readUInt16LE(8),0);
+const zipped=unzipSync(bytes);
+assert.equal(strFromU8(zipped.mimetype),'application/epub+zip');
+assert.equal(exported.markdown.sha256,cycle.report.sha256);
+const report={evidenceClass:'SYNTHETIC_STORED_NIGHT_REPORT_LOCAL_EXPORT',cycleDate:exported.cycleDate,sourceSha256:exported.sourceSha256,markdownSha256:exported.markdown.sha256,epubSha256:exported.epub.sha256,zipEntries:Object.keys(zipped).length,mimetypeStored:true,modelCalls:cycle.report.summary.modelCalls,published:false,externalReaderVerified:false};
+fs.writeFileSync(path.resolve('build-artifacts/s19-20261001/chronicle-report.json'),JSON.stringify(report,null,2)+'\n');
+console.log(JSON.stringify(report));

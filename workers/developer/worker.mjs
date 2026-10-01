@@ -5,12 +5,16 @@ import path from 'node:path';
 import {execFileSync,spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {sha256,safeSourcePath,editablePath,validateRepositoryTask,parseRepositoryPatch} from '../../runtime/lib/repository-patch.mjs';
+import {assertCandidatePatchPolicy} from './static-guard.mjs';
 
 export class WorkerError extends Error {constructor(code){super(`Developer worker: ${code}`);this.code=code;}}
 const fail=code=>{throw new WorkerError(code);};
 const git=(root,...args)=>execFileSync('git',['-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false',...args],{cwd:root,env:{PATH:process.env.PATH,HOME:os.tmpdir(),GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null',GIT_TERMINAL_PROMPT:'0'},maxBuffer:12*1024*1024,timeout:15000,stdio:['ignore','pipe','pipe']});
 export const headOf=root=>git(root,'rev-parse','HEAD').toString().trim();
-export function atomic(file,value){fs.mkdirSync(path.dirname(file),{recursive:true,mode:0o700});const temp=file+'.'+randomUUID()+'.tmp';const fd=fs.openSync(temp,'wx',0o600);try{fs.writeFileSync(fd,JSON.stringify(value,null,2)+'\n');fs.fsyncSync(fd);}finally{fs.closeSync(fd);}fs.renameSync(temp,file);const dir=fs.openSync(path.dirname(file),'r');try{fs.fsyncSync(dir);}finally{fs.closeSync(dir);}}
+export function atomic(file,value){fs.mkdirSync(path.dirname(file),{recursive:true,mode:0o700});const temp=file+'.'+randomUUID()+'.tmp';const fd=fs.openSync(temp,'wx',0o600);try{fs.writeFileSync(fd,JSON.stringify(value,null,2)+'\n');fs.fsyncSync(fd);}finally{fs.closeSync(fd);}fs.renameSync(temp,file);
+  // Windows rejects FlushFileBuffers on a directory handle with EPERM.
+  if(process.platform!=='win32'){const dir=fs.openSync(path.dirname(file),'r');try{fs.fsyncSync(dir);}finally{fs.closeSync(dir);}}
+}
 const clean=x=>String(x??'').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g,'').slice(-3000);
 export function validateContract(c){
   if(!c||Object.keys(c).some(k=>!['id','baseCommit','goal','editablePaths','contextPaths','testFiles'].includes(k))||!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(c.id??'')||!/^[a-f0-9]{40}$/.test(c.baseCommit??'')||typeof c.goal!=='string'||!c.goal.trim()||c.goal.length>1500)fail('invalid_contract');
@@ -41,6 +45,7 @@ export function buildTask(snapshot,c,feedback=''){
 }
 export function applyPatch(snapshot,candidate,patch,task){
   const valid=parseRepositoryPatch(JSON.stringify(patch),task);
+  assertCandidatePatchPolicy(valid);
   fs.cpSync(snapshot,candidate,{recursive:true,errorOnExist:true,force:false,dereference:false});
   for(const change of valid.changes){const file=path.join(candidate,change.path);if(!fs.lstatSync(file).isFile()||sha256(fs.readFileSync(file))!==change.beforeSha256)fail('candidate_base_mismatch');fs.writeFileSync(file,change.content);}
   return valid;
@@ -100,7 +105,7 @@ export async function runDeveloperTask({root,contract,journalPath,model,sandbox,
       // No paid retry is permitted after an unknown result.
       let raw;try{raw=await model({...task,feedback},receipt.requestId,signal);}catch(error){if(error.settled===true){receipt.status='settled';receipt.error=error.code;feedback='Previous plan was rejected: '+clean(error.code)+'. Return a valid patch against the original source.';save();continue;}receipt.status='unknown';journal.phase='unknown';journal.error=error.code??'model_outcome_unknown';save();return journal;}
       receipt.status='settled';receipt.responseSha256=sha256(typeof raw==='string'?raw:JSON.stringify(raw));save();
-      try{patch=parseRepositoryPatch(typeof raw==='string'?raw:JSON.stringify(raw),task);}catch(error){receipt.error=error.code;feedback=`Patch rejected: ${error.code}. Return a valid patch against the ORIGINAL source hashes.`;save();continue;}
+      try{patch=parseRepositoryPatch(typeof raw==='string'?raw:JSON.stringify(raw),task);assertCandidatePatchPolicy(patch);}catch(error){receipt.error=error.code;feedback=`Patch rejected: ${error.code}${error.reason?` (${error.reason})`:''}. Return a valid patch against the ORIGINAL source hashes.`;save();continue;}
       const candidate=path.join(workspace,'candidate-'+attempt);applyPatch(baseline,candidate,patch,task);
       for(const t of journal.tests)if(sha256(fs.readFileSync(path.join(candidate,t.path)))!==t.sha256)fail('acceptance_test_changed');
       await live();journal.phase='testing';save();receipt.test=evidence(await sandbox.run({workspace:candidate,testFiles:c.testFiles,signal}));save();

@@ -1,3 +1,13 @@
+import {initialJevDocket,validateJevDocket} from './jev-docket-state.mjs';
+import {initialResultRatings,validateResultRatings} from './result-rating-state.mjs';
+import {initialNightCycle,validateNightCycle} from './night-cycle-state.mjs';
+import {validateDriveAttempts,validateDriveOutcomes} from './drive-outcome-state.mjs';
+import {initialQuantumDecisions,validateQuantumDecisions} from './quantum-decision-state.mjs';
+import {initialKirby,validateKirby} from './kirby-state.mjs';
+import {initialShadowArise,validateShadowArise} from './shadow-arise-state.mjs';
+import {initialShadowProfiles,validateShadowProfiles} from './shadow-profiles-state.mjs';
+import {initialRepositoryEvidence,validateRepositoryEvidence,validateRepositoryEvidenceLinks} from './repository-evidence-state.mjs';
+import {initialGapScout,initialAbsorbInbox,validateGapScout,validateAbsorbInbox,validateG1Links} from './gap-state.mjs';
 import {validateBootRecords} from './https-evidence.mjs';
 import {validateDeviceAcceptances} from './device-evidence.mjs';
 import {validateConnectors,validateReadings} from './outcome-connector.mjs';
@@ -9,6 +19,7 @@ import {validateRouting} from './brain-routing.mjs';
 import {initialCapabilities,validateCapabilities,validateCapabilityRequest,capabilityInputSha256,disableAllCapabilitiesForRestore} from './capabilities.mjs';
 import {initialCapabilityInbox,validateCapabilityInbox} from './capability-inbox.mjs';
 import {validateWorldSnapshot} from './world.mjs';
+import {initialJarvisSettings,validateJarvisSettings} from './jarvis-settings.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -34,6 +45,9 @@ import {validateResearchRequest,validateResearchBundle} from './research.mjs';
 import {initialAutopilot,validateAutopilot,validateAutopilotJob} from './autopilot.mjs';
 import {initialCoreState,validateCoreState,evaluateHeartbeat,createCoreIdentity,deriveHomunculusFields} from './blackhole-core.mjs';
 import {validateMemoryEvents} from './memory-events.mjs';
+import {emptyLedger,validateLedger} from './ledger-import.mjs';
+import {initialDriveState,validateDriveState,validateDriveDebates} from './drive-state.mjs';
+import {initialShadowRoster,validateShadowRoster} from './shadow-roster.mjs';
 import {validateOutbox} from './memory-sync-outbox.mjs';
 import {MAX_RECORDS as MAX_MEMORY_EMBEDDING_RECORDS,validateMemoryEmbeddingRecord} from './memory-embeddings.mjs';
 import {initialPersistentBots, validatePersistentBots} from './persistent-bots.mjs';
@@ -70,12 +84,14 @@ function memories(value) {
   }
 }
 function validateState(state) {
-  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'studio', 'autopilot', 'capabilities', 'codeWorkshop', 'selfTests', 'runtimeBoots', 'deviceAcceptances', 'outcomeConnectors', 'outcomeReadings', 'outcomeEvidence', 'capabilityInbox', 'blackholeCore', 'memoryEvents', 'memoryEmbeddings', 'memorySyncOutbox', 'jevShadowLog', 'jevRecoveryLog', 'grokQuarantined', 'grokMultiAgentApproval', 'persistentBots'], STATE_KEYS);
+  keys(state, [...STATE_KEYS, 'requestLedger', 'discovery', 'ecosystem', 'quests', 'outcomes', 'resultRatings', 'nightCycle', 'studio', 'autopilot', 'capabilities', 'codeWorkshop', 'selfTests', 'runtimeBoots', 'deviceAcceptances', 'outcomeConnectors', 'outcomeReadings', 'outcomeEvidence', 'capabilityInbox', 'blackholeCore', 'memoryEvents', 'memoryEmbeddings', 'memorySyncOutbox', 'jevShadowLog', 'jevRecoveryLog', 'grokQuarantined', 'grokMultiAgentApproval', 'persistentBots', 'ledger', 'driveState', 'driveDebates', 'driveAttempts', 'driveOutcomes', 'shadowRoster', 'shadowArise', 'shadowProfiles', 'kirby', 'quantumDecisions', 'jevDocket', 'jarvisSettings', 'gapScout', 'absorbInbox', 'repositoryEvidence'], STATE_KEYS);
   if (Object.hasOwn(state, 'runtimeBoots')) validateBootRecords(state.runtimeBoots);
   if (Object.hasOwn(state, 'deviceAcceptances')) validateDeviceAcceptances(state.deviceAcceptances);
   if (Object.hasOwn(state, 'outcomeConnectors')) validateConnectors(state.outcomeConnectors);
   if (Object.hasOwn(state, 'outcomeReadings')) validateReadings(state.outcomeReadings);
   if (Object.hasOwn(state, 'outcomeEvidence')) validateOutcomeEvidences(state.outcomeEvidence);
+  if (Object.hasOwn(state, 'resultRatings')) validateResultRatings(state.resultRatings,state);
+  if (Object.hasOwn(state, 'nightCycle')) validateNightCycle(state.nightCycle);
   if (Object.hasOwn(state, 'memoryEmbeddings')) {
     if (!Array.isArray(state.memoryEmbeddings) || state.memoryEmbeddings.length > MAX_MEMORY_EMBEDDING_RECORDS) fail('invalid memory embeddings');
     for (const record of state.memoryEmbeddings) {
@@ -93,6 +109,8 @@ function validateState(state) {
   validateAutopilot(state.autopilot);
   if (!Object.hasOwn(state, 'quests')) state.quests = [];
   if (!Object.hasOwn(state, 'outcomes')) state.outcomes = [];
+  if (!Object.hasOwn(state, 'resultRatings')) state.resultRatings = initialResultRatings();
+  if (!Object.hasOwn(state, 'nightCycle')) state.nightCycle = initialNightCycle();
   if (!Object.hasOwn(state, 'studio')) state.studio = emptyStudio();
   validateStudio(state.studio);
   validateQuestState(state);
@@ -106,6 +124,35 @@ function validateState(state) {
   validateSourceRegistry(state.sources, state.projects);
   if (!Object.hasOwn(state, 'memoryEvents')) state.memoryEvents = [];
   validateMemoryEvents(state.memoryEvents, state);
+  if (!Object.hasOwn(state, 'ledger')) state.ledger = emptyLedger();
+  validateLedger(state.ledger);
+ if(!Object.hasOwn(state,'jarvisSettings'))state.jarvisSettings=initialJarvisSettings();
+ validateJarvisSettings(state.jarvisSettings);
+ if(!Object.hasOwn(state,'repositoryEvidence'))state.repositoryEvidence=initialRepositoryEvidence();
+ validateRepositoryEvidence(state.repositoryEvidence);
+ if(!Object.hasOwn(state,'gapScout'))state.gapScout=initialGapScout();
+ if(!Object.hasOwn(state,'absorbInbox'))state.absorbInbox=initialAbsorbInbox();
+ validateGapScout(state.gapScout);
+ validateAbsorbInbox(state.absorbInbox);validateG1Links(state);validateRepositoryEvidenceLinks(state);
+  if (!Object.hasOwn(state, 'driveState')) state.driveState = initialDriveState();
+  validateDriveState(state.driveState);
+  if (!Object.hasOwn(state, 'driveDebates')) state.driveDebates = [];
+  validateDriveDebates(state.driveDebates);
+ if(!Object.hasOwn(state,'driveAttempts'))state.driveAttempts=[];
+ if(!Object.hasOwn(state,'driveOutcomes'))state.driveOutcomes=[];
+ validateDriveAttempts(state.driveAttempts);validateDriveOutcomes(state.driveOutcomes);
+  if (!Object.hasOwn(state, 'shadowRoster')) state.shadowRoster = initialShadowRoster();
+  validateShadowRoster(state.shadowRoster);
+  if(!Object.hasOwn(state,'shadowArise'))state.shadowArise=initialShadowArise();
+  validateShadowArise(state.shadowArise);
+  if(!Object.hasOwn(state,'shadowProfiles'))state.shadowProfiles=initialShadowProfiles();
+  validateShadowProfiles(state.shadowProfiles);
+  if(!Object.hasOwn(state,'kirby'))state.kirby=initialKirby();
+  validateKirby(state.kirby);
+  if(!Object.hasOwn(state,'quantumDecisions'))state.quantumDecisions=initialQuantumDecisions();
+  validateQuantumDecisions(state.quantumDecisions);
+ if(!Object.hasOwn(state,'jevDocket'))state.jevDocket=initialJevDocket();
+ validateJevDocket(state.jevDocket);
   if (!Object.hasOwn(state, 'blackholeCore')) state.blackholeCore = initialCoreState();
   else {
     // Same one-time, migration-safe backfill store.mjs performs for an older

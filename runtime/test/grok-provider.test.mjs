@@ -140,7 +140,7 @@ const NO_KEY_GROK_ENV = {...BASE_ENV, YENO_GROK_MODEL: GROK_DEFAULT_MODEL}; // m
 
 const ok = text => new Response(JSON.stringify({choices: [{finish_reason: 'stop', message: {content: text, tool_calls: []}}], usage: {prompt_tokens: 30, completion_tokens: 20}}), {headers: {'Content-Type': 'application/json'}});
 const isSemanticRequest = body => body.messages.some(m => typeof m.content === 'string' && m.content.includes('independent semantic verifier'));
-const PASS_VERDICT = JSON.stringify({verdict: 'pass', confidence: 0.9, criteria: [{criterion: '목표 충족', status: 'met', reason: 'Grok이 실제로 산출물을 검토함', evidenceRefs: ['builder-artifact']}], summary: 'Grok이 목표를 실제로 달성했다고 판단함'});
+const PASS_VERDICT = JSON.stringify({verdict: 'pass', confidence: 0.9, criteria: [{criterion: '목표 충족', status: 'met', reason: 'Grok이 실제로 산출물을 검토함', evidenceRefs: ['실제 Shadow 산출물 본문']}], summary: 'Grok이 목표를 실제로 달성했다고 판단함'});
 const MALFORMED = '이것은 JSON이 아닙니다';
 
 async function setup(t, {env = GROK_ENV, semanticText = PASS_VERDICT} = {}) {

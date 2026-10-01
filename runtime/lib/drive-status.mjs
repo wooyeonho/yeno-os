@@ -1,5 +1,7 @@
+import {driveFulfillment,driveCues} from './drive-outcomes.mjs';
 import {decideQuest} from './decide.mjs';
 import {DRIVE_CANON} from './seven-drives.mjs';
+import {initialDriveState} from './drive-state.mjs';
 
 // BLACKHOLE Drive read model (UI Slice 2 / Phase C completion, issue #25).
 //
@@ -28,7 +30,7 @@ export function driveStatus(state, at) {
   const drives = DRIVE_CANON.map(entry => {
     if (!decision) {
       return {
-        driveId: entry.id, worldName: entry.worldName, worldNameEn: entry.worldNameEn,
+        driveId: entry.id, label: entry.label, worldName: entry.worldName, worldNameEn: entry.worldNameEn,
         pressure: null, reason: null, linkedGoal: null, linkedProjectId: null,
         measuredAt: null, evidence: [], trend: null,
       };
@@ -42,7 +44,7 @@ export function driveStatus(state, at) {
     const leader = peak > 0 ? candidates.find(candidate => candidate.motivation.components[entry.id] === peak) ?? null : null;
     const linkedProjectId = leader ? (quests.find(q => q.id === leader.questId)?.projectId ?? null) : null;
     return {
-      driveId: entry.id, worldName: entry.worldName, worldNameEn: entry.worldNameEn,
+      driveId: entry.id, label: entry.label, worldName: entry.worldName, worldNameEn: entry.worldNameEn,
       pressure: peak,
       reason: leader ? `${leader.goal} · 기여 ${peak}점` : '현재 이 욕망에 기여하는 제안된 목표가 없습니다.',
       linkedGoal: leader?.goal ?? null,
@@ -53,5 +55,8 @@ export function driveStatus(state, at) {
     };
   });
 
-  return {version: 1, measuredAt: decision ? at : null, drives};
+  return {fulfillment:driveFulfillment(state),cues:driveCues(state),settlementError:(state.driveOutcomes??[]).length>=200?'drive_outcome_capacity':null,version: 1, hungerPolicyVersion:state.driveState?.version??1, history:(state.driveDebates??[]).map(entry=>({at:entry.at,version:entry.version??1,hungerSnapshot:entry.hungerSnapshot??null,stateFingerprint:entry.stateFingerprint})), measuredAt: decision ? at : null, drives,
+    hunger: state.driveState?.hunger ?? initialDriveState().hunger,
+    lastDebate: state.driveDebates?.at(-1)?.voices ?? [],
+    hungryVoice: state.driveDebates?.at(-1)?.hungryVoice ?? null};
 }

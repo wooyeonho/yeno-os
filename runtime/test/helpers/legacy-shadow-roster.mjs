@@ -1,0 +1,2 @@
+import {createHash,randomUUID} from 'node:crypto';
+export function legacyShadowRoster(){const missionId=randomUUID(),entry={id:randomUUID(),name:'기존 정찰자',role:'scout',skillId:'shadow:scout',bornFromMissionId:missionId,bornAt:'2026-09-28T00:00:00.000Z',missions:[missionId],renamedBy:'owner'};const hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');entry.fingerprint=hash(entry);const body={version:1,entries:[entry]};return {...body,fingerprint:hash(body)};}

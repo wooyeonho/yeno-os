@@ -13,7 +13,7 @@
 <div id="pair-screen" class="pair-screen" hidden><div class="pair-card">
   <span class="eyebrow">BLACKHOLE / JARVIS</span>
   <h1>본체와 연결</h1>
-  <p>이 기기의 연결을 요청한 뒤, 이미 연결된 운영실에서 승인하세요. 비밀값을 옮길 필요는 없습니다.</p>
+  <p>이 기기의 연결을 요청한 뒤, 이미 연결된 운영실에서 승인해 주십시오. 비밀값을 옮길 필요는 없습니다.</p>
   <button id="device-connect" class="button" type="button">이 기기 연결 요청</button>
   <p id="device-connect-status" role="status" aria-live="polite"></p>
   <p id="device-connect-reference" class="reference" hidden></p>
@@ -28,20 +28,38 @@
   <div class="scene-vignette" aria-hidden="true"></div>
   <header class="bar">
     <a class="brand" href="/" aria-label="BLACKHOLE 운영실"><span>BLACKHOLE</span><strong>JARVIS</strong></a>
-    <div class="status" role="status"><span class="activity"><span class="dot off" id="dot"></span><b id="mode">연결 중</b></span><b id="model">모델 확인 중</b><span>HEARTBEAT <b id="hb">—</b></span><button id="control-toggle" class="control-toggle" type="button" aria-controls="controls" aria-expanded="false">직접 조종</button></div>
+    <div class="status" role="status"><span class="activity"><span id="header-small-orb"></span><span class="dot off" id="dot"></span><b id="mode">연결 중</b></span><b id="model">모델 확인 중</b><span id="kirby-hat" hidden></span><span>HEARTBEAT <b id="hb">—</b></span><button id="control-toggle" class="control-toggle" type="button" aria-controls="controls" aria-expanded="false">직접 조종</button></div>
   </header>
   <main class="stage">
-    <div class="speech"><span class="eyebrow">LIVE CORE / NOW</span><p class="line" id="line" aria-live="polite">연결을 확인하고 있어.</p><div class="doing" id="doing"></div></div>
+    <div class="speech"><span class="eyebrow" id="speech-label">LIVE CORE / NOW</span><p class="line" id="line" aria-live="polite">연결을 확인하고 있습니다.</p><div id="result-actions" class="result-actions" hidden><a id="result-link" class="result-link" href="/" hidden>전체 결과 보기 ↗</a><button id="result-dismiss" class="result-link" type="button">실시간 상태로 돌아가기</button></div><div id="result-rating" class="result-rating" hidden><span id="rating-prompt">결과를 평가해 주세요</span><div class="rating-buttons" role="group" aria-label="결과 평가"><button type="button" data-stars="1" aria-label="1점">1</button><button type="button" data-stars="2" aria-label="2점">2</button><button type="button" data-stars="3" aria-label="3점">3</button><button type="button" data-stars="4" aria-label="4점">4</button><button type="button" data-stars="5" aria-label="5점">5</button></div><span id="rating-status" role="status" aria-live="polite"></span></div><p id="drive-debate" class="drive-debate" hidden></p><div class="doing" id="doing"></div></div>
+    <section id="scene-moments" class="scene-moments" aria-label="저장된 사건" hidden><h2>저장된 사건</h2><ol id="scene-moment-list"></ol></section>
   </main>
-  <form class="ask" id="ask" autocomplete="off"><button class="command-mode" id="command-mode" type="button" aria-pressed="false" aria-label="대화 모드로 전환">작업</button><label class="sr-only" for="in">자비스에게 요청</label><input id="in" placeholder="무엇을 함께 해볼까?" maxlength="2000"><button type="submit" id="send" aria-label="요청 보내기">보내기 <span aria-hidden="true">↗</span></button></form>
+  <dialog id="result-dialog" class="result-dialog" aria-labelledby="result-title"><div class="result-dialog-head"><h2 id="result-title">전체 결과</h2><button id="result-close" type="button">닫기</button></div><div id="result-body" class="result-body"></div></dialog>
+  <form class="ask" id="ask" autocomplete="off"><button class="command-mode" id="command-mode" type="button" aria-pressed="false" aria-label="대화 모드로 전환">작업</button><label class="sr-only" for="in">자비스에게 요청</label><input id="in" placeholder="작업을 입력하세요." maxlength="2000"><button type="submit" id="send" aria-label="요청 보내기">보내기 <span aria-hidden="true">↗</span></button></form>
   <aside id="controls" class="controls" aria-label="자비스 직접 조종" hidden>
     <div class="controls-head"><div><span class="eyebrow">OWNER CONTROL</span><h2>직접 조종</h2></div><button id="control-close" type="button" aria-label="조종 화면 닫기">×</button></div>
     <div class="control-facts"><div><span>의지</span><strong id="will-state">확인 중</strong></div><div><span>생명</span><strong id="life-state">확인 중</strong></div><div><span>권한</span><strong id="authority-state">확인 중</strong></div></div>
     <p class="control-explain">자율 운영은 허가된 범위에서만 일합니다. 승인 대기와 전체 멈춤은 소유자가 결정합니다.</p>
-    <div class="gate" id="gate" hidden><span id="gate-text"></span><a class="btn p" href="/">운영실에서 승인</a></div>
+    <div class="gate" id="gate" hidden><span id="gate-text"></span><a class="gate-link" href="/">운영실에서 검토하기 →</a></div>
     <div class="hint" id="hint" role="status" hidden></div>
     <div class="control-actions"><button id="autopilot-toggle" type="button" disabled>자동 운영 확인 중</button><button id="emergency-toggle" type="button" disabled>전체 멈춤</button></div>
+    <p id="stop-confirm" class="stop-confirm" role="status" hidden>전체 정지를 확인해 주십시오. 진행 중인 작업은 일시 정지됩니다. <button id="stop-cancel" type="button">취소</button></p>
+    <section class="control-address" aria-labelledby="address-heading"><h3 id="address-heading">자비스 호칭</h3><form id="address-form"><label for="jarvis-address">소유자를 부를 호칭</label><div class="address-fields"><input id="jarvis-address" type="text" autocomplete="off" aria-describedby="address-help address-status" disabled><button id="address-save" type="submit" disabled>저장</button></div><p id="address-help">1~32자로 설정할 수 있습니다.</p><p id="address-status" role="status" aria-live="polite">호칭 설정을 확인하고 있습니다.</p></form></section>
+    <section class="control-hunger" aria-labelledby="hunger-heading"><h3 id="hunger-heading">일곱 죄의 배고픔</h3><p id="hunger-summary">기록을 확인하고 있습니다.</p><svg id="hunger-chart" class="hunger-chart" viewBox="0 0 320 180" role="img" aria-labelledby="hunger-heading hunger-summary" hidden></svg><ul id="hunger-legend" class="hunger-legend"></ul><details id="hunger-data" class="hunger-data" hidden><summary>결정별 수치 보기</summary><div class="hunger-table-scroll" role="region" aria-label="결정별 배고픔 수치, 가로로 스크롤할 수 있습니다" tabindex="0"><table id="hunger-table"><caption>배고픔 0–100. 값이 기록된 결정만 표시합니다.</caption><thead id="hunger-table-head"></thead><tbody id="hunger-table-body"></tbody></table></div></details></section>
+    <section class="control-notices" aria-labelledby="notices-heading" hidden><h3 id="notices-heading">시스템 보고</h3><p>기록된 시스템 알림을 보고드립니다.</p><ul id="system-notices"></ul></section>
+    <div class="control-shadows"><h3>그림자 명부 <span id="shadow-count">0명</span></h3><p id="shadow-empty">검증을 통과한 임무에서 그림자가 등록됩니다.</p><ul id="shadow-roster-list"></ul>
+      <section id="shadow-profile-panel" class="shadow-profile-panel" aria-labelledby="shadow-profile-heading" hidden>
+        <h4 id="shadow-profile-heading">그림자 실행 설정</h4>
+        <p>연결을 확인한 모델만 배정할 수 있습니다. 도구 범위는 현재 역할·계급 안에서만 고릅니다.</p>
+        <form id="shadow-profile-form"><label for="shadow-profile-model">모델 연결</label><select id="shadow-profile-model"></select>
+          <label for="shadow-profile-budget">임무당 모델 호출 상한</label><select id="shadow-profile-budget"><option value="1">1회</option><option value="2">2회</option><option value="3">3회</option><option value="4">4회</option></select>
+          <fieldset id="shadow-profile-tools"><legend>읽기 도구</legend></fieldset>
+          <div class="shadow-profile-actions"><button type="submit">설정 저장</button><button type="button" id="shadow-profile-cancel">닫기</button></div>
+        </form><p id="shadow-profile-status" role="status" aria-live="polite"></p>
+      </section>
+    </div>
     <div class="control-jobs"><h3>최근 작업</h3><div id="control-job-list">본체 연결을 기다립니다.</div></div>
+    <p id="session-expiry" class="session-expiry"></p>
     <p id="control-error" class="control-error" role="alert"></p>
     <a class="control-full" href="/">운영실에서 모든 작업·승인 보기 ↗</a>
   </aside>

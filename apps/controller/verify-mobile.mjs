@@ -88,8 +88,13 @@ function mockTauri(settings) {
       const c = activeRequests.get(args.rid);
       const route = new URL(c.url);
       if (route.origin !== 'https://acceptance.example.ts.net:9443') throw new Error('Unexpected native HTTP origin');
-      const response = await fetch(settings.proxyOrigin + route.pathname + route.search, {method: c.method, headers: c.headers, ...(c.data ? {body: new Uint8Array(c.data)} : {})});
-      responses.set(args.rid, new Uint8Array(await response.arrayBuffer()));
+      const artifactFault = route.pathname.startsWith('/api/v1/artifacts/') ? window.__artifactFault : null;
+      if (artifactFault) window.__artifactFault = null;
+      const path = artifactFault === 'missing' ? `/api/v1/artifacts/${crypto.randomUUID()}` : route.pathname;
+      const response = await fetch(settings.proxyOrigin + path + route.search, {method: c.method, headers: c.headers, ...(c.data ? {body: new Uint8Array(c.data)} : {})});
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (artifactFault === 'corrupt' && response.ok) bytes[bytes.length - 1] ^= 1;
+      responses.set(args.rid, bytes);
       return {status: response.status, statusText: response.statusText, url: c.url, headers: [...response.headers], rid: args.rid};
     }
     if (command === 'plugin:http|fetch_read_body') {
@@ -115,9 +120,13 @@ function mockTauri(settings) {
 }
 
 let browser;
+const contrastReadings = [];
 try {
   browser = await chromium.launch(executablePath ? {headless: true, executablePath} : {headless: true, channel: 'msedge'});
   for (const viewport of VIEWPORTS) {
+    const beforeDevices = await fetch(`${proxyOrigin}/api/devices`, {headers: {authorization: `Bearer ${owner}`}});
+    if (beforeDevices.status !== 200) throw new Error('Owner device inventory failed before browser pairing');
+    const priorDeviceIds = new Set((await beforeDevices.json()).devices.map(device => device.id));
     const context = await browser.newContext({viewport: {width: viewport.width, height: viewport.height}, isMobile: true, hasTouch: true});
     await context.addInitScript(mockTauri, {proxyOrigin, owner});
     const page = await context.newPage();
@@ -132,6 +141,17 @@ try {
 
       // 1) Empty-state Home, first fold only (no scroll).
       await page.screenshot({path: outPath(`home-empty-${viewport.label}.png`)});
+
+      await page.locator('#text').fill('목표: 연결 상태 오류 표시를 확인해줘.');
+      await page.locator('#submit-command').click();
+      await page.locator('#message').filter({hasText: '주 모델 연결이 필요합니다'}).waitFor({timeout: 10000});
+      if (await page.locator('#connection').textContent() !== '코어 응답 확인됨') {
+        throw new Error('A responsive core rejection appeared as PC offline');
+      }
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.screenshot({path: outPath(`rejection-status-${viewport.label}.png`)});
+      await page.locator('#message').scrollIntoViewIfNeeded();
+      await page.screenshot({path: outPath(`rejection-${viewport.label}.png`)});
 
       // 2) A real memory receipt (synchronous, no AI/job queue needed) so
       // "latest result" and the status line reflect real, not fabricated, data.
@@ -156,6 +176,49 @@ try {
       if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error('Document titles caused horizontal overflow');
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.screenshot({path: outPath(`work-${viewport.label}.png`)});
+
+      // A Work card is only a receipt. Verify the actual completed file can
+      // be opened and that the app confirms its bytes against the core hash.
+      const firstCard = page.locator('#jobs .job').filter({hasText: firstTitle});
+      await firstCard.locator('button.artifact').waitFor({timeout: 15000});
+      const artifactContrast = await firstCard.locator('button.artifact').evaluate(button => {
+        const {color, backgroundColor} = getComputedStyle(button);
+        const luminance = value => {
+          const channels = value.match(/\d+(?:\.\d+)?/g).slice(0, 3).map(channel => {
+            const scaled = Number(channel) / 255;
+            return scaled <= 0.04045 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4;
+          });
+          return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+        };
+        const foreground = luminance(color), background = luminance(backgroundColor);
+        return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+      });
+      if (artifactContrast < 4.5) throw new Error(`Artifact button text contrast is ${artifactContrast.toFixed(2)}:1`);
+      contrastReadings.push({viewport: viewport.label, ratio: Number(artifactContrast.toFixed(2))});
+      await firstCard.locator('button.artifact').click();
+      await page.locator('#artifact-result').waitFor({state: 'visible', timeout: 10000});
+      const artifactMeta = await page.locator('#artifact-meta').textContent();
+      const artifactBody = await page.locator('#artifact-body').textContent();
+      if (!artifactMeta?.includes('SHA-256 확인됨') || !artifactBody?.includes(firstTitle)) {
+        throw new Error('Completed phone request did not open a SHA-checked matching result');
+      }
+      await page.locator('#artifact-result').scrollIntoViewIfNeeded();
+      await page.screenshot({path: outPath(`result-${viewport.label}.png`)});
+
+      const beforeMissing = await page.locator('#message').textContent();
+      await page.evaluate(() => { window.__artifactFault = 'missing'; });
+      await firstCard.locator('button.artifact').click();
+      await page.waitForFunction(previous => { const current = document.querySelector('#message')?.textContent?.trim(); return current && current !== previous; }, beforeMissing?.trim() || '', {timeout: 10000});
+      if (await page.locator('#connection').textContent() !== '코어 응답 확인됨' || await page.locator('#artifact-result').isVisible()) {
+        throw new Error('Missing artifact was shown as PC offline or as a verified result');
+      }
+      await page.evaluate(() => { window.__artifactFault = 'corrupt'; });
+      await firstCard.locator('button.artifact').click();
+      await page.locator('#message').filter({hasText: 'SHA-256이 일치하지 않아'}).waitFor({timeout: 10000});
+      if (await page.locator('#connection').textContent() !== '코어 응답 확인됨' || await page.locator('#artifact-result').isVisible()) {
+        throw new Error('Corrupt artifact was shown as PC offline or as a verified result');
+      }
+      await page.screenshot({path: outPath(`artifact-integrity-error-${viewport.label}.png`)});
 
       // 4) Emergency stop, from the real /api/control endpoint.
       await page.locator('#stop').click();
@@ -185,11 +248,44 @@ try {
       await page.locator('[data-studio-tab="forai"]').click();
       await page.locator('form[data-studio-form="forai"]').scrollIntoViewIfNeeded();
       await page.screenshot({path: outPath(`tools-forai-${viewport.label}.png`)});
+
+      const afterDevices = await fetch(`${proxyOrigin}/api/devices`, {headers: {authorization: `Bearer ${owner}`}});
+      if (afterDevices.status !== 200) throw new Error('Owner device inventory failed after browser pairing');
+      const enrolledDeviceId = (await afterDevices.json()).devices.find(device => !priorDeviceIds.has(device.id))?.id;
+      if (!enrolledDeviceId) throw new Error('Current browser viewport did not enroll a device');
+      const revoked = await fetch(`${proxyOrigin}/api/devices/${encodeURIComponent(enrolledDeviceId)}/revoke`, {
+        method: 'POST', headers: {authorization: `Bearer ${owner}`, 'content-type': 'application/json'},
+        body: JSON.stringify({requestId: crypto.randomUUID()}),
+      });
+      if (revoked.status !== 200) throw new Error(`Owner revocation failed: HTTP ${revoked.status}`);
+      await page.locator('[data-native-view="jobs"]').click();
+      await page.locator('[data-native-view="studio"]').click();
+      await page.locator('#connection').filter({hasText: '기기 인증 거부됨'}).waitFor({timeout: 10000});
+      if ((await page.locator('#message').textContent())?.includes('SHA-256')) {
+        throw new Error('Stale artifact-integrity alert obscures the revoked-device recovery guidance');
+      }
+      await page.locator('#connection-guidance').waitFor({state: 'visible', timeout: 10000});
+      if (!(await page.locator('#submit-command').isDisabled()) || !(await page.locator('#stop').isDisabled())) {
+        throw new Error('Revoked device still allows command or emergency control submission');
+      }
+      await page.locator('[data-native-view="jobs"]').click();
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.screenshot({path: outPath(`revoked-status-${viewport.label}.png`)});
+      await page.locator('.connection-tools summary').click();
+      await page.locator('#local-forget').waitFor({state: 'visible', timeout: 10000});
+      if (!(await page.locator('#disconnect').isDisabled())) throw new Error('Server revocation is still offered with rejected authentication');
+      await page.locator('#local-forget').scrollIntoViewIfNeeded();
+      await page.screenshot({path: outPath(`revoked-recovery-${viewport.label}.png`)});
+      await page.locator('[data-native-view="studio"]').click();
+      if (!(await page.locator('.living-voice-cta').isDisabled())) throw new Error('Home voice CTA is still offered with rejected authentication');
+      await page.screenshot({path: outPath(`revoked-home-${viewport.label}.png`)});
+      await page.locator('#connection-guidance').scrollIntoViewIfNeeded();
+      await page.screenshot({path: outPath(`revoked-guidance-${viewport.label}.png`)});
     } finally {
       await context.close();
     }
   }
-  console.log(JSON.stringify({ok: true, outDir: outDir.pathname, viewports: VIEWPORTS.map(v => v.label)}, null, 2));
+  console.log(JSON.stringify({ok: true, outDir: outDir.pathname, viewports: VIEWPORTS.map(v => v.label), artifactButtonContrast: contrastReadings, completedResultScreenshots: VIEWPORTS.map(v => `result-${v.label}.png`), rejectionScreenshots: VIEWPORTS.map(v => [`rejection-status-${v.label}.png`, `rejection-${v.label}.png`]).flat(), artifactIntegrityScreenshots: VIEWPORTS.map(v => `artifact-integrity-error-${v.label}.png`), revokedScreenshots: VIEWPORTS.map(v => [`revoked-status-${v.label}.png`, `revoked-recovery-${v.label}.png`, `revoked-home-${v.label}.png`, `revoked-guidance-${v.label}.png`]).flat()}, null, 2));
 } finally {
   await browser?.close();
   proxy.close();

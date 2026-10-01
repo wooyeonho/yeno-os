@@ -8,13 +8,14 @@
 // words come from the artifacts those jobs produce, fetched via /api/artifacts.
 // Pairing reuses web-client.mjs verbatim, so this page shares the 운영실 session.
 import {connectBrowser} from './web-client.mjs';
-import {measuredDriveTint,heartbeatChanged,composeFromCore} from './jarvis-scene-model.mjs';
-const tokens = getComputedStyle(document.documentElement);
-const color = name => tokens.getPropertyValue(`--j-${name}`).trim();
-const palette = Object.fromEntries(['bg','focus','offline','bg-rgb','field-rgb','muted-rgb','ink-rgb','warn-rgb','core-line-rgb','star-rgb','satellite-rgb','core-light-rgb','core-shadow-rgb','core-night-rgb'].map(name=>[name.replaceAll('-',''),color(name)]));
+import {startJarvisOrb} from './jarvis-orb.mjs';
+import {attachSmallOrb} from './small-orbs.mjs';
+import {smallOrbState} from './small-orb-state.mjs';
+import {ACTIVITY_KO,DRIVE_COLOR,PUBLIC_BRAND_NAME,sceneMoments,normalizeJarvisAddress,anticipationSpeech,hungerCurveModel,measuredDriveTint,heartbeatChanged,composeFromCore,idleDriveSpeech,resultSpeech,failureCode,failureSpeech,failureJobToShow,workCommandText,resultJobToShow,renderArtifactDocument} from './jarvis-scene-model.mjs';
+const neutralTint = getComputedStyle(document.documentElement).getPropertyValue('--j-focus').trim();
 
 const $ = id => document.getElementById(id);
-const ACTIVITY_KO = {idle:'쉬는 중',planning:'생각 중',executing:'일하는 중',verifying:'확인 중',waiting_owner:'네 결정 기다리는 중',paused:'멈춤',stopped:'멈춤'};
+document.querySelector('.brand span').textContent=PUBLIC_BRAND_NAME;
 const JOB_KO = {running:'실행 중',queued:'대기 중',paused:'일시정지',completed:'완료',failed:'실패',cancelled:'취소',stopped:'중단'};
 const POLL_MS = 3000;
 const commandMode = $('command-mode');
@@ -24,25 +25,88 @@ commandMode.addEventListener('click',()=>{
   commandMode.textContent = conversationMode ? '대화' : '작업';
   commandMode.setAttribute('aria-pressed',String(conversationMode));
   commandMode.setAttribute('aria-label',conversationMode ? '작업 모드로 전환' : '대화 모드로 전환');
-  $('in').placeholder = conversationMode ? '무엇이 궁금해?' : '무엇을 함께 해볼까?';
+  $('in').placeholder = conversationMode ? '말씀해 주세요.' : '작업을 입력하세요.';
   $('in').focus();
 });
 
 const lineEl = $('line');
+const resultLink = $('result-link');
+function clearResultLink() { resultLink.hidden = true; $('result-actions').hidden = true; $('result-rating').hidden = true; resultLink.removeAttribute('href'); $('speech-label').textContent = 'LIVE CORE / NOW'; }
+function showResultLink(id) { resultLink.href = `/api/artifacts/${encodeURIComponent(id)}`; resultLink.hidden = false; $('result-actions').hidden = false; $('speech-label').textContent = '최근 완료 / RESULT'; }
+async function showResultRating(job) {
+  const panel=$('result-rating'),buttons=panel.querySelectorAll('button[data-stars]');
+  panel.hidden=false;$('rating-prompt').hidden=false;$('rating-status').textContent='';
+  buttons.forEach(button=>{button.disabled=false;button.hidden=false;});
+  try {
+    const ratings=await api('/api/result-ratings');
+    if(!showingResult||currentResult?.job.id!==job.id)return;
+    const prior=ratings.entries?.find(entry=>entry.jobId===job.id);
+    if(prior){buttons.forEach(button=>{button.hidden=true;});$('rating-prompt').hidden=true;$('rating-status').textContent=`소유자 평가 ${prior.stars}/5 · 자체 보고`;}
+  } catch { if(showingResult&&currentResult?.job.id===job.id) $('rating-status').textContent='평가 기록을 확인하지 못했습니다.'; }
+}
+$('result-rating').addEventListener('click',async event=>{
+  const button=event.target.closest('button[data-stars]');
+  if(!button||!currentResult?.job?.artifacts?.[0])return;
+  const job=currentResult.job,stars=Number(button.dataset.stars);
+  $('result-rating').querySelectorAll('button[data-stars]').forEach(item=>{item.disabled=true;});
+  try {
+    const response=await api('/api/result-ratings',{requestId:crypto.randomUUID(),jobId:job.id,artifactId:job.artifacts[0].id,stars});
+    if(currentResult?.job.id!==job.id)return;
+    $('result-rating').querySelectorAll('button[data-stars]').forEach(item=>{item.hidden=true;});$('rating-prompt').hidden=true;
+    $('rating-status').textContent=`소유자 평가 ${response.rating.stars}/5 · 자체 보고`;
+  } catch(error) {
+    if(currentResult?.job.id===job.id){$('rating-status').textContent=`평가를 저장하지 못했습니다. ${error.message}`;$('result-rating').querySelectorAll('button[data-stars]').forEach(item=>{item.disabled=false;});}
+  }
+});
+$('result-dismiss').addEventListener('click',()=>{
+  showingResult = false;currentResult = null;speechHoldUntil = 0;failureDetails = '';clearResultLink();doing('');$('in').focus();void tick();
+});
+resultLink.addEventListener('click',async event=>{
+  event.preventDefault();
+  if(resultLink.hidden||!session)return;
+  const href=resultLink.getAttribute('href');
+  try {
+    const response=await session.fetch(href);
+    if(!response.ok)throw new Error(`결과를 열지 못했습니다. 응답 ${response.status}`);
+    renderArtifactDocument($('result-body'),await response.text());
+    $('result-dialog').showModal();
+    $('result-close').focus();
+  } catch(error) { doing(error.message); }
+});
+$('result-close').addEventListener('click',()=>$('result-dialog').close());
 let sayVersion = 0;
 function say(text) {
   if (!text || lineEl.textContent === text) return;
   const version = ++sayVersion;
   lineEl.classList.add('fade');
-  setTimeout(() => { if (version !== sayVersion) return; lineEl.textContent = text; lineEl.classList.remove('fade'); }, 160);
+  setTimeout(() => { if (version !== sayVersion) return; lineEl.textContent = text; lineEl.classList.toggle('failure',text.startsWith('완료하지 못했습니다.')); lineEl.classList.toggle('anticipation',text.includes('기록에 따른 예상입니다.')); lineEl.classList.remove('fade'); }, 160);
 }
 const doing = t => { $('doing').textContent = t || ''; };
-const hint = html => { const h = $('hint'); h.hidden = !html; h.innerHTML = html || ''; };
+const hint = message => { const h = $('hint'); h.hidden = !message; h.textContent = message || ''; };
+const showDebate = text => { $('drive-debate').hidden = !text; $('drive-debate').textContent = text ? `최근 논쟁을 보고드립니다.\n${text}` : ''; };
 
-let session, target = palette.focus, pulseAt = 0, busy = false, lastHeartbeat = null, spokenJobs = new Set(), awaitingJobId = null, lastRevision = null, speechHoldUntil = 0;
+let session, target = neutralTint, pulseAt = 0, busy = false, lastHeartbeat = null, spokenJobs = new Set(), awaitingJobId = null, speechHoldUntil = 0, firstResultTick = true, showingResult = false, failureDetails = '';
+let jarvisAddress = '주인님', settingsReady = false, settingsBusy = false, pendingAddressWrite = null, currentResult = null;
+const sendButton=$('send');
+function setBusy(value){busy=value;sendButton.disabled=value;sendButton.textContent=value?'보내는 중…':'보내기 ↗';}
 const scene = {core:{},drives:[],online:false};
+const headerOrb = attachSmallOrb($('header-small-orb'));
 try { spokenJobs = new Set(JSON.parse(localStorage.getItem('jarvis-spoken-v1') || '[]')); } catch (e) {}
 const rememberSpoken = id => { spokenJobs.add(id); try { localStorage.setItem('jarvis-spoken-v1', JSON.stringify([...spokenJobs].slice(-200))); } catch (e) {} };
+
+function showFailureReport(job) {
+  showingResult = false;
+  currentResult = null;
+  speechHoldUntil = Infinity;
+  failureDetails = `${job.title || '작업'} · (${failureCode(job.error || job.status)})`;
+  rememberSpoken(job.id);
+  clearResultLink();
+  $('result-actions').hidden = false;
+  $('speech-label').textContent = '실패 보고 / FAILURE';
+  showDebate(null);
+  say(failureSpeech(job.error || job.status));
+  doing(failureDetails);
+}
 
 async function api(path, body) {
   const r = await session.fetch(path, body === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
@@ -60,11 +124,48 @@ async function artifactText(id) {
 }
 
 let lastState = null, controlBusy = false;
+let stopPending=false;
+let editingShadowId=null;
+const SHADOW_TOOL_LABEL={project_read:'배정된 프로젝트 읽기',project_sources:'배정된 근거 목록',source_read_release:'등록된 공식 릴리스 읽기'};
+async function openShadowProfile(member){
+  const panel=$('shadow-profile-panel'),status=$('shadow-profile-status');
+  panel.hidden=false;status.textContent='설정을 확인하고 있습니다.';
+  try{
+    const response=await api('/api/shadow-army/profiles');
+    const profile=response.profiles?.find(item=>item.shadowId===member.id);
+    if(!profile||profile.status==='stored')throw Error('활성 그림자 설정만 바꿀 수 있습니다.');
+    editingShadowId=member.id;
+    $('shadow-profile-heading').textContent=`${profile.name} 실행 설정 · ${profile.rank}`;
+    const select=$('shadow-profile-model');select.replaceChildren();
+    const choices=[['','기본 모델 상속'],...(response.availableModels??[]).map(provider=>[provider,provider])];
+    for(const [value,label] of choices){const option=document.createElement('option');option.value=value;option.textContent=label;select.append(option);}
+    if(profile.modelBinding&&!choices.some(([value])=>value===profile.modelBinding))status.textContent=`기존 ${profile.modelBinding} 연결은 지금 확인되지 않았습니다. 다른 연결을 고르거나 상속으로 바꿔 주세요.`;
+    else status.textContent='선택한 범위는 다음 임무부터 적용됩니다.';
+    select.value=choices.some(([value])=>value===profile.modelBinding)?profile.modelBinding:'';
+    $('shadow-profile-budget').value=String(profile.budgetShare);
+    const tools=$('shadow-profile-tools');tools.replaceChildren(tools.querySelector('legend'));
+    for(const name of profile.allowedTools){const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.value=name;input.checked=profile.toolScope.includes(name);label.append(input,document.createTextNode(SHADOW_TOOL_LABEL[name]??name));tools.append(label);}
+    panel.scrollIntoView({block:'nearest'});select.focus();
+  }catch(error){editingShadowId=null;status.textContent=`실행 설정을 열지 못했습니다. ${error.message}`;}
+}
+$('shadow-profile-cancel').addEventListener('click',()=>{$('shadow-profile-panel').hidden=true;editingShadowId=null;});
+$('shadow-profile-form').addEventListener('submit',async event=>{
+  event.preventDefault();if(!editingShadowId)return;
+  const save=event.submitter;save.disabled=true;
+  try{
+    const response=await api('/api/shadow-army/profiles',{requestId:crypto.randomUUID(),shadowId:editingShadowId,
+      modelBinding:$('shadow-profile-model').value||null,budgetShare:Number($('shadow-profile-budget').value),
+      toolScope:[...$('shadow-profile-tools').querySelectorAll('input:checked')].map(input=>input.value)});
+    $('shadow-profile-status').textContent=`${response.profile.modelBinding??'기본 모델 상속'} · 호출 상한 ${response.profile.budgetShare}회 저장됨. 다음 임무부터 적용됩니다.`;
+  }catch(error){$('shadow-profile-status').textContent=`설정을 저장하지 못했습니다. ${error.message}`;}
+  finally{save.disabled=false;}
+});
 const controls = $('controls'), controlToggle = $('control-toggle');
 function showControls(open) {
+  if(!open){stopPending=false;$('stop-confirm').hidden=true;if(lastState)setControlsState(lastState);}
   controls.hidden = !open;
   controlToggle.setAttribute('aria-expanded', String(open));
-  if (open) $('control-close').focus();
+  if (open) { $('control-close').focus(); if (session && !settingsBusy) void loadJarvisSettings(); }
   else controlToggle.focus();
 }
 controlToggle.addEventListener('click', () => showControls(controls.hidden));
@@ -77,27 +178,174 @@ function setControlsUnavailable() {
   $('authority-state').textContent = '작업 전송 불가';
   $('autopilot-toggle').disabled = true;
   $('emergency-toggle').disabled = true;
+  $('shadow-count').textContent = '확인 불가';
+  $('shadow-roster-list').replaceChildren();
+  $('jarvis-address').disabled = true;
+  $('address-save').disabled = true;
+  settingsReady = false;
+  $('address-status').textContent = '연결이 끊겨 호칭을 변경할 수 없습니다.';
+  $('hunger-chart').setAttribute('hidden', '');
+  $('hunger-legend').replaceChildren();
+  $('hunger-data').hidden = true;
+  $('hunger-summary').textContent = '연결이 끊겨 배고픔 기록을 확인할 수 없습니다.';
+  $('system-notices').parentElement.hidden = true;
+  $('scene-moments').hidden = true;
 }
+
+function setSettingsAvailability() {
+  $('jarvis-address').disabled = !lastState || settingsBusy || !settingsReady;
+  $('address-save').disabled = !lastState || settingsBusy || !settingsReady;
+  $('address-save').textContent = settingsBusy ? '확인 중…' : '저장';
+}
+
+async function loadJarvisSettings() {
+  if (settingsBusy) return;
+  settingsBusy = true;
+  setSettingsAvailability();
+  try {
+    const settings = await api('/api/jarvis/settings');
+    const previous = jarvisAddress;
+    jarvisAddress = normalizeJarvisAddress(settings.address);
+    if (!settingsReady || $('jarvis-address').value === previous) $('jarvis-address').value = jarvisAddress;
+    settingsReady = true;
+    $('address-status').textContent = `현재 호칭은 「${jarvisAddress}」입니다.`;
+    if (showingResult && currentResult) say(resultSpeech(currentResult.job, currentResult.text, jarvisAddress));
+  } catch (error) {
+    $('address-status').textContent = `호칭을 확인하지 못했습니다. ${error.message}`;
+  } finally { settingsBusy = false; setSettingsAvailability(); }
+}
+
+$('address-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!lastState || settingsBusy || !settingsReady) return;
+  let address;
+  try { address = normalizeJarvisAddress($('jarvis-address').value); }
+  catch (error) { $('address-status').textContent = error.message; $('jarvis-address').focus(); return; }
+  if (pendingAddressWrite?.address !== address) pendingAddressWrite = {requestId:crypto.randomUUID(), address};
+  settingsBusy = true;
+  setSettingsAvailability();
+  $('address-status').textContent = '호칭을 저장하고 있습니다.';
+  try {
+    const saved = await api('/api/jarvis/settings', pendingAddressWrite);
+    jarvisAddress = normalizeJarvisAddress(saved.address);
+    $('jarvis-address').value = jarvisAddress;
+    pendingAddressWrite = null;
+    $('address-status').textContent = `앞으로 「${jarvisAddress}」으로 모시겠습니다.`;
+    if (showingResult && currentResult) say(resultSpeech(currentResult.job, currentResult.text, jarvisAddress));
+    await tick();
+  } catch (error) { $('address-status').textContent = `호칭 저장을 확인하지 못했습니다. ${error.message}`; }
+  finally { settingsBusy = false; setSettingsAvailability(); }
+});
+
+function renderHungerHistory(measured) {
+  const {samples, missingCount, drives} = hungerCurveModel(measured);
+  const svg = $('hunger-chart'), legend = $('hunger-legend');
+  svg.replaceChildren(); legend.replaceChildren();
+  svg.toggleAttribute('hidden', samples.length === 0);
+  svg.dataset.sampleCount = String(samples.length);
+  $('hunger-data').hidden = samples.length === 0;
+  $('hunger-table-head').replaceChildren();
+  $('hunger-table-body').replaceChildren();
+  if (!measured) { $('hunger-summary').textContent = '배고픔 기록을 확인하지 못했습니다. 다시 연결을 확인하겠습니다.'; return; }
+  const time = at => new Date(at).toLocaleTimeString('ko-KR', {hour12:false});
+  $('hunger-summary').textContent = samples.length
+    ? `저장된 결정 ${samples.length}회 · 배고픔 0–100 · ${time(samples[0].at)}–${time(samples.at(-1).at)}${missingCount ? ` · 값이 없는 이전 기록 ${missingCount}회는 표시하지 않습니다.` : ''}`
+    : '저장된 배고픔 변화 기록이 없습니다. 첫 기록부터 곡선을 표시하겠습니다.';
+  for (const drive of drives) {
+    const row = document.createElement('li');
+    const mark = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    mark.setAttribute('viewBox', '0 0 16 8');mark.setAttribute('aria-hidden', 'true');
+    const stroke = document.createElementNS(mark.namespaceURI, 'path');
+    stroke.setAttribute('d', 'M0 4H16');stroke.setAttribute('stroke', DRIVE_COLOR[drive.driveId]);stroke.setAttribute('stroke-width', '2');mark.append(stroke);
+    const label = document.createElement('span');label.textContent = `${drive.label}${drive.worldName ? ` — ${drive.worldName}의 영토` : ''}`;
+    const value = document.createElement('strong');value.textContent = drive.current === null ? '확인 전' : String(drive.current);value.setAttribute('aria-label', `현재 배고픔 ${value.textContent}`);
+    row.append(mark,label,value);const f=measured.fulfillment?.[drive.driveId];if(f){const note=document.createElement('span');note.className='drive-fulfillment';const counts=document.createElement('span');counts.textContent=`시도 ${f.attempts} · 충족 ${f.fulfilled} · 미충족 ${f.unfulfilled} · 미확인 ${f.unknown} · 검토 대기 ${measured.cues?.[drive.driveId]??0}건${f.stuck?' · 막힘':''}`;const last=document.createElement('span');last.textContent=`마지막: ${({fulfilled:'충족',unfulfilled:'미충족',unknown:'미확인'})[f.lastOutcome]??'없음'} · 작업 `;const id=document.createElement('code');id.textContent=f.lastJobId??'없음';last.append(id);note.append(counts,last);row.append(note);}legend.append(row);
+  }
+  if (!samples.length) return;
+  const headingRow = document.createElement('tr');
+  for (const label of ['결정 시각', ...drives.map(drive => drive.label)]) {
+    const heading = document.createElement('th');heading.scope = 'col';heading.textContent = label;headingRow.append(heading);
+  }
+  $('hunger-table-head').append(headingRow);
+  for (const sample of samples) {
+    const row = document.createElement('tr');
+    const heading = document.createElement('th');heading.scope = 'row';
+    const timestamp = document.createElement('time');timestamp.dateTime = sample.at;timestamp.textContent = new Date(sample.at).toLocaleString('ko-KR', {hour12:false});heading.append(timestamp);row.append(heading);
+    for (const drive of drives) { const cell = document.createElement('td');cell.textContent = String(sample.hunger[drive.driveId]);row.append(cell); }
+    $('hunger-table-body').append(row);
+  }
+  const append = (tag, attributes, text) => {
+    const element = document.createElementNS(svg.namespaceURI, tag);
+    for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value));
+    if (text !== undefined) element.textContent = text;
+    svg.append(element);return element;
+  };
+  for (const value of [0,50,100]) {
+    const y = 160 - value * 1.48;
+    append('path', {d:`M28 ${y}H308`, class:'hunger-grid'});
+    append('text', {x:22,y:y + 4,'text-anchor':'end',class:'hunger-axis'}, String(value));
+  }
+  const firstTime = Math.min(...samples.map(sample=>sample.time)), lastTime = Math.max(...samples.map(sample=>sample.time));
+  const x = sample => lastTime === firstTime ? 168 : 28 + (sample.time - firstTime) / (lastTime - firstTime) * 280;
+  for (const drive of drives) {
+    let previousIndex = -2;
+    const path = samples.map(sample => {
+      const operation = sample.index === previousIndex + 1 ? 'L' : 'M';
+      previousIndex = sample.index;
+      return `${operation}${x(sample)} ${160 - sample.hunger[drive.driveId] * 1.48}`;
+    }).join(' ');
+    append('path', {d:path,fill:'none',stroke:DRIVE_COLOR[drive.driveId],'stroke-width':2,'data-drive-id':drive.driveId});
+    for (const sample of samples) append('circle', {cx:x(sample),cy:160 - sample.hunger[drive.driveId] * 1.48,r:2,fill:DRIVE_COLOR[drive.driveId]});
+  }
+}
+
 function setControlsState(st) {
   lastState = st;
+  setSettingsAvailability();
   const core = st.core || {}, automatic = Boolean(st.autopilot?.enabled);
   $('will-state').textContent = st.emergencyStop ? '전체 멈춤' : automatic ? '허가된 범위에서 자동 운영' : '소유자 요청 대기';
   $('life-state').textContent = core.lastHeartbeatAt ? `마지막 박동 ${new Date(core.lastHeartbeatAt).toLocaleTimeString('ko-KR',{hour12:false})}` : '박동 기록 없음';
   $('authority-state').textContent = core.pendingApprovalCount ? `${core.pendingApprovalCount}건 승인 대기` : '소유자 승인 경계 유지';
+  const expiresAt=Date.parse(session?.metadata?.expiresAt??'');
+  const remaining=Number.isFinite(expiresAt)?Math.max(0,Math.ceil((expiresAt-Date.now())/86400000)):null;
+  $('session-expiry').textContent=remaining===null?'이 기기 연결 기간 —':`이 기기 연결 D-${remaining}일`;
+  $('session-expiry').classList.toggle('expiring',remaining!==null&&remaining<=3);
   const auto = $('autopilot-toggle'), emergency = $('emergency-toggle');
   auto.textContent = automatic ? '자동 운영 멈추기' : '자동 운영 시작';
   auto.disabled = controlBusy || st.emergencyStop;
-  emergency.textContent = st.emergencyStop ? '전체 멈춤 해제' : '전체 멈춤';
+  emergency.textContent = st.emergencyStop ? '전체 멈춤 해제' : stopPending ? '전체 정지 확인' : '전체 멈춤';
   emergency.dataset.stopped = String(Boolean(st.emergencyStop));
   emergency.disabled = controlBusy;
+  const equipped=st.kirby?.abilities?.find(a=>a.id===st.kirby.currentAbilityId);$('kirby-hat').hidden=!equipped;$('kirby-hat').textContent=equipped?`커비: ${equipped.hat.glyph} ${equipped.name}`:'';
+  const roster = st.shadowArmy?.roster;
+  const members = Array.isArray(roster?.members) ? roster.members : [];
+  $('shadow-count').textContent = `${roster?.total ?? 0}명`;
+  $('shadow-empty').hidden = members.length > 0;
+  const shadowList = $('shadow-roster-list');shadowList.replaceChildren();
+  for(const member of members){
+    const row=document.createElement('li');
+    const label=document.createElement('button');label.type='button';label.textContent=member.name;
+    label.addEventListener('click',()=>{const missionJobs=(st.jobs??[]).filter(job=>job.shadowAssignment?.missionId===member.missionId);const lines=missionJobs.map(job=>`${job.title??job.id} · ${JOB_KO[job.status]??job.status}`);renderArtifactDocument($('result-body'),`# ${member.name}의 임무\n\n${lines.length?lines.join('\n\n'):'현재 임무 기록을 확인할 수 없습니다.'}`);$('result-dialog').showModal();$('result-close').focus();});
+    const grade=document.createElement('small');grade.textContent=`${member.rankTitle??member.rank}(${member.rank})${member.status==='stored'?' · 보관':''}`;grade.setAttribute('aria-label',`등급 ${member.rank}`);
+    const settings=document.createElement('button');settings.type='button';settings.className='shadow-profile-open';settings.textContent='실행 설정';settings.disabled=member.status==='stored';settings.addEventListener('click',()=>void openShadowProfile(member));
+    row.append(label,grade,settings);shadowList.append(row);
+  }
+  const notices = Array.isArray(st.systemNotices) ? st.systemNotices.filter(notice=>typeof notice === 'string' && notice.trim()).slice(-5) : [];
+  const noticeList = $('system-notices');noticeList.replaceChildren();noticeList.parentElement.hidden = notices.length === 0;
+  for (const notice of notices) { const item = document.createElement('li');item.textContent = notice;noticeList.append(item); }
+  const moments=sceneMoments(st.systemNotices);
+  $('scene-moments').hidden=moments.length===0;
+  const momentList=$('scene-moment-list');momentList.replaceChildren();
+  for(const moment of moments){const item=document.createElement('li');const label=document.createElement('strong');label.textContent=moment.label;const description=document.createElement('span');description.textContent=moment.text;item.append(label,description);momentList.append(item);}
   const list = $('control-job-list'); list.replaceChildren();
-  const jobs = (st.jobs || []).slice(-5).reverse();
+  const jobs = (st.jobs || []).slice(0,5);
   if (!jobs.length) { list.textContent = '아직 작업이 없습니다.'; return; }
   for (const job of jobs) {
     const row = document.createElement('div'); row.className = 'control-job';
     const info = document.createElement('div');
     const title = document.createElement('strong'); title.textContent = job.title || '제목 없는 작업';
-    const meta = document.createElement('small'); meta.textContent = `${JOB_KO[job.status] || job.status} · ${new Date(job.updatedAt).toLocaleString('ko-KR')}`;
+    const preferred=job.shadowAssignment?.preferredShadowName;
+    const meta = document.createElement('small'); meta.textContent = `${JOB_KO[job.status] || job.status} · ${new Date(job.updatedAt).toLocaleString('ko-KR')}${preferred ? ` · ${preferred}의 출전을 보고드립니다.` : ''}`;
     info.append(title, meta); row.append(info);
     if (['running','queued','paused'].includes(job.status)) {
       const action = document.createElement('button');
@@ -123,171 +371,124 @@ $('autopilot-toggle').addEventListener('click', () => {
 });
 $('emergency-toggle').addEventListener('click', () => {
   if (!lastState) return;
+  if(!lastState.emergencyStop&&!stopPending){stopPending=true;$('stop-confirm').hidden=false;setControlsState(lastState);return;}
+  stopPending=false;$('stop-confirm').hidden=true;
   void performControl('/api/control',{requestId:crypto.randomUUID(),action:lastState.emergencyStop?'resume':'stop',revision:lastState.revision});
 });
+$('stop-cancel').addEventListener('click',()=>{stopPending=false;$('stop-confirm').hidden=true;if(lastState)setControlsState(lastState);});
 
 async function tick() {
   let st;
   try { st = await api('/api/state'); }
-  catch (e) { scene.online = false; $('dot').classList.add('off'); $('mode').textContent = '본체와 끊김'; doing(e.message); setControlsUnavailable(); return; }
+  catch (e) { scene.online = false; headerOrb.set('still'); firstResultTick = true; showingResult = false; currentResult = null; failureDetails = ''; speechHoldUntil = 0; clearResultLink(); showDebate(null); $('dot').classList.add('off'); $('mode').textContent = '본체 연결 끊김'; say('본체와 연결이 끊겼습니다. 복구되면 바로 보고드리겠습니다.'); doing('다시 연결을 확인하고 있습니다.'); setControlsUnavailable(); return; }
   scene.online = true;
   $('dot').classList.remove('off');
-  const core = st.core || {};
+  const rawCore = st.core || {};
+  const core = rawCore.pendingApprovalCount>0 && rawCore.activity==='idle' ? {...rawCore,activity:'waiting_owner'} : rawCore;
   scene.core = core;
+  headerOrb.set(smallOrbState({online:true,emergencyStop:st.emergencyStop,core,jobs:st.jobs}));
   const measured = await api('/api/drives/status').catch(() => null);
+  renderHungerHistory(measured);
   scene.drives = Array.isArray(measured?.drives) ? measured.drives : [];
-  $('mode').textContent = ACTIVITY_KO[core.activity] || core.activity || '깨어 있음';
-  target = measuredDriveTint(scene.drives,core.dominantDriveId,palette.focus);
+  $('mode').textContent = ACTIVITY_KO[core.activity] || '상태 확인 중';
+  target = measuredDriveTint(scene.drives,core.dominantDriveId,neutralTint);
   if (heartbeatChanged(lastHeartbeat,core.lastHeartbeatAt)) pulseAt = performance.now();
   lastHeartbeat = core.lastHeartbeatAt || null;
-  $('hb').textContent = core.lastHeartbeatAt ? new Date(core.lastHeartbeatAt).toLocaleTimeString('ko-KR', {hour12:false}) : '아직 안 뜀';
+  $('hb').textContent = core.lastHeartbeatAt ? new Date(core.lastHeartbeatAt).toLocaleTimeString('ko-KR', {hour12:false}) : '기록 없음';
 
   // model badge — honest about what is actually wired
   const ag = st.agent || {};
-  if (ag.configured && ag.model) { $('model').textContent = `${ag.provider ? ag.provider + ' · ' : ''}${ag.model}`; hint(''); }
+  const lastSpoken=(st.jobs||[]).find(job=>spokenJobs.has(job.id)&&job.provider&&job.model);
+  if (lastSpoken || (ag.configured && ag.model)) { $('model').textContent = lastSpoken?`${lastSpoken.provider} · ${lastSpoken.model}`:`${ag.provider} · ${ag.model}`; hint(''); }
   else { $('model').textContent = '모델 연결 안 됨'; hint('이 PC의 BLACKHOLE 연결 창에서 로컬 모델을 선택하면 실행할 수 있습니다. 모델이 없는 동안 요청은 목표로 보관됩니다.'); }
 
   // gate
   const pending = core.pendingApprovalCount | 0;
   $('gate').hidden = pending === 0;
-  if (pending) $('gate-text').textContent = `되돌릴 수 없는 일 ${pending}건이 네 승인을 기다려.`;
+  if (pending) {
+    const overview=await api('/api/quests').catch(()=>null);
+    const oldest=(overview?.quests||[]).filter(quest=>quest.status==='proposed'&&quest.synthesis?.approvalRequired===true).sort((a,b)=>Date.parse(a.createdAt)-Date.parse(b.createdAt))[0];
+    $('gate-text').textContent = `${jarvisAddress}, 작업 ${pending}건이 승인을 기다리고 있습니다.${oldest?.goal?'\n'+oldest.goal:''}`;
+  }
   setControlsState(st);
+  if (!settingsReady && !settingsBusy) await loadJarvisSettings();
 
   // doing line: real activity + shadows + last event
   const parts = [];
   if (core.focusProjectName) parts.push(core.focusProjectName);
-  if (core.activeShadowCount) parts.push(`그림자 ${core.activeShadowCount}명 일하는 중`);
-  doing(parts.join(' · '));
+  if (core.activeShadowCount) parts.push(`그림자 ${core.activeShadowCount}명이 실행 중입니다.`);
+  if (Date.now() >= speechHoldUntil) failureDetails = '';
+  doing(failureDetails || parts.join(' · '));
 
   // speech: prefer a fresh result from a real job; otherwise speak from core
   const jobs = st.jobs || [];
-  const fresh = jobs.find(j => j.artifacts?.length && !['running','queued','paused'].includes(j.status) && !spokenJobs.has(j.id));
-  if (fresh) {
-    const text = await artifactText(fresh.artifacts[0].id).catch(() => null);
-    if (text) { rememberSpoken(fresh.id); say(text.length > 420 ? text.slice(0, 420) + '…' : text); if (awaitingJobId === fresh.id) { awaitingJobId = null; busy = false; $('send').disabled = false; } return; }
+  const fresh = resultJobToShow(jobs,spokenJobs,firstResultTick);
+  const failed = failureJobToShow(jobs,spokenJobs,firstResultTick);
+  if (firstResultTick) {
+    firstResultTick = false;
+    for (const job of jobs) if (job.status==='completed' && job.artifacts?.length) spokenJobs.add(job.id);
+    try { localStorage.setItem('jarvis-spoken-v1',JSON.stringify([...spokenJobs].slice(-200))); } catch (e) {}
   }
-  if (awaitingJobId) {
-    const j = jobs.find(x => x.id === awaitingJobId);
-    if (spokenJobs.has(awaitingJobId)) { awaitingJobId = null; busy = false; $('send').disabled = false; return; }
-    if (j && ['failed','cancelled','stopped'].includes(j.status)) { say(`그 일은 못 끝냈어. ${j.error || j.status}. 숨기지 않을게.`); awaitingJobId = null; busy = false; $('send').disabled = false; }
-    else doing((j?.title ? j.title + ' · ' : '') + '생각하는 중…');
+  if (failed) {
+    showFailureReport(failed);
+    if (awaitingJobId === failed.id) { awaitingJobId = null; setBusy(false); }
     return;
   }
-  if (Date.now() >= speechHoldUntil && (st.revision !== lastRevision || !lineEl.textContent || lineEl.textContent === '…')) { lastRevision = st.revision; say(composeFromCore(core)); }
+  if (fresh && !failureDetails) {
+    const text = await artifactText(fresh.artifacts[0].id).catch(() => null);
+    if (text) { rememberSpoken(fresh.id); showingResult = true; currentResult = {job:fresh,text}; showDebate(null); showResultLink(fresh.artifacts[0].id); void showResultRating(fresh); say(resultSpeech(fresh,text,jarvisAddress)); if (awaitingJobId === fresh.id) { awaitingJobId = null; setBusy(false); } return; }
+  }
+  if (awaitingJobId) {
+    showDebate(null);
+    const j = jobs.find(x => x.id === awaitingJobId);
+    if (spokenJobs.has(awaitingJobId)) { awaitingJobId = null; setBusy(false); return; }
+    if (j && ['failed','cancelled','stopped'].includes(j.status)) { showFailureReport(j); awaitingJobId = null; setBusy(false); }
+    else if (!failureDetails) doing(`${j?.title||'작업'} · 분석 중 · ${j?.provider||'경로 선택 중'}`);
+    return;
+  }
+  const canSpeakIdle = !showingResult && Date.now() >= speechHoldUntil && !st.emergencyStop && core.activity === 'idle';
+  showDebate(canSpeakIdle ? idleDriveSpeech(core,measured) : null);
+  if (!showingResult && Date.now() >= speechHoldUntil) {
+    const speech = canSpeakIdle ? anticipationSpeech(core,measured,st,jarvisAddress) : null;
+    say(speech || (core.activity === 'idle' && !ag.configured ? `${jarvisAddress}, 응답할 모델이 연결되지 않았습니다. 이 PC의 BLACKHOLE 연결 창에서 모델을 선택해 주십시오.` : composeFromCore(core,jarvisAddress)));
+  }
 }
 
 $('ask').addEventListener('submit', async e => {
   e.preventDefault();
   const t = $('in').value.trim(); if (!t || busy) return;
   $('in').value = '';
-  // known 운영실 commands pass through untouched; anything else becomes a real quest
-  const passthrough = /^(자동\s*운영\s*(시작|중지|현황)|목표\s*현황|일곱\s*욕망|성과\s*장부|봇\s*현황|세계\s*현황|목표\s*(저장|실행)\s*[:：]|연구\s*[:：]|교차\s*검토\s*[:：])/.test(t);
-  const text = passthrough ? t : `목표: ${t}`;
+  const text = workCommandText(t);
   const chat = conversationMode;
-  busy = true; speechHoldUntil = 0; $('send').disabled = true; say('…');
+  setBusy(true); speechHoldUntil = 0; failureDetails = ''; showingResult = false; currentResult = null; clearResultLink(); showDebate(null); say('요청을 확인하고 있습니다.');
   try {
     const out = await api(chat ? '/api/voice' : '/api/commands', {requestId: crypto.randomUUID(), text: chat ? t : text, ...(chat ? {chatOnly:true} : {})});
     const job = out.job || out.payload?.job;
-    if (job?.id) { awaitingJobId = job.id; doing(`${job.title || '작업'} · 받았어`); }
-    else { busy = false; $('send').disabled = false; say('받았어.'); }
+    if (job?.id) { awaitingJobId = job.id; doing(`${job.title || '작업'} · 접수했습니다.`); }
+    else { setBusy(false); say(`접수했습니다, ${jarvisAddress}.`); }
   } catch (err) {
-    busy = false; $('send').disabled = false;
+    setBusy(false);
     if (err.status === 409 && /모델|AI/i.test(err.message)) {
-      if (chat) { speechHoldUntil = Date.now()+30000; say('지금은 대화 기능을 사용할 수 없어. 모델 연결과 AI 사용 설정을 확인해줘. 이 대화는 목표로 보관하지 않았어.'); return; }
-      try { await api('/api/commands', {requestId: crypto.randomUUID(), text: `목표 저장: ${t}`}); speechHoldUntil = Date.now()+30000; say('모델이 없어 지금 실행하지는 못해. 요청은 목표로 보관했어.'); doing('모델 연결 후 운영실에서 실행할 수 있어.'); }
-      catch (saveError) { speechHoldUntil = Date.now()+30000; say('모델이 없고 요청도 보관하지 못했어. 같은 내용을 다시 보내기 전에 운영실에서 접수 여부를 확인해줘.'); doing(saveError.message); }
+      if (chat) { speechHoldUntil = Date.now()+30000; say('현재 대화 기능을 사용할 수 없습니다. 모델 연결과 AI 사용 설정을 확인해 주십시오. 이 대화는 목표로 보관하지 않았습니다.'); return; }
+      try {
+        await api('/api/commands', {requestId: crypto.randomUUID(), text: `목표 저장: ${t}`});
+        const localOnly=lastState?.agent?.providers?.some(entry=>entry.provider==='local'&&entry.configured)
+          && !lastState?.agent?.routing?.routes?.goal?.some(name=>lastState.agent.providers.some(entry=>entry.provider===name&&entry.configured));
+        speechHoldUntil = Date.now()+30000;
+        say(localOnly?'작업용 모델이 없습니다. 요청은 목표로 보관했습니다.':'연결된 모델이 없습니다. 요청은 목표로 보관했습니다.');
+        doing(localOnly?'작업용 원격 모델 연결 후 운영실에서 실행하실 수 있습니다.':'모델 연결 후 운영실에서 실행하실 수 있습니다.');
+      }
+      catch (saveError) { speechHoldUntil = Date.now()+30000; say('모델이 없으며 요청도 보관하지 못했습니다. 다시 보내기 전에 운영실에서 접수 여부를 확인해 주십시오. 숨기지 않겠습니다.'); doing(saveError.message); }
     }
-    else say(err.message);
+    else { speechHoldUntil = Date.now()+30000; say(`요청을 완료하지 못했습니다. 서버 보고: 「${err.message}」. 숨기지 않겠습니다.`); }
   }
 });
 
-const cv = $('orb'), ctx = cv.getContext('2d', {alpha:false});
-const motion = matchMedia('(prefers-reduced-motion: reduce)');
-const hex = h => ({r:parseInt(h.slice(1,3),16),g:parseInt(h.slice(3,5),16),b:parseInt(h.slice(5,7),16)});
-let c = hex(palette.focus), viewW = 0, viewH = 0, pixelRatio = 1, lastFrame = 0, pointerX = 0, pointerY = 0;
-function resizeScene() {
-  const rect = cv.getBoundingClientRect();
-  viewW = Math.max(1,rect.width); viewH = Math.max(1,rect.height);
-  pixelRatio = Math.min(devicePixelRatio || 1,2);
-  cv.width = Math.round(viewW * pixelRatio); cv.height = Math.round(viewH * pixelRatio);
-}
-window.addEventListener('resize', resizeScene, {passive:true});
-window.addEventListener('pointermove', event => {
-  if (motion.matches) return;
-  pointerX = event.clientX / Math.max(1,viewW) - .5;
-  pointerY = event.clientY / Math.max(1,viewH) - .5;
-}, {passive:true});
-resizeScene();
-const TAU = Math.PI * 2;
-function ring(x,y,r,color,width=1,start=0,end=TAU,dash=[]) {
-  ctx.beginPath(); ctx.lineWidth=width; ctx.strokeStyle=color; ctx.setLineDash(dash); ctx.arc(x,y,r,start,end); ctx.stroke(); ctx.setLineDash([]);
-}
-function draw(t) {
-  requestAnimationFrame(draw);
-  if (document.hidden || t-lastFrame<33) return;
-  lastFrame=t;
-  const W=viewW,H=viewH,still=motion.matches,px=still?0:pointerX,py=still?0:pointerY;
-  const x=W*.5+px*12,y=H*.35+py*10;
-  const base=Math.min(W*(W<640?.24:.15),H*.22,175);
-  const breath=still?1:1+Math.sin(t/1750)*.04;
-  const R=base*breath, online=scene.online;
-  const chosen=hex(online?target:palette.offline);
-  for(const channel of ['r','g','b']) c[channel]+=(chosen[channel]-c[channel])*.035;
-  const cs=`${c.r|0},${c.g|0},${c.b|0}`;
-  ctx.setTransform(pixelRatio,0,0,pixelRatio,0,0);
-  ctx.fillStyle=palette.bg; ctx.fillRect(0,0,W,H);
-  const field=ctx.createRadialGradient(x,y,R*.1,x,y,Math.max(W,H)*.68);
-  field.addColorStop(0,`rgba(${cs},.14)`);field.addColorStop(.28,`rgba(${palette.fieldrgb},.57)`);field.addColorStop(1,`rgba(${palette.bgrgb},0)`);
-  ctx.fillStyle=field;ctx.fillRect(0,0,W,H);
-  for(let i=1;i<=8;i++) ring(x,y,R*(1.9+i*.52),`rgba(${palette.mutedrgb},.027)`,1);
-  for(let i=0;i<32;i++) {
-    const a=i*TAU/32;ctx.beginPath();ctx.moveTo(x+Math.cos(a)*R*1.75,y+Math.sin(a)*R*1.75);
-    ctx.lineTo(x+Math.cos(a)*Math.max(W,H),y+Math.sin(a)*Math.max(W,H));
-    ctx.strokeStyle=`rgba(${palette.mutedrgb},.018)`;ctx.lineWidth=1;ctx.stroke();
-  }
-  for(let i=0;i<86;i++) {
-    const u=((i*37.37)%101)/101,v=((i*71.13)%103)/103;
-    const dx=(u-.5)*W,dy=(v-.5)*H,near=1-Math.min(1,Math.hypot(dx,dy)/Math.max(W,H));
-    ctx.fillStyle=`rgba(${palette.starrgb},${.035+near*.09})`;
-    ctx.beginPath();ctx.arc(u*W+px*(i%3+1)*4,v*H+py*(i%4+1)*4,.35+near*.65,0,TAU);ctx.fill();
-  }
-  const halo=ctx.createRadialGradient(x,y,R*.28,x,y,R*1.9);
-  halo.addColorStop(0,`rgba(${cs},.19)`);halo.addColorStop(.55,`rgba(${cs},.09)`);halo.addColorStop(1,`rgba(${cs},0)`);
-  ctx.fillStyle=halo;ctx.beginPath();ctx.arc(x,y,R*1.9,0,TAU);ctx.fill();
-  ring(x,y,R*1.06,`rgba(${cs},.3)`,1.2);
-  ring(x,y,R*1.23,`rgba(${palette.corelinergb},.22)`,1);
-  ring(x,y,R*1.39,`rgba(${palette.corelinergb},.1)`,1);
-  ring(x,y,R*1.68,`rgba(${palette.corelinergb},.11)`,1);
-  for(let i=0;i<56;i++) {
-    const a=i*TAU/56,outer=R*(i%7===0?1.77:1.73),inner=R*1.69;
-    ctx.beginPath();ctx.moveTo(x+Math.cos(a)*inner,y+Math.sin(a)*inner);
-    ctx.lineTo(x+Math.cos(a)*outer,y+Math.sin(a)*outer);
-    ctx.strokeStyle=`rgba(${palette.corelinergb},.16)`;ctx.lineWidth=1;ctx.stroke();
-  }
-  if(scene.core.pendingApprovalCount>0) ring(x,y,R*1.82,`rgba(${palette.warnrgb},.8)`,2,0,TAU,[4,8]);
-  const count=Math.max(0,Math.floor(scene.core.activeShadowCount||0));
-  for(let i=0;i<count;i++) {
-    const a=(still?0:t/(scene.core.activity==='executing'?1800:3900))+i*TAU/count;
-    const sx=x+Math.cos(a)*R*2.01,sy=y+Math.sin(a)*R*2.01;
-    ctx.fillStyle=`rgba(${palette.satellitergb},.8)`;ctx.beginPath();ctx.arc(sx,sy,Math.max(2,R*.025),0,TAU);ctx.fill();
-  }
-  if(scene.core.activity==='planning' && !still) ring(x,y,R*.87,`rgba(${palette.inkrgb},.52)`,2,t/2300,t/2300+1.1);
-  const core=ctx.createRadialGradient(x-R*.28,y-R*.32,R*.02,x,y,R);
-  core.addColorStop(0,`rgba(${palette.corelightrgb},.96)`);core.addColorStop(.18,`rgba(${cs},.93)`);
-  core.addColorStop(.53,`rgba(${cs},.38)`);core.addColorStop(.87,`rgba(${palette.coreshadowrgb},.88)`);core.addColorStop(1,`rgba(${palette.corenightrgb},.98)`);
-  ctx.fillStyle=core;ctx.beginPath();ctx.arc(x,y,R,0,TAU);ctx.fill();
-  ring(x,y,R*.81,`rgba(${palette.inkrgb},.14)`,1);
-  ring(x,y,R*.64,`rgba(${cs},.19)`,1);
-  const elapsed=t-pulseAt;
-  if(online&&!still&&pulseAt>0&&elapsed>=0&&elapsed<1100) {
-    const k=elapsed/1100;
-    ring(x,y,R*(1.05+k*1.3),`rgba(${cs},${(1-k)*.56})`,2.2*(1-k));
-  }
-}
-requestAnimationFrame(draw);
+startJarvisOrb(scene,()=>target,()=>pulseAt);
 
 session = await connectBrowser();
 $('pair-screen').hidden = true;
+await loadJarvisSettings();
 await tick();
 let polling = false;
 setInterval(async () => {

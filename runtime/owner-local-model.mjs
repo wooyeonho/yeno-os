@@ -17,7 +17,11 @@ export async function ownerLocalModel(home, action, model, fetchImpl=fetch) {
   if(!stateResponse.ok)throw new Error('CORE_NOT_READY');
   const state=await stateResponse.json();
   if(state.jobs.some(job=>['queued','running'].includes(job.status)))throw new Error('WAIT_FOR_ACTIVE_JOBS');
-  const next=validateResidentConfig({...config,localModel:model});
+  const next={...config,localModel:model};
+  // Keep the encrypted remote setting on disk, but stop selecting it when
+  // the owner explicitly switches the same resident back to Ollama.
+  delete next.providerFile;
+  validateResidentConfig(next);
   atomicWrite(file,JSON.stringify(next)+'\n');
   return {saved:true,model,requiresRestart:true,aiEnabled:false};
 }

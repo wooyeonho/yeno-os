@@ -82,6 +82,9 @@ jobs:
           rustup target add aarch64-linux-android
       - name: Initialize Android project
         run: npm run tauri -- android init --ci --skip-targets-install
+      - name: Apply post-init permission and backup boundary
+        working-directory: .
+        run: node scripts/android-release.mjs permissions
       - name: Bind release build to owner keystore (outside repo)
         working-directory: .
         env:

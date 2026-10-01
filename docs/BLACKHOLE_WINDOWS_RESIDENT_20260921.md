@@ -20,7 +20,7 @@ npm ci --prefix runtime --ignore-scripts --no-audit --no-fund
 
 Run under Windows PowerShell 5.1 according to the machine's existing execution policy; no policy or administrator permission is silently changed. The scheduled task directly invokes the resolved Node executable, not another PowerShell launcher.
 
-The explicit flag acknowledges creation of a NEW local store. Pairing-key entry is masked. Use a unique key of 16–512 non-whitespace characters; do not paste it into chat. Existing keys are preserved on reinstall. A nonempty unconfigured directory is rejected instead of migrated.
+The explicit flag acknowledges creation of a NEW local store. On a first install without `-PairingToken`, the installer generates a 32-byte cryptographically random pairing key, stores it under the owner-only secrets directory, and never prints it. No owner typing or copying of that key is required; phone enrollment uses the private owner QR window. An owner who explicitly supplies `-PairingToken` must use a unique 16–512 character key without whitespace and must not paste it into chat. Existing keys are preserved on reinstall. A nonempty unconfigured directory is rejected instead of migrated.
 
 Defaults:
 - Task: `BLACKHOLE Core v2` (does not take over an older `BLACKHOLE Core` task).
@@ -29,7 +29,9 @@ Defaults:
 - Data, control records and secrets have current-user-only directory ACLs; files inherit those ACLs. Windows administrators/compromised owner accounts remain privileged.
 - `owner.json` binds installation, account, exact task action and Node path.
 - Task uses Interactive login, limited privilege, IgnoreNew, no 72-hour expiry, up to five one-minute failure restarts.
-- Runtime configuration is explicit. Inherited cloud/proxy/provider environment values are not imported. **Real multi-provider execution is not enabled by this installer.**
+- Runtime configuration is explicit. Inherited cloud/proxy/provider environment values are not imported. The installer does not enable any model or make provider calls.
+
+After the resident is installed and healthy, the private owner window opened by `scripts/pair-blackhole-phone.cmd` can select either an installed Ollama model or one remote provider/model/key pair. Remote settings are validated before storage and encrypted with Windows DPAPI CurrentUser in the resident's owner-only `secrets/provider.dpapi`; `config.json` contains only its path. The window sends the key through its private local process pipe, never a command argument, terminal, URL or status response. Saving first disables the AI module, rejects active jobs, and restarts the **same resident-v2 core**. It does not turn AI or autopilot on or prove that the remote model accepts the key. The separate owner-clicked one-shot test uses this same core's `/api/self-test` and reports a live result only after a real provider response; synthetic transport remains BLOCKED. An uncertain result must be inspected rather than retried blindly. The remote provider's daily call limit is two until the owner changes the configuration through a reviewed update. Switching back to Ollama makes the encrypted remote settings inactive without deleting them.
 
 `status` reports authenticated local HTTP readiness, not just task registration. Retrying `install` preserves data, key, port and installation identity. It does not authorize a second core against the same store.
 

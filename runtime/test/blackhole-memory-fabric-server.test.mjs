@@ -173,7 +173,8 @@ test('a fingerprint-mismatched Supabase remote row blocks the sync and shows up 
   const declared = await app.declareEvent();
   // Seed a conflicting remote row for the SAME id before the scheduler ever gets to it.
   table.set(declared.body.memoryEvent.id, {id: declared.body.memoryEvent.id, fingerprint: 'f'.repeat(64)});
-  await waitFor(async () => (await app.get('/api/core')).body.memory.supabase.readiness !== 'CONFIGURED_UNVERIFIED');
+  const reconciled = await waitFor(async () => (await app.get('/api/core')).body.memory.supabase.readiness !== 'CONFIGURED_UNVERIFIED', {timeoutMs: 10000});
+  assert.ok(reconciled, 'the scheduler must reach a settled sync state before its result is checked');
   const res = await app.get('/api/core');
   assert.equal(res.body.memory.supabase.readiness, 'BLOCKED');
   assert.equal(table.get(declared.body.memoryEvent.id).fingerprint, 'f'.repeat(64), 'the remote row must never be overwritten to force a fake success');

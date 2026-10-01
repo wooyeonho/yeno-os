@@ -1,0 +1,15 @@
+# OSS-first checks
+
+새 기능의 엔진을 직접 만들기 전에 기존 구현과 외부 후보를 확인한다. 라이선스·저장소 상태·커밋을 직접 확인하지 못한 외부 후보는 채택하지 않는다. 이 파일은 `CODEX_DIRECTIVE_OSS_ASSEMBLY_20260930.md` AUD-2의 결정 장부다.
+
+| 범위 | 필요한 기능 | 기존 구현·외부 후보 | 결정과 이유 | 실증 경계 |
+| --- | --- | --- | --- | --- |
+| S12 채널 권한 | Android·브라우저·음성·텔레그램의 허용/금지 동작 | 기존 `apps/controller`, `runtime/public/live-voice-client.mjs`, `runtime/lib/openclaw-bridge.mjs`, `persistent-bots.mjs`를 재사용한다. 새 외부 엔진 없음 | 정책층이므로 작은 권한 표와 상태 투영만 직접 작성. 텔레그램 엔진은 OpenClaw 후보가 있지만 커넥터 미설치·소유자 토큰 없음. 음성 STT/TTS는 기존 브라우저/Live 경로를 유지하며 whisper.cpp/Piper 프로세스는 아직 기동하지 않는다 | 기존 경로의 코드 연결과 합성 HTTP 시험은 실제 채널·기기·모델 수락이 아니다 |
+| S13 능력 파일 서명 | manifest·검증 이력의 Ed25519 서명과 반입 검증 | Node.js 내장 `node:crypto`의 Ed25519를 재사용한다. `capabilities.mjs`의 manifest 검증 및 기존 `absorb-inbox`를 재사용한다 | 암호 엔진을 새로 만들지 않는다. 파일 계약·신뢰 목록 승인·초안 격리만 직접 작성한다. 소유자 DPAPI 서명 키 관리가 없어 활성 교환은 보류한다 | 합성 키로 서명/변조 시험만 가능하며 실제 소유자 키·수신자와의 교환은 미검증 |
+| S14 비공개 영수증 | 미션 기록의 해시 체인과 정적 HTML | Node.js 내장 `node:crypto` SHA-256과 기존 `shadow-army`·`store` 기록을 재사용한다. 외부 투명 로그 엔진은 AUD-1 전까지 미검증 후보 | 영수증에 담을 증거/비공개 필드 정책만 직접 작성하고 해시 계산은 내장 엔진을 사용한다. 기존 state/backup 스키마를 늘리지 않고 별도 로컬 파일로 남긴다 | 서명·외부 앵커 없는 로컬 해시 체인은 동시 전체 재작성에 대한 독립 증명이 아니다. S15 서명 전까지 외부 검증으로 주장하지 않는다 |
+| S15 외부 영수증 증언 | 제3자의 Ed25519 서명과 영수증/산출물 재검증 | S13에서 확인한 Node `node:crypto` Ed25519와 S14 재검증기를 재사용한다. 외부 PKI/투명 로그는 감사 전 미채택 | 서명 검증 계약만 추가. 소유자 신뢰 목록·외부인 신원·성과 원장 증명은 별개이며 서명만으로 `external_verified`를 만들지 않는다 | 합성 키는 계약 시험만. 실제 외부 검증자 0명으로 S등급 증거 0건 |
+| S16 자기 변경안 초안 | 파일 범위·정적 검사·격리 시험 증거 | 기존 `repository-patch.mjs`의 task/patch 계약, `workers/developer/static-guard.mjs`, `developerEvidenceStatus`와 `absorb-inbox`를 재사용한다 | 새로운 코드 실행 엔진을 만들지 않고 증거가 있는 패치만 초안함에 보관한다. 생성 단계에서 동결 경로와 보호 경로를 거부한다 | 합성 patch/test 증거는 제안 계약 시험일 뿐 실 프로젝트 적용이나 Docker 실행 증명이 아니다 |
+| S17 저장 사건 무대 | 욕망·정산·그림자·커비의 화면 서술 | 기존 JARVIS 오브, `systemNotices`, 욕망 이력, `jarvis-scene-model`과 `DESIGN.md`를 재사용한다. 새 렌더러·애니메이션 엔진 없음 | 원천 기록에서 나온 사건만 읽기 전용으로 투영하며 새 제어 경로와 가공 점수는 만들지 않는다 | 합성 격리 코어의 화면 캡처는 실제 소유자 사용이나 90초 실증 데모가 아니다 |
+| S18 설치·업데이트·원격 권한 | Windows 상주와 릴리스 서명 검증 | 기존 `blackhole-resident.ps1` 및 `test-resident-windows.ps1`을 재사용한다. 서명은 Node `node:crypto` Ed25519와 owner trust list 검증으로 좁힌다 | 업데이트 다운로드·적용 엔진과 두 번째 머신 전송은 소유자 인증서/머신/상호 인증이 생기기 전까지 활성화하지 않는다. 읽기 권한 표만 직접 작성한다 | 격리 예약 작업과 합성 서명 시험은 운영 업데이트나 실제 원격 러너 연결 증거가 아니다 |
+| S19 라이선스·영수증·연대기 | 오프라인 Ed25519 권한과 로컬 재검증, 문서 포장 | S13/S18에서 쓴 Node `node:crypto`, S14 `verifyReceiptDirectory`, S10 저장된 chronicle을 재사용한다. Windows .NET ZIP의 NoCompression은 EPUB 필수 mimetype도 deflate하므로 실패 로그를 보존하고 MIT `fflate@0.8.3`의 ZIP store(level 0)를 채택했다. npm registry integrity: `sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==` | 핵심 엔진·검증·영수증은 라이선스로 잠그지 않는다. 결제·계정·송금 엔진은 추가하지 않는다 | 합성 키/미션/연대기 시험은 판매·실제 서명 정책·외부 배포 증거가 아니다. EPUB의 ZIP 구조만 확인했고 외부 전자책 리더 수락은 아직 미검증 |
+| S20 공개 상태·재현 번들 | 생성된 상태 표와 독립 재검증 가능한 ZIP | S19에서 이미 라이선스/무결성을 확인한 `fflate@0.8.3`, S14 receipt validator, 기존 `docs/STATUS.json` 생성기를 재사용한다 | 합성 미션만 사전 묶고, 실제 소유자 입력을 외부 공유 번들로 자동 내보내지 않는다. README의 상태 표는 파생 파일로 생성한다 | 같은 PC의 별도 디렉터리 검증은 제3자 머신 검증이 아니며 외부 배포·테스터 설치는 미실행 |

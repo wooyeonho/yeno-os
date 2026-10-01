@@ -20,6 +20,8 @@
   --text: #edf7f2;
   --muted: #9fb9af;
   --danger: #ffaca3;
+  --danger-line: #6a5145;
+  --danger-panel: #322822;
   --warning: #f4cc83;
   --shadow: 0 16px 44px rgba(0, 0, 0, 0.24);
 }
@@ -106,6 +108,20 @@ summary:focus-visible {
   line-height: 1.2;
   text-align: right;
   color: var(--muted);
+}
+.connection-chip[data-state="auth_rejected"] {
+  border-color: var(--danger-line);
+  color: var(--danger);
+}
+.connection-guidance {
+  margin: 18px 0;
+  padding: 13px 14px;
+  border: 1px solid var(--danger-line);
+  border-radius: 14px;
+  background: var(--danger-panel);
+  color: var(--danger);
+  font-size: 0.86rem;
+  line-height: 1.5;
 }
 h1,
 h2,
@@ -488,9 +504,6 @@ button:disabled {
 .jobs-list {
   margin-top: 8px;
 }
-.artifact {
-  color: var(--accent);
-}
 #message {
   min-height: 1.4em;
   color: var(--danger);
@@ -499,6 +512,7 @@ button:disabled {
 #message:not(:empty) {
   position: fixed;
   z-index: 30;
+  pointer-events: none;
   left: 14px;
   right: 14px;
   bottom: calc(82px + env(safe-area-inset-bottom));

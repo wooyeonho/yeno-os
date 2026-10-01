@@ -1,0 +1,30 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {createHash,randomBytes,createCipheriv} from 'node:crypto';
+import {initialState,openStore} from '../lib/store.mjs';
+import {decryptBackup,exportBackup,restoreBackup} from '../lib/backup.mjs';
+import {initialNightCycle} from '../lib/night-cycle-state.mjs';
+
+test('S10 disabled night cycle migrates old state and encrypted backup before scheduler implementation',t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'blackhole-s10-night-'));
+  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  const old=initialState();delete old.nightCycle;
+  const payload=JSON.stringify(old);
+  fs.writeFileSync(path.join(dir,'state.json'),JSON.stringify({format:1,sha256:createHash('sha256').update(payload).digest('hex'),payload}));
+  const store=openStore(dir);
+  assert.deepEqual(store.state.nightCycle,initialNightCycle());
+  assert.equal(store.state.nightCycle.window,null);
+  const key=randomBytes(32),magic=Buffer.from('YENOBK1\n'),iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',key,iv);
+  cipher.setAAD(magic);
+  const ciphertext=Buffer.concat([cipher.update(JSON.stringify({format:1,createdAt:new Date().toISOString(),state:old,artifacts:[]})),cipher.final()]);
+  const archive=Buffer.concat([magic,iv,cipher.getAuthTag(),ciphertext]);
+  assert.deepEqual(decryptBackup(archive,key).state.nightCycle,initialNightCycle());
+  const target=path.join(dir,'restored');restoreBackup({archive,key,targetDir:target});
+  assert.deepEqual(openStore(target).state.nightCycle,initialNightCycle());
+  assert.deepEqual(decryptBackup(exportBackup({state:store.state,dataDir:dir,key}),key).state.nightCycle,initialNightCycle());
+  store.state.nightCycle={version:1,window:{timeZone:'invalid',startMinute:1200,endMinute:300},reports:[],authorizesDispatch:false};
+  assert.throws(()=>store.save());
+});

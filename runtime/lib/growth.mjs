@@ -9,6 +9,8 @@
 // requirement (skill composition, intervention counts, externally-verified
 // business outcomes), the grade is reported as blocked with the specific
 // missing evidence, never guessed.
+import {executionTrend} from './skill-execution-trend.mjs';
+
 export const GRADES = Object.freeze(['E', 'D', 'C', 'B', 'A', 'S']);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
@@ -99,6 +101,7 @@ export function gradeSkill(registry, id, { outcomes = [], leveling = null } = {}
     id, grade, nextGrade: next, blockedReason: next ? checks[next].reason : null,
     evidence: { imported: true, activated: !!entry.activeHash, runCount: runs.length, distinctInputCount: new Set(runs.map(run => run.inputSha256)).size, rollbackCount: rollbacks.length },
     checks,
+    executionTrend: leveling ? executionTrend(leveling) : null,
   };
 }
 

@@ -1,4 +1,5 @@
 import {rankMotivatedCandidates,motivationStatus,validateMotivation} from './motivation.mjs';
+import {validateDriveVoices} from './drive-state.mjs';
 import {agentUsage} from './agent.mjs';
 import {RESEARCH_TRACKS, validateResearchRequest} from './research.mjs';
 
@@ -33,8 +34,9 @@ export function validateAutopilot(value){
 
 export function validateAutopilotJob(job,state){
   if(!Object.hasOwn(job,'autopilot'))return true;
-  const {motivation,...meta}=job.autopilot;
+  const {motivation,debate,...meta}=job.autopilot;
   if(motivation!==undefined)validateMotivation(motivation);
+  if(debate!==undefined){if(motivation===undefined)throw new TypeError('Autopilot debate requires motivation');validateDriveVoices(debate);}
   if(!object(meta)||meta.version!==1||!['world','research','forai','video','capability'].includes(meta.kind)||typeof meta.taskKey!=='string')throw new TypeError('Invalid autopilot job identity');
   if(meta.kind==='capability'){
     const request=job.capabilityRequest;

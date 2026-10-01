@@ -214,9 +214,12 @@ test('a real mission populates the shadow-mode log with real, matching decisions
   assert.equal(stateResponse.body.jev.engineVersion, JEV_ENGINE_VERSION);
   assert.equal(stateResponse.body.jev.calibrationVersion, JEV_CALIBRATION_VERSION);
   assert.equal(stateResponse.body.jev.authorizesDispatch, false);
+  assert.equal(stateResponse.body.jev.calibrationEvidence.authorizesDispatch, false);
   const log = h.disk().jevShadowLog;
   assert.ok(log.length >= 3, 'scout, researcher and builder dispatch decisions must all be logged');
   validateJevShadowLog(log);
+  assert.equal(stateResponse.body.jev.calibrationEvidence.sampleSize, log.length);
+  assert.ok(stateResponse.body.jev.calibrationEvidence.matchLowerBound < 1);
   for (const entry of log) assert.equal(entry.missionId, missionResponse.body.missionId);
   // Every straightforward dispatch in this mission is evidence JEV's
   // baseline sees the exact same real facts the real scheduler already
@@ -253,12 +256,15 @@ test('a real restart preserves the shadow-mode log exactly, and GET /api/state\'
   const beforeLog = h.disk().jevShadowLog;
   assert.ok(beforeLog.length >= 2, 'both leaf shadows must already have a real logged decision before restart');
   const beforeCalibration = (await h.get('/api/state')).body.jev.calibration;
+  const beforeEvidence = (await h.get('/api/state')).body.jev.calibrationEvidence;
 
   await h.restart();
 
   const afterLog = h.disk().jevShadowLog;
   assert.deepEqual(afterLog, beforeLog, 'restart must preserve the real shadow-mode log exactly - no loss, no duplication, no mutation');
   const afterCalibration = (await h.get('/api/state')).body.jev.calibration;
+  const afterEvidence = (await h.get('/api/state')).body.jev.calibrationEvidence;
   assert.deepEqual(afterCalibration, beforeCalibration, 'the same preserved evidence must calibrate identically after restart');
+  assert.deepEqual(afterEvidence, beforeEvidence, 'the Wilson interval must use the same durable observations after restart');
   assert.equal(afterCalibration.sampleSize, beforeLog.length);
 });

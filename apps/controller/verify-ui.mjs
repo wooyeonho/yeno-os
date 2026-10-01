@@ -26,7 +26,7 @@ const uiIntervals=new WeakMap();
 let sequence=0,saveCount=0,dom,local={},activeRequests=new Map(),responses=new Map(),copied='';
 // Toggled mid-test to exercise the offline state without actually tearing
 // down the real core (see the network status check below).
-const network={offline:false,dropCommandReplyOnce:false};
+const network={offline:false,forbiddenStateOnce:false,dropCommandReplyOnce:false,artifactMissingOnce:false,corruptArtifactOnce:false};
 class FakeMediaStreamTrack {stop(){this.stopped=true;}}
 class FakeMediaStream {getTracks(){return [new FakeMediaStreamTrack()];}}
 const sha=value=>createHash('sha256').update(value).digest('hex');
@@ -61,8 +61,20 @@ async function invoke(command,args={},options={}) {
   if(command==='plugin:http|fetch_send') {
     const c=activeRequests.get(args.rid);assert.ok(['https://acceptance.example.ts.net:9443',origin].includes(new URL(c.url).origin));assert.match(new URL(c.url).pathname,/^\/api\/v1\//);
     if(network.offline)throw new Error('simulated offline: network unreachable');
-    const response=await fetch(origin+new URL(c.url).pathname+new URL(c.url).search,{method:c.method,headers:c.headers,...(c.data?{body:new Uint8Array(c.data)}:{}),redirect:'error'});
-    responses.set(args.rid,new Uint8Array(await response.arrayBuffer()));
+    const requested=new URL(c.url);
+    let path=requested.pathname;
+    if(network.forbiddenStateOnce&&path==='/api/v1/state'){
+      network.forbiddenStateOnce=false;path='/api/v1/devices';
+    }
+    if(network.artifactMissingOnce&&path.startsWith('/api/v1/artifacts/')){
+      network.artifactMissingOnce=false;path=`/api/v1/artifacts/${webcrypto.randomUUID()}`;
+    }
+    const response=await fetch(origin+path+requested.search,{method:c.method,headers:c.headers,...(c.data?{body:new Uint8Array(c.data)}:{}),redirect:'error'});
+    const bytes=new Uint8Array(await response.arrayBuffer());
+    if(network.corruptArtifactOnce&&requested.pathname.startsWith('/api/v1/artifacts/')&&response.ok){
+      network.corruptArtifactOnce=false;bytes[bytes.length-1]^=1;
+    }
+    responses.set(args.rid,bytes);
     if(network.dropCommandReplyOnce&&new URL(c.url).pathname==='/api/v1/commands'){
       network.dropCommandReplyOnce=false;responses.delete(args.rid);activeRequests.delete(args.rid);
       throw new Error('simulated response loss after core acceptance');
@@ -115,6 +127,12 @@ try {
   click('#scan-invitation');await until(()=>$('#origin').value==='https://acceptance.example.ts.net:9443','private invitation scanned');
   submit('#pair',{'vault-password':'synthetic-unlock-password'});
   await until(()=>!$('#workspace').hidden&&$('.studio-status').textContent.includes('본체 확인'),'pair and load studio');
+  assert.equal($('#connection').textContent,'코어 응답 확인됨');
+  submit('#command',{text:'목표: 연결 상태 오류 표시를 확인해줘.'});
+  await until(()=>$('#message').textContent.includes('주 모델 연결이 필요합니다'),'responsive core rejects local-only goal');
+  assert.equal($('#connection').textContent,'코어 응답 확인됨','HTTP 409 from a responsive core must not look like PC offline');
+  assert.equal($('#pending').textContent,'','definitive rejection frees the pending command');
+  evidence.checks.push('a responsive core rejection leaves the connection online and frees the rejected command');
   const phoneRequest='문서 만들어: BLACKHOLE Android 화면 요청·결과 복구 검증';
   click('[data-native-view="jobs"]');
   submit('#command',{text:phoneRequest});
@@ -130,6 +148,19 @@ try {
   const phoneArtifactMeta=$('#artifact-meta').textContent;
   assert.match($('#artifact-body').textContent,/BLACKHOLE Android 화면 요청·결과 복구 검증/);
   evidence.checks.push('Android-paired typed request reaches real core; completed job and SHA-checked artifact appear in app');
+  network.artifactMissingOnce=true;
+  phoneCard.querySelector('button.artifact').click();
+  await until(()=>$('#message').textContent.length>0,'missing artifact response shown');
+  assert.equal($('#connection').textContent,'코어 응답 확인됨','core HTTP 404 must not look like PC offline');
+  assert.equal($('#artifact-result').hidden,true);
+  evidence.checks.push('real core artifact 404 stays distinct from PC offline');
+  $('#message').textContent='';
+  network.corruptArtifactOnce=true;
+  phoneCard.querySelector('button.artifact').click();
+  await until(()=>$('#message').textContent.includes('SHA-256'),'corrupt artifact rejected');
+  assert.equal($('#connection').textContent,'코어 응답 확인됨','SHA mismatch must not look like PC offline');
+  assert.equal($('#artifact-result').hidden,true);
+  evidence.checks.push('corrupt result is refused without mislabeling the PC offline');
   await studioTab('places');submit('form[data-studio-form="place"]',{title:'화면에서 남긴 장소',address:'직접 입력한 주소',note:'처음 저장한 메모',url:'',latitude:'',longitude:''});
   await until(()=>core.state().revision>0&&$('.studio-pane').textContent.includes('처음 저장한 메모'),'save place');
   assert.equal([...vault.keys()].some(key=>key.startsWith('blackhole.studio.v1:')),false);
@@ -271,6 +302,11 @@ try {
   click('#refresh');
   await until(()=>$('#connection').textContent==='코어 응답 확인됨','reconnect after offline clears');
   evidence.checks.push('offline is shown plainly and also disables the Live Voice toggle; clears once reachable again');
+  network.forbiddenStateOnce=true;
+  click('#refresh');
+  await until(()=>$('#seen').textContent.includes('Owner pairing credential'),'real core 403 permission rejection displayed');
+  assert.equal($('#connection').textContent,'코어 응답 확인됨','403 is a responsive permission error, not revoked authentication');
+  evidence.checks.push('real core 403 permission rejection keeps a responsive paired connection online');
 
   // BLACKHOLE Living Core (FINAL UI Slice 1 correction, issue #25): the
   // shared runtime/public/living-core-view.mjs mounted natively binds to the
@@ -315,5 +351,20 @@ try {
   assert.match(failedCard.textContent,/실패/);
   assert.equal(failedCard.textContent.includes('완료 ·'),false);
   evidence.checks.push('controlled real job failure displays server reason and manual new-request guidance, never success or automatic retry');
+  const activeConnection=JSON.parse(new TextDecoder().decode(new Uint8Array(vault.get('connection'))));
+  const ownerRevocation=await fetch(`${origin}/api/devices/${encodeURIComponent(activeConnection.deviceId)}/revoke`,{method:'POST',headers:{authorization:`Bearer ${owner}`,'content-type':'application/json'},body:JSON.stringify({requestId:webcrypto.randomUUID()})});
+  assert.equal(ownerRevocation.status,200,'owner can revoke the isolated test device');
+  click('[data-native-view="jobs"]');
+  click('[data-native-view="studio"]');
+  await until(()=>$('#connection').textContent!=='코어 응답 확인됨','Studio discovers owner-revoked device status');
+  assert.equal($('#connection').textContent,'기기 인증 거부됨');
+  assert.equal($('#connection-guidance').hidden,false);
+  assert.match($('#connection-guidance').textContent,/PC가 이 기기의 인증을 거부했습니다/);
+  assert.equal(vault.has('connection'),true,'revocation must not silently delete the local vault');
+  assert.equal($('#local-forget').hidden,false,'owner may choose when to clear the invalid local credential');
+  assert.equal($('#disconnect').disabled,true,'server revocation cannot be retried with a rejected device token');
+  assert.equal($('#living-core-root').querySelector('.living-voice-cta').disabled,true,'Home voice CTA must not appear available without authenticated core access');
+  assert.equal($('#submit-command').disabled,true,'a revoked token must not submit another command');
+  evidence.checks.push('Studio request discovers owner revocation; rejected authentication retains the vault and stops futile submissions');
   evidence.ok=true;console.log(JSON.stringify(evidence,null,2));
 } finally {if(dom)retireDom();core.shutdown();rmSync(dataDir,{recursive:true,force:true});}

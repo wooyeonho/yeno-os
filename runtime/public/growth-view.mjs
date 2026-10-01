@@ -58,7 +58,14 @@ export function createGrowthView({root, onNavigate = () => {}, storage = null}) 
   function skillCard(skill) {
     const changeBadge = skill.change === 'new' ? '<span class="quest-drive-chip">새로 확인</span>'
       : skill.change ? `<span class="quest-drive-chip">승급 ${esc(skill.change)}→${esc(skill.grade)}</span>` : '';
-    return `<article class="cockpit-cap-card"><div><strong>${esc(skill.name)}</strong>${changeBadge}</div>${gradeBadge(skill)}<small>${skill.kind === 'code' ? '코드형' : '선언형'} 기능 · 실행 ${Number(skill.evidence?.runCount) || 0}회 · 서로 다른 입력 ${Number(skill.evidence?.distinctInputCount) || 0}건</small></article>`;
+    const trend = skill.executionTrend;
+    const visible = trend && ['watch', 'declining'].includes(trend.status)
+      && trend.previous?.total === 5 && trend.latest?.total === 5
+      && Number.isInteger(trend.previous.verified) && Number.isInteger(trend.latest.verified)
+      && trend.previous.verified >= 0 && trend.previous.verified <= 5 && trend.latest.verified >= 0 && trend.latest.verified <= 5;
+    const trendLabel = trend?.status === 'declining' ? '실행 검증률 하락' : '실행 검증률 주의';
+    const trendRow = visible ? `<small class="status failed execution-trend" role="status">${trendLabel} · 직전 5건 ${trend.previous.verified}/5 → 최근 5건 ${trend.latest.verified}/5 · 출력 품질이나 성과 판정은 별개입니다.</small>` : '';
+    return `<article class="cockpit-cap-card"><div><strong>${esc(skill.name)}</strong>${changeBadge}</div>${gradeBadge(skill)}<small>${skill.kind === 'code' ? '코드형' : '선언형'} 기능 · 실행 ${Number(skill.evidence?.runCount) || 0}회 · 서로 다른 입력 ${Number(skill.evidence?.distinctInputCount) || 0}건</small>${trendRow}</article>`;
   }
   function driveRow(drive, dominant) {
     return `<div class="cockpit-drive"${dominant ? ' data-selected="true"' : ''}><div><strong>${esc(drive.label || drive.name || drive.id)}</strong><span>${Number(drive.completed) || 0} / ${Number(drive.total) || 0}개 완료</span></div><p>${esc(drive.description || drive.goal || '')}</p></div>`;

@@ -1,0 +1,370 @@
+{
+  "schemaVersion": 1,
+  "source": "docs/CLAUDE_EXECUTION_STATE.md",
+  "sourceMarkerSha256": "f90924d581c69a35b47b313d75ea38d7f823ad21205031b9d0940d62b46a42df",
+  "counts": {
+    "implemented": 15,
+    "partial": 13,
+    "notImplemented": 2,
+    "local": 27,
+    "synthetic": 23,
+    "external": 2,
+    "none": 2
+  },
+  "subsystems": [
+    {
+      "id": "C1",
+      "stage": "P0",
+      "implementation": "implemented",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 141,
+      "artifact": "build-artifacts/concept-20260930/c1-findings.json",
+      "sha256": "fbd875cddc25b64dbcbd32ea8383498ae4dc828f3da9bc7c08c1e2a016d8aaa8"
+    },
+    {
+      "id": "C2",
+      "stage": "P0",
+      "implementation": "implemented",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 143,
+      "artifact": "build-artifacts/concept-20260930/c2-arise-worthy.json",
+      "sha256": "1008714a6af005f7f20d93f5f9b9dad3cd347ff1c8a544eac75d26b70e43c580"
+    },
+    {
+      "id": "C3",
+      "stage": "P0",
+      "implementation": "implemented",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 144,
+      "artifact": "build-artifacts/concept-20260930/c3-inhale.json",
+      "sha256": "b318062dfb295b755799b88bab697e71b18809f86085f7d30c69aec149261859"
+    },
+    {
+      "id": "C4",
+      "stage": "P0",
+      "implementation": "implemented",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 148,
+      "artifact": "build-artifacts/concept-20260930/c4-http.txt",
+      "sha256": "8909d90271e99957935a133c104ff8746aececa447f1d76529fd586299ca0cab"
+    },
+    {
+      "id": "C5",
+      "stage": "P0",
+      "implementation": "implemented",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 145,
+      "artifact": "build-artifacts/concept-20260930/c5-measured.json",
+      "sha256": "aaea835bd4fbbedb5cfff235b08b14bb9a7dc3f0d85d7c6769422a0afa2a4e3d"
+    },
+    {
+      "id": "CP1",
+      "stage": "P0",
+      "implementation": "implemented",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 134,
+      "artifact": "build-artifacts/concept-20260928/implementation-report.json",
+      "sha256": "8484eb6acdb72eab6919e177edac9fcd302cd2abf55b66f03ae6faa1c09ea42b"
+    },
+    {
+      "id": "Drives-v3",
+      "stage": "P0",
+      "implementation": "implemented",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 147,
+      "artifact": "build-artifacts/drives-v3-20260930/report.json",
+      "sha256": "c74a9b3893d7740ccb16a11c8c8c60ad4a93e70d4ca60daead6cfb3d37e40fa2"
+    },
+    {
+      "id": "E1-E3",
+      "stage": "P0",
+      "implementation": "implemented",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 134,
+      "artifact": "build-artifacts/concept-20260928/implementation-report.json",
+      "sha256": "8484eb6acdb72eab6919e177edac9fcd302cd2abf55b66f03ae6faa1c09ea42b"
+    },
+    {
+      "id": "G1-evidence",
+      "stage": "P0",
+      "implementation": "implemented",
+      "evidence": [
+        "external",
+        "synthetic"
+      ],
+      "sourceSection": 140,
+      "artifact": "build-artifacts/g1-repository-evidence-20260930/implementation-report.json",
+      "sha256": "b2ab3f8d1663e39e81a2388f91fc8a210ac1e0d4cf81b25b281b2c2df90c96ed"
+    },
+    {
+      "id": "L5",
+      "stage": "P0",
+      "implementation": "implemented",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 150,
+      "artifact": "build-artifacts/concept-20260930/l5-loop.json",
+      "sha256": "53d87ae35b187124bddf9e506d63f6a87d8ac6c4b61117b5e1b0f69bc72c914f"
+    },
+    {
+      "id": "P0-regression",
+      "stage": "P0",
+      "implementation": "implemented",
+      "evidence": [
+        "local"
+      ],
+      "sourceSection": 150,
+      "artifact": "build-artifacts/concept-20260930/checkpoint-2-full-regression-retry.txt",
+      "sha256": "ed6bfe04f0ae8e524963f9718c6294305dc3fa4e51ce084d0923178850902cce"
+    },
+    {
+      "id": "P1-commit-proposal",
+      "stage": "P1",
+      "implementation": "implemented",
+      "evidence": [
+        "local"
+      ],
+      "sourceSection": 152,
+      "artifact": "docs/BLACKHOLE_CHECKPOINT_COMMIT_PROPOSAL_20260930.md",
+      "sha256": "f45e909a5b6364a7f41516c0e513dcb60fa2030d1b4fd0242fd2de242f409881"
+    },
+    {
+      "id": "P1-registry-design",
+      "stage": "P1",
+      "implementation": "implemented",
+      "evidence": [
+        "local"
+      ],
+      "sourceSection": 152,
+      "artifact": "docs/BLACKHOLE_STATE_REGISTRY_DESIGN_20260930.md",
+      "sha256": "ec746c5af043d8563f6d87b7becc217fbacc2f0155136ed6c9969a6ca43ba4f3"
+    },
+    {
+      "id": "P1-registry-runtime",
+      "stage": "P1",
+      "implementation": "not_implemented",
+      "evidence": [
+        "none"
+      ],
+      "sourceSection": 152,
+      "artifact": null,
+      "sha256": null
+    },
+    {
+      "id": "P1-status-generator",
+      "stage": "P1",
+      "implementation": "implemented",
+      "evidence": [
+        "local"
+      ],
+      "sourceSection": 152,
+      "artifact": "build-artifacts/concept-20260930/p1-fast-verified.txt",
+      "sha256": "f8c44170d899503533ed6c2b9bdea3af423950340af2ff3f3f9e2a8fa2343a7a"
+    },
+    {
+      "id": "P1-test-runner",
+      "stage": "P1",
+      "implementation": "implemented",
+      "evidence": [
+        "local"
+      ],
+      "sourceSection": 152,
+      "artifact": "build-artifacts/concept-20260930/p1-fast-verified.txt",
+      "sha256": "f8c44170d899503533ed6c2b9bdea3af423950340af2ff3f3f9e2a8fa2343a7a"
+    },
+    {
+      "id": "P15-reel-absorption",
+      "stage": "P1",
+      "implementation": "partial",
+      "evidence": [
+        "local",
+        "synthetic",
+        "external"
+      ],
+      "sourceSection": 153,
+      "artifact": "build-artifacts/reel-absorption-20261001/small-orb-browser-report.json",
+      "sha256": "cc7b57cab720d91c486ca6db6e52d08561ad6ec1b3606a89b20d5a2009f5c529"
+    },
+    {
+      "id": "P2-real-loop",
+      "stage": "P2",
+      "implementation": "not_implemented",
+      "evidence": [
+        "none"
+      ],
+      "sourceSection": 150,
+      "artifact": null,
+      "sha256": null
+    },
+    {
+      "id": "S10",
+      "stage": "P3",
+      "implementation": "partial",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 155,
+      "artifact": "build-artifacts/s10-20261001/night-live-report.json",
+      "sha256": "8a563f5c446ad215c8fc371faf9fa1dfa74a9d13e77fde97b3f324d30c59c3bf"
+    },
+    {
+      "id": "S11",
+      "stage": "P3",
+      "implementation": "partial",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 158,
+      "artifact": "build-artifacts/s11-20261001/shadow-profile-report.json",
+      "sha256": "bad587e6a363002613f5a869cb2d426e6088214bc90cdd6790afc0b702100705"
+    },
+    {
+      "id": "S9",
+      "stage": "P3",
+      "implementation": "partial",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 154,
+      "artifact": "build-artifacts/s9-20261001/owner-rating-report.json",
+      "sha256": "c12330c7e48b4a10cfcdbf7fd2c692b107f3a82c07b911e8afd0cd033813b869"
+    },
+    {
+      "id": "S12",
+      "stage": "P4",
+      "implementation": "partial",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 173,
+      "artifact": "build-artifacts/s20-20261001/android-build-report.json",
+      "sha256": "b43bf7415db80206331f73b27065b5cfd417a41fa0991497d07a4878211f242a"
+    },
+    {
+      "id": "S13",
+      "stage": "P4",
+      "implementation": "partial",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 175,
+      "artifact": "build-artifacts/s13-owner-trust-20261001/report.json",
+      "sha256": "5d449bb88a6447c0d2cbde9cecbbb8a4ea5d46b39e9c814a843981401d8efdec"
+    },
+    {
+      "id": "S14",
+      "stage": "P4",
+      "implementation": "partial",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 164,
+      "artifact": "build-artifacts/s14-20261001/report.json",
+      "sha256": "276af09cb42a49fc10161f7cb10080c3142b4941c8af14114587540903149278"
+    },
+    {
+      "id": "S15",
+      "stage": "P5",
+      "implementation": "partial",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 175,
+      "artifact": "build-artifacts/s13-owner-trust-20261001/report.json",
+      "sha256": "5d449bb88a6447c0d2cbde9cecbbb8a4ea5d46b39e9c814a843981401d8efdec"
+    },
+    {
+      "id": "S16",
+      "stage": "P5",
+      "implementation": "partial",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 167,
+      "artifact": "build-artifacts/s16-20261001/focused-tests.txt",
+      "sha256": "68e42ff52fd0334d68c7c62088233289caa214bd0e33ddf3a8dc6dcb33586a98"
+    },
+    {
+      "id": "S17",
+      "stage": "P5",
+      "implementation": "partial",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 169,
+      "artifact": "build-artifacts/s17-20261001/report.json",
+      "sha256": "b79db60accdfe2990e36c359fa8cb1905a08ce589d38b0e8496637821f15b851"
+    },
+    {
+      "id": "S18",
+      "stage": "P6",
+      "implementation": "partial",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 170,
+      "artifact": "build-artifacts/s18-20261001/windows-acceptance.json",
+      "sha256": "37c8d512f9593e985800460b035a58371faf9a48a370c62dc97a39440d2e81a3"
+    },
+    {
+      "id": "S19",
+      "stage": "P6",
+      "implementation": "partial",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 171,
+      "artifact": "build-artifacts/s19-20261001/receipt-api-report.json",
+      "sha256": "afe62ef45823d61945ed2f56a4d2dee5edf87b7440e7261a6957321036645760"
+    },
+    {
+      "id": "S20",
+      "stage": "P6",
+      "implementation": "partial",
+      "evidence": [
+        "local",
+        "synthetic"
+      ],
+      "sourceSection": 172,
+      "artifact": "build-artifacts/s20-20261001/report.json",
+      "sha256": "6fe1254c8e99ac09b7dce17388073e7591fd17facbcdd7c2f5e3abc3964274e9"
+    }
+  ]
+}

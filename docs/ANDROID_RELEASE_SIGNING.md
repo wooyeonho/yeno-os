@@ -12,10 +12,12 @@
 
 | 파일 | 역할 |
 | --- | --- |
-| `scripts/android-release.mjs` | `check`(버전 단조 증가·identifier 고정·서명 비밀 존재 여부만 확인) / `configure`(`tauri android init` 뒤 `gen/android/keystore.properties` 작성 + `app/build.gradle.kts`의 `release`를 소유자 keystore에 바인딩) / `ledger`(빌드 결과 SHA·서명 인증서 digest를 `docs/builds/android-release-ledger.json`에 추가) |
-| `scripts/android-release.test.mjs` | 정적 테스트 6건 (버전 규칙, ledger 실패 폐쇄, gradle 패치 idempotent, keystore 저장소 밖 강제, debug 인증서 거부) |
+| `scripts/android-release.mjs` | `check`(버전 단조 증가·identifier 고정·서명 비밀 존재 여부만 확인) / `permissions`(`tauri android init` 뒤 RECORD_AUDIO와 백업 제외 규칙 적용) / `configure`(생성된 Gradle `release`를 저장소 밖 소유자 keystore에 바인딩) / `ledger`(빌드 SHA·서명 digest를 원장에 추가) |
+| `scripts/android-release.test.mjs` | 버전·서명·생성 Manifest·백업 규칙·릴리스 템플릿의 정적 시험 |
 | `docs/workflows/android-release.yml.template` (workflow scope 있는 owner 경로에서 `.github/workflows/android-release.yml`로 그대로 승격) | `workflow_dispatch` 전용. **정확한 commit SHA**만 입력받아 release APK + AAB를 빌드. 비밀이 없으면 `check` 단계에서 exit 2로 종료(산출물 없음). debug 서명 fallback 없음. 배포·게시 없음 |
 | `docs/builds/android-release-ledger.json` | 릴리스 원장. `versionCode` 단조 증가, 서명 인증서 변경 시 추가 거부 |
+
+Android 자동 백업은 기본적으로 앱 자료를 포함한다. 폰의 Stronghold 파일과 WebView 접수 대기 문구를 운영체제 백업이나 기기 간 전송으로 옮기지 않도록 생성 Manifest에 `allowBackup=false`를 명시하고, Android 11 이하와 12 이상의 클라우드/기기 전송 규칙에서 앱 내부·기기 보호·앱 외부 자료를 제외한다. 일부 제조사에서는 `allowBackup=false`만으로 기기 간 전송이 중단되지 않으므로 별도 전송 규칙도 넣는다. 이는 **앱 종료 후 같은 폰에서의 복구를 삭제하지 않지만**, 새 폰에서는 소유자 승인 QR로 다시 등록해야 한다. 정책 근거: [Android Auto Backup 공식 문서](https://developer.android.com/identity/data/autobackup). 실기기에서 제조사별 백업 동작은 아직 확인하지 않았다.
 
 ## 소유자가 한 번만 할 일 (비밀은 저장소·채팅·로그에 넣지 않는다)
 
