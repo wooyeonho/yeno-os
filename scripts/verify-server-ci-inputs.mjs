@@ -52,6 +52,7 @@ export function verifyServerCiInputs(root,{dockerignoreText,workflowText,package
   const normalizedWorkflow=workflow.replaceAll('\r\n','\n');
   if(!normalizedWorkflow.includes("on:\n  push:\n    branches:\n      - a3-server-ci-pilot\n"))errors.push('ci_trigger_not_exact_pilot_push');
   if(/\bworkflow_dispatch\s*:/.test(normalizedWorkflow))errors.push('ci_trigger_manual_dispatch_forbidden');
+  if(!normalizedWorkflow.includes('    if: github.event.created == true\n'))errors.push('ci_trigger_not_creation_only');
   const actions=[...workflow.matchAll(/^\s*(?:-\s*)?uses:\s*(\S+)/gm)].map(match=>match[1]).filter(value=>!value.startsWith('./'));
   for(const action of actions){
     if(!/@[a-f0-9]{40}$/.test(action))errors.push(`ci_action_not_sha:${action}`);
