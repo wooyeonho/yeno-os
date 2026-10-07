@@ -1,0 +1,27 @@
+# Only runtime source required by the container may enter the build context.
+**
+!Dockerfile
+!Dockerfile.koyeb
+!.dockerignore
+!runtime/
+!runtime/server.mjs
+!runtime/service.mjs
+!runtime/package.json
+!runtime/package-lock.json
+!runtime/source-audit-bundle.json
+!runtime/lib/
+!runtime/lib/**
+!runtime/capabilities/
+!runtime/capabilities/**
+!runtime/public/
+!runtime/public/**
+!scripts/
+!scripts/start-koyeb.sh
+!scripts/verify-quest-live.mjs
+!scripts/verify-production-live.mjs
+!scripts/verify-web-live.mjs
+!scripts/verify-login-live.mjs
+!scripts/approve-browser.mjs
+!scripts/verify-research-live.mjs
+!scripts/verify-autopilot-live.mjs
+!scripts/render-video-runtime.py

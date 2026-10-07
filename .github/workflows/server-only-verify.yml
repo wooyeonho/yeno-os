@@ -1,0 +1,60 @@
+name: Verify isolated pilot core
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: isolated-pilot-core-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  server-consumer-docker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      IMAGE_NAME: blackhole-isolated-pilot:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24.19.0'
+      - name: Verify committed server-only inputs
+        run: node scripts/verify-server-ci-inputs.mjs
+      - name: Install locked runtime dependencies
+        run: npm ci --prefix runtime --ignore-scripts --no-audit --no-fund
+      - name: Run server and consumer tests serially
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p evidence
+          npm run test:server-only 2>&1 | tee evidence/server-only.tap
+      - name: Build the exact Koyeb context
+        shell: bash
+        run: |
+          set -o pipefail
+          docker build --file Dockerfile.koyeb --tag "$IMAGE_NAME" . 2>&1 | tee evidence/docker-build.log
+          docker image inspect --format '{{.Id}}' "$IMAGE_NAME" | tee evidence/docker-image-id.txt
+      - name: Prove the validation container has no network
+        shell: bash
+        run: |
+          set -o pipefail
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges=true --user 1000:1000 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=67108864,mode=1777 \
+            --entrypoint node "$IMAGE_NAME" --input-type=module -e \
+            "let blocked=false;try{await fetch('https://example.com',{signal:AbortSignal.timeout(2000)})}catch{blocked=true}if(!blocked)process.exit(1);console.log('network-blocked')" \
+            | tee evidence/docker-network-none.txt
+      - name: Preserve verification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: isolated-pilot-core-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 7

@@ -1,0 +1,35 @@
+{
+  "name": "yeno-os-starter",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "verify:baseline": "node scripts/verify-baseline.mjs",
+    "test": "node --test runtime/test/*.test.mjs apps/controller/test/*.test.mjs scripts/native-config.test.mjs",
+    "test:production-source-audit": "node --test --test-concurrency=1 runtime/test/source-audit-invariants.test.mjs runtime/test/source-audit-production.test.mjs",
+    "test:repository-patch-b0-b1": "node --test --test-concurrency=1 runtime/test/repository-patch.test.mjs runtime/test/repository-patch-persistence.test.mjs runtime/test/source-audit-invariants.test.mjs runtime/test/source-audit-production.test.mjs",
+    "test:repository-patch-b2:boundary": "node --test --test-isolation=none --test-concurrency=1 runtime/test/repository-plan-boundary.test.mjs",
+    "test:repository-patch-b2:api": "node --test --test-isolation=none --test-concurrency=1 runtime/test/repository-plan-api.test.mjs",
+    "test:repository-patch-b2:artifact": "node --test --test-isolation=none --test-concurrency=1 runtime/test/repository-patch-artifact.test.mjs",
+    "test:repository-patch-b2:hook": "node --test --test-isolation=none --test-concurrency=1 runtime/test/repository-plan-crash-hook.test.mjs",
+    "test:repository-patch-b2:crash": "node --test --test-isolation=none --test-concurrency=1 runtime/test/repository-plan-crash-production.test.mjs",
+    "test:repository-patch-b2:core": "node --test --test-concurrency=1 runtime/test/repository-patch.test.mjs runtime/test/repository-patch-persistence.test.mjs runtime/test/repository-plan-boundary.test.mjs runtime/test/repository-plan-api.test.mjs runtime/test/repository-patch-artifact.test.mjs runtime/test/repository-plan-crash-hook.test.mjs runtime/test/source-audit-invariants.test.mjs",
+    "test:repository-patch-b2": "node --test --test-concurrency=1 runtime/test/repository-patch.test.mjs runtime/test/repository-patch-persistence.test.mjs runtime/test/repository-plan-boundary.test.mjs runtime/test/repository-plan-api.test.mjs runtime/test/repository-patch-artifact.test.mjs runtime/test/repository-plan-crash-hook.test.mjs runtime/test/repository-plan-crash-production.test.mjs runtime/test/source-audit-invariants.test.mjs runtime/test/source-audit-production.test.mjs",
+    "test:repository-patch-b3:evidence": "node --test --test-isolation=none --test-concurrency=1 runtime/test/repository-worker-evidence-api.test.mjs",
+    "test:repository-patch-b3:light": "node --test --test-isolation=none --test-concurrency=1 runtime/test/repository-patch.test.mjs runtime/test/repository-patch-persistence.test.mjs runtime/test/repository-plan-boundary.test.mjs runtime/test/repository-plan-api.test.mjs runtime/test/repository-patch-artifact.test.mjs runtime/test/repository-plan-crash-hook.test.mjs runtime/test/repository-worker-evidence-api.test.mjs runtime/test/source-audit-invariants.test.mjs",
+    "test:repository-patch-b4:orders": "node --test --test-isolation=none --test-concurrency=1 runtime/test/repository-developer-order-api.test.mjs",
+    "test:repository-patch-b4:light": "node --test --test-isolation=none --test-concurrency=1 runtime/test/repository-patch.test.mjs runtime/test/repository-patch-persistence.test.mjs runtime/test/repository-plan-boundary.test.mjs runtime/test/repository-plan-api.test.mjs runtime/test/repository-patch-artifact.test.mjs runtime/test/repository-plan-crash-hook.test.mjs runtime/test/repository-worker-evidence-api.test.mjs runtime/test/repository-developer-order-api.test.mjs",
+    "test:repository-patch-b5:consumer": "node --test --test-isolation=none --test-concurrency=1 runtime/test/repository-developer-consumer.test.mjs runtime/test/repository-bounded-order-executor.test.mjs runtime/test/repository-developer-consumer-api.test.mjs",
+    "test:repository-patch-b6:phone": "node --test --test-isolation=none --test-concurrency=1 runtime/test/repository-phone-order-api.test.mjs",
+    "verify:server-ci-inputs": "node scripts/verify-server-ci-inputs.mjs",
+    "test:server-ci-inputs": "node --test --test-isolation=none --test-concurrency=1 scripts/verify-server-ci-inputs.test.mjs",
+    "test:server-only": "node --test --test-isolation=none --test-concurrency=1 scripts/verify-server-ci-inputs.test.mjs runtime/test/repository-plan-api.test.mjs runtime/test/repository-developer-consumer-api.test.mjs runtime/test/repository-developer-consumer.test.mjs runtime/test/repository-bounded-order-executor.test.mjs runtime/test/repository-phone-order-api.test.mjs",
+    "build:production-source-bundle": "node scripts/build-deployed-source-bundle.mjs",
+    "start": "npm --prefix runtime start --",
+    "build:controller": "npm --prefix apps/controller run build",
+    "verify:web": "node scripts/verify-web-ui.mjs"
+  }
+}

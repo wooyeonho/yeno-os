@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "source": {
+    "kind": "native",
+    "author": "BLACKHOLE",
+    "license": "Owner project use",
+    "url": ""
+  },
+  "id": "failure-triage",
+  "name": "실패 원인 점검표",
+  "description": "실패·중지 기록에서 원인 확인과 재현에 필요한 점검표를 만듭니다.",
+  "inputSchema": {
+    "fields": {
+      "id": "string",
+      "title": "string",
+      "status": "string",
+      "error": "string",
+      "nextStep": "string"
+    }
+  },
+  "steps": [
+    {
+      "op": "filter",
+      "field": "status",
+      "operator": "in",
+      "value": [
+        "failed",
+        "paused"
+      ]
+    },
+    {
+      "op": "sort",
+      "field": "id",
+      "direction": "asc"
+    },
+    {
+      "op": "limit",
+      "count": 30
+    }
+  ],
+  "output": {
+    "title": "보존된 실패의 점검표",
+    "description": "실패 원인을 확정하거나 재호출하지 않고 기록을 정리했습니다.",
+    "columns": [
+      {
+        "field": "id",
+        "label": "작업"
+      },
+      {
+        "field": "title",
+        "label": "이름"
+      },
+      {
+        "field": "status",
+        "label": "상태"
+      },
+      {
+        "field": "error",
+        "label": "관측한 오류"
+      },
+      {
+        "field": "nextStep",
+        "label": "다음 확인"
+      }
+    ],
+    "footer": "수정 완료 보고서가 아닙니다. 응답이 미확인인 호출은 재전송하지 않습니다."
+  },
+  "fixtures": [
+    {
+      "name": "완료 기록 제외",
+      "input": {
+        "records": [
+          {
+            "id": "b",
+            "title": "합성 연결 시험",
+            "status": "completed",
+            "error": "응답 미확인",
+            "nextStep": "기존 요청 확인"
+          },
+          {
+            "id": "a",
+            "title": "합성 연결 시험",
+            "status": "failed",
+            "error": "응답 미확인",
+            "nextStep": "기존 요청 확인"
+          }
+        ]
+      },
+      "expectedRows": [
+        {
+          "id": "a",
+          "title": "합성 연결 시험",
+          "status": "failed",
+          "error": "응답 미확인",
+          "nextStep": "기존 요청 확인"
+        }
+      ]
+    },
+    {
+      "name": "동일 입력 순서 보장",
+      "input": {
+        "records": [
+          {
+            "id": "c",
+            "title": "합성 연결 시험",
+            "status": "paused",
+            "error": "응답 미확인",
+            "nextStep": "기존 요청 확인"
+          },
+          {
+            "id": "a",
+            "title": "합성 연결 시험",
+            "status": "failed",
+            "error": "응답 미확인",
+            "nextStep": "기존 요청 확인"
+          }
+        ]
+      },
+      "expectedRows": [
+        {
+          "id": "a",
+          "title": "합성 연결 시험",
+          "status": "failed",
+          "error": "응답 미확인",
+          "nextStep": "기존 요청 확인"
+        },
+        {
+          "id": "c",
+          "title": "합성 연결 시험",
+          "status": "paused",
+          "error": "응답 미확인",
+          "nextStep": "기존 요청 확인"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "source": {
+    "kind": "native",
+    "author": "BLACKHOLE",
+    "license": "Owner project use",
+    "url": ""
+  },
+  "id": "evidence-gap-brief",
+  "name": "연구 근거 공백 정리",
+  "description": "확인한 근거가 부족한 항목을 우선순위별로 정리합니다.",
+  "inputSchema": {
+    "fields": {
+      "title": "string",
+      "evidenceCount": "number",
+      "priority": "number",
+      "nextStep": "string"
+    }
+  },
+  "steps": [
+    {
+      "op": "filter",
+      "field": "evidenceCount",
+      "operator": "lte",
+      "value": 1
+    },
+    {
+      "op": "sort",
+      "field": "priority",
+      "direction": "desc"
+    },
+    {
+      "op": "limit",
+      "count": 20
+    }
+  ],
+  "output": {
+    "title": "연구 근거의 다음 확인 항목",
+    "description": "저장된 입력 기준으로 근거가 부족한 항목을 정리했습니다.",
+    "columns": [
+      {
+        "field": "title",
+        "label": "대상"
+      },
+      {
+        "field": "evidenceCount",
+        "label": "확인 근거 수"
+      },
+      {
+        "field": "priority",
+        "label": "확인 우선순위"
+      },
+      {
+        "field": "nextStep",
+        "label": "다음 확인"
+      }
+    ],
+    "footer": "근거 수는 사실의 정확성이나 연구 효과를 증명하지 않습니다."
+  },
+  "fixtures": [
+    {
+      "name": "부족한 근거만 선택",
+      "input": {
+        "records": [
+          {
+            "title": "합성 시험 B",
+            "evidenceCount": 3,
+            "priority": 2,
+            "nextStep": "독립 재현"
+          },
+          {
+            "title": "합성 시험 A",
+            "evidenceCount": 0,
+            "priority": 9,
+            "nextStep": "원문 확보"
+          }
+        ]
+      },
+      "expectedRows": [
+        {
+          "title": "합성 시험 A",
+          "evidenceCount": 0,
+          "priority": 9,
+          "nextStep": "원문 확보"
+        }
+      ]
+    },
+    {
+      "name": "우선순위 정렬",
+      "input": {
+        "records": [
+          {
+            "title": "합성 시험 C",
+            "evidenceCount": 1,
+            "priority": 7,
+            "nextStep": "반대 근거 확인"
+          },
+          {
+            "title": "합성 시험 A",
+            "evidenceCount": 0,
+            "priority": 9,
+            "nextStep": "원문 확보"
+          }
+        ]
+      },
+      "expectedRows": [
+        {
+          "title": "합성 시험 A",
+          "evidenceCount": 0,
+          "priority": 9,
+          "nextStep": "원문 확보"
+        },
+        {
+          "title": "합성 시험 C",
+          "evidenceCount": 1,
+          "priority": 7,
+          "nextStep": "반대 근거 확인"
+        }
+      ]
+    }
+  ]
+}
