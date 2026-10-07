@@ -3,7 +3,7 @@ name: Verify isolated pilot core
 on:
   push:
     branches:
-      - a3-server-ci-pilot
+      - a4-pilot-core-r1
 
 permissions:
   contents: read
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   server-consumer-docker:
-    if: github.event.created == true
+    if: github.repository == 'wooyeonho/yeno-os' && github.ref == 'refs/heads/a4-pilot-core-r1' && github.event.created == true
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
