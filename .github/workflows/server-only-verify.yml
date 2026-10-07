@@ -1,7 +1,9 @@
 name: Verify isolated pilot core
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - a3-server-ci-pilot
 
 permissions:
   contents: read

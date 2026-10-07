@@ -31,6 +31,9 @@ test('server-only CI rejects missing inputs and mutable supply-chain references'
   const floatingNode=workflow.replace("node-version: '24.19.0'","node-version: '24'");
   assert.ok(verifyServerCiInputs(root,{dockerignoreText:dockerignore,workflowText:floatingNode})
     .includes('ci_node_version_unpinned'));
+  const broadTrigger=workflow.replace('a3-server-ci-pilot','main');
+  assert.ok(verifyServerCiInputs(root,{dockerignoreText:dockerignore,workflowText:broadTrigger})
+    .includes('ci_trigger_not_exact_pilot_push'));
   const mutableBase=dockerfile.replace('@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20','');
   assert.ok(verifyServerCiInputs(root,{dockerignoreText:dockerignore,workflowText:workflow,dockerfileTexts:{Dockerfile:mutableBase}})
     .includes('docker_base_unpinned:Dockerfile'));
