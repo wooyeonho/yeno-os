@@ -37,6 +37,9 @@ test('server-only CI rejects missing inputs and mutable supply-chain references'
   const repeatableTrigger=workflow.replace(" && github.event.created == true",'');
   assert.ok(verifyServerCiInputs(root,{dockerignoreText:dockerignore,workflowText:repeatableTrigger})
     .includes('ci_trigger_guard_not_exact'));
+  const artifactUpload=`${workflow}\n      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02\n`;
+  assert.ok(verifyServerCiInputs(root,{dockerignoreText:dockerignore,workflowText:artifactUpload})
+    .includes('ci_artifact_upload_forbidden'));
   const mutableBase=dockerfile.replace('@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20','');
   assert.ok(verifyServerCiInputs(root,{dockerignoreText:dockerignore,workflowText:workflow,dockerfileTexts:{Dockerfile:mutableBase}})
     .includes('docker_base_unpinned:Dockerfile'));

@@ -53,11 +53,3 @@ jobs:
             --entrypoint node "$IMAGE_NAME" --input-type=module -e \
             "let blocked=false;try{await fetch('https://example.com',{signal:AbortSignal.timeout(2000)})}catch{blocked=true}if(!blocked)process.exit(1);console.log('network-blocked')" \
             | tee evidence/docker-network-none.txt
-      - name: Preserve verification evidence
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: isolated-pilot-core-${{ github.sha }}
-          path: evidence/
-          if-no-files-found: error
-          retention-days: 7

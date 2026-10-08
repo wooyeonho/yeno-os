@@ -7,7 +7,6 @@ const NODE_IMAGE='node:24-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f0
 const APPROVED_ACTIONS=new Set([
   'actions/checkout@11d5960a326750d5838078e36cf38b85af677262',
   'actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020',
-  'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02',
 ]);
 const REQUIRED_TESTS=[
   'scripts/verify-server-ci-inputs.test.mjs',
@@ -54,6 +53,7 @@ export function verifyServerCiInputs(root,{dockerignoreText,workflowText,package
   if(/\bworkflow_dispatch\s*:/.test(normalizedWorkflow))errors.push('ci_trigger_manual_dispatch_forbidden');
   if(!normalizedWorkflow.includes("    if: github.repository == 'wooyeonho/yeno-os' && github.ref == 'refs/heads/a4-pilot-core-r1' && github.event.created == true\n"))errors.push('ci_trigger_guard_not_exact');
   const actions=[...workflow.matchAll(/^\s*(?:-\s*)?uses:\s*(\S+)/gm)].map(match=>match[1]).filter(value=>!value.startsWith('./'));
+  if(actions.some(action=>action.startsWith('actions/upload-artifact@')))errors.push('ci_artifact_upload_forbidden');
   for(const action of actions){
     if(!/@[a-f0-9]{40}$/.test(action))errors.push(`ci_action_not_sha:${action}`);
     else if(!APPROVED_ACTIONS.has(action))errors.push(`ci_action_unapproved:${action}`);
